@@ -99,7 +99,7 @@
 			},
 			ingestion: {
 				title: 'Data ingestion',
-				description: 'Append inline CSV or mounted files to a Kustainer table.'
+				description: 'Append inline CSV or mounted files to a Kusto table.'
 			}
 		}[view]
 	);

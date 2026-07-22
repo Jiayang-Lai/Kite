@@ -93,7 +93,7 @@
 	let result = $state<QueryResult>();
 	let ingestionError = $state('');
 	let isRunning = $state(false);
-	let resultsCollapsed = $state(true);
+	let resultsCollapsed = $state(false);
 	let resultsPane = $state<PaneAPI>();
 	let showConfirmation = $state(false);
 	let confirmationText = $state('');
@@ -410,10 +410,6 @@
 			resultsPane?.expand();
 		}
 	}
-
-	$effect(() => {
-		if (resultsCollapsed) resultsPane?.collapse();
-	});
 
 	onDestroy(() => {
 		requestId += 1;

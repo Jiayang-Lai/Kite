@@ -49,7 +49,8 @@
 		{ label: 'Show database schema', command: '.show database schema' },
 		{ label: 'Show functions', command: '.show functions' },
 		{ label: 'Show ingestion failures', command: '.show ingestion failures' },
-		{ label: 'Show operations', command: '.show operations' }
+		{ label: 'Show operations', command: '.show operations' },
+		{ label: 'Show queries', command: '.show queries' }
 	];
 
 	let commandText = $state('.show tables');

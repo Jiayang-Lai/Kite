@@ -5,6 +5,7 @@
 	import AppHeader from '$lib/components/app/app-header.svelte';
 	import AppShell from '$lib/components/app/app-shell.svelte';
 	import AdminHero from '$lib/components/admin/admin-hero.svelte';
+	import DataIngestionWorkspace from '$lib/components/admin/data-ingestion-workspace.svelte';
 	import DatabaseManagement from '$lib/components/admin/database-management.svelte';
 	import ManagementCommandWorkspace from '$lib/components/admin/management-command-workspace.svelte';
 	import ClusterConnectionSelector from '$lib/components/cluster/cluster-connection-selector.svelte';
@@ -16,8 +17,6 @@
 	} from '$lib/components/query/database-explorer/cluster-explorer-types';
 	import { getClusterSession } from '$lib/cluster/cluster-session.svelte';
 	import { persistActiveClusterId } from '$lib/cluster/active-cluster-preference';
-	import * as Card from '$lib/components/ui/card';
-	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { MOCK_DATABASES } from '$lib/data/mock-databases';
 	import { MOCK_RECENT_QUERIES, MOCK_SAVED_QUERIES } from '$lib/data/mock-queries';
 	import { loadBackendSchema } from '$lib/kusto/backend-schema';
@@ -61,17 +60,12 @@
 			0
 		)
 	);
-	const isMockCluster = $derived(
-		clusters.find((cluster) => cluster.id === clusterSession.activeClusterId)?.url ===
-			MOCK_KUSTO_CLUSTER_URL
+	const activeCluster = $derived(
+		clusters.find((cluster) => cluster.id === clusterSession.activeClusterId)
 	);
-	const activeClusterName = $derived(
-		clusters.find((cluster) => cluster.id === clusterSession.activeClusterId)?.name ??
-			'current cluster'
-	);
-	const activeClusterUrl = $derived(
-		clusters.find((cluster) => cluster.id === clusterSession.activeClusterId)?.url ?? ''
-	);
+	const isMockCluster = $derived(activeCluster?.url === MOCK_KUSTO_CLUSTER_URL);
+	const activeClusterName = $derived(activeCluster?.name ?? 'current cluster');
+	const activeClusterUrl = $derived(activeCluster?.url ?? '');
 	const failedClusterName = $derived(
 		clusters.find((cluster) => cluster.id === failedClusterId)?.name ?? 'selected cluster'
 	);
@@ -105,7 +99,7 @@
 			},
 			ingestion: {
 				title: 'Data ingestion',
-				description: 'Configure and monitor table ingestion.'
+				description: 'Append inline CSV or mounted files to a Kustainer table.'
 			}
 		}[view]
 	);
@@ -268,7 +262,6 @@
 					{ label: activeView.title }
 				]}
 		title={view === 'overview' || view === 'databases' ? '' : activeView.title}
-		badge={view === 'ingestion' ? 'Coming soon' : undefined}
 		sidebarToggleLabel="Toggle admin navigation"
 	>
 		{#if view === 'commands' || view === 'ingestion'}
@@ -302,39 +295,18 @@
 			onrefreshschema={() => connectCluster(clusterSession.activeClusterId)}
 		/>
 	{:else}
-		<section
-			class="relative grid min-h-0 flex-1 grid-cols-1 gap-2 lg:grid-cols-[1.2fr_0.8fr]"
-			aria-busy="true"
-		>
-			<Card.Root class="min-h-72">
-				<Card.Header>
-					<Card.Title>{activeView.title}</Card.Title>
-					<Card.Description>{activeView.description}</Card.Description>
-				</Card.Header>
-				<Card.Content class="space-y-3">
-					<Skeleton class="h-28 w-full" />
-					<Skeleton class="h-4 w-2/3" />
-				</Card.Content>
-			</Card.Root>
-
-			<div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
-				<Card.Root>
-					<Card.Header>
-						<Card.Title>Database management</Card.Title>
-						<Card.Description>Create, inspect, and update databases and tables.</Card.Description>
-					</Card.Header>
-					<Card.Content><Skeleton class="h-10 w-full" /></Card.Content>
-				</Card.Root>
-
-				<Card.Root>
-					<Card.Header>
-						<Card.Title>Data ingestion</Card.Title>
-						<Card.Description>Configure and monitor table ingestion.</Card.Description>
-					</Card.Header>
-					<Card.Content><Skeleton class="h-10 w-full" /></Card.Content>
-				</Card.Root>
-			</div>
-		</section>
+		{#key clusterSession.activeClusterId}
+			<DataIngestionWorkspace
+				databases={databaseSchema}
+				bind:selectedDatabase
+				bind:selectedTable
+				clusterUrl={activeClusterUrl}
+				clusterName={activeClusterName}
+				ingestion={activeCluster?.ingestion}
+				{isMockCluster}
+				isLoading={connectionStatus === 'loading'}
+			/>
+		{/key}
 	{/if}
 
 	{#if connectionStatus === 'error' && connectionError && databaseSchema}

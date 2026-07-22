@@ -11,6 +11,36 @@ The endpoint must allow the app origin through CORS. On startup, Kite discovers 
 their schemas with read-only management commands. Queries entered in Monaco are sent only to the
 Kusto query endpoint, and can be run with the **Run** button or `Ctrl/Cmd+Enter`.
 
+### Local Kustainer ingestion
+
+The `Local Kusto` connection supports direct ingestion into existing tables. Pasted CSV and
+browser-selected CSV files are sent with `.ingest inline` management commands. Browser files are
+preflighted as UTF-8 CSV and split at complete record boundaries into commands no larger than 512
+KiB. The default browser-file limit is 10 MiB. A header row can be removed once before chunking, and
+each chunk receives a stable `ingest-by` tag so an interrupted chunk can be retried without knowingly
+duplicating it.
+
+Mounted-file ingestion expects Parquet or CSV files beneath `/kustodata/raw` inside the Kustainer
+container. Mount a host staging directory at that location, for example:
+
+```yaml
+services:
+  kusto:
+    image: mcr.microsoft.com/azuredataexplorer/kustainer-linux
+    volumes:
+      - ./kusto-raw:/kustodata/raw:ro
+    ports:
+      - 127.0.0.1:8080:8080
+    environment:
+      - ACCEPT_EULA=Y
+```
+
+Mounted-file paths are relative to `/kustodata/raw`; Kite does not copy browser files into that
+directory. Inline-file contents remain in the browser and are sent sequentially through the Kusto
+management endpoint. Kustainer has no authentication or encrypted connection, so keep it bound to
+the local machine. Direct ingestion is intended for local development and does not provide managed
+queues, automatic retries, rollback, or durable job history.
+
 ## Research Note: Kusto Monaco Documentation
 
 `@kusto/monaco-kusto` uses `@kusto/language-service-next` to produce KQL completion candidates. The next language service provides completion text and kinds, but it does not provide Markdown documentation for query operators such as `where` or `make-series`.
@@ -54,7 +84,7 @@ This writes `src/lib/generated/kusto-documentation-index.ts` and the Markdown fi
     - [ ] Kusto Admin Page:
       - [x] Allows user to run management commands
       - [ ] Allows user to manage databases and tables etc (read and write)
-      - [ ] Allows user to ingest data into tables
+      - [x] Allows user to ingest pasted or chunked browser CSV and mounted Parquet or CSV files
       - [x] Allows user to view cluster, database and table
 
 Myself:

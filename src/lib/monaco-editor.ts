@@ -7,7 +7,11 @@
  * set below keeps hover and Kusto's suggestion UI available without registering
  * unsupported workbench features.
  */
+// Register Monaco's find/replace widget and its built-in shortcuts.
+import 'monaco-editor/esm/vs/editor/contrib/find/browser/findController.js';
 import 'monaco-editor/esm/vs/editor/contrib/hover/browser/hoverContribution.js';
+// Register multi-cursor actions, including Ctrl/Cmd+D to select the next match.
+import 'monaco-editor/esm/vs/editor/contrib/multicursor/browser/multicursor.js';
 // Monaco-Kusto registers document and range formatting providers when its mode
 // starts. This contribution supplies the standalone editor actions that invoke
 // those providers, including context-menu entries and keyboard shortcuts.

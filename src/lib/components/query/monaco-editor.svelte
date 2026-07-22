@@ -82,6 +82,7 @@
 	let kusto = $state<KustoApi | null>(null);
 	let changeDisposable = $state<MonacoDisposable | null>(null);
 	let documentationHoverDisposable = $state<MonacoDisposable | null>(null);
+	let findWidgetFocusGuardDisposable = $state<MonacoDisposable | null>(null);
 	let initializationError = $state<string | null>(null);
 	let isLoading = $state(true);
 	let syncingFromEditor = false;
@@ -127,6 +128,49 @@
 			value = nextModel.getValue();
 			syncingFromEditor = false;
 		});
+	}
+
+	/**
+	 * Monaco defers exposing a newly opened find widget until after focusing its
+	 * input, and hides it before returning focus to the editor. Keep focus and
+	 * aria-hidden synchronized across both transitions.
+	 */
+	function registerFindWidgetFocusGuard(host: HTMLElement, targetEditor: MonacoEditor) {
+		const isInsideFindWidget = (target: EventTarget | null) =>
+			target instanceof Element && target.closest('.find-widget') !== null;
+		const isCloseButton = (target: EventTarget | null) =>
+			target instanceof Element && target.closest('.find-widget .codicon-widget-close') !== null;
+
+		const handleKeydown = (event: KeyboardEvent) => {
+			const closesWithEscape = event.key === 'Escape' && isInsideFindWidget(event.target);
+			const activatesCloseButton =
+				isCloseButton(event.target) && (event.key === 'Enter' || event.key === ' ');
+
+			if (closesWithEscape || activatesCloseButton) targetEditor.focus();
+		};
+
+		const handleClick = (event: MouseEvent) => {
+			if (isCloseButton(event.target)) targetEditor.focus();
+		};
+
+		const handleFocusin = (event: FocusEvent) => {
+			if (!(event.target instanceof Element)) return;
+
+			const hiddenFindWidget = event.target.closest('.find-widget[aria-hidden="true"]');
+			if (hiddenFindWidget) hiddenFindWidget.setAttribute('aria-hidden', 'false');
+		};
+
+		host.addEventListener('focusin', handleFocusin, true);
+		host.addEventListener('keydown', handleKeydown, true);
+		host.addEventListener('click', handleClick, true);
+
+		return {
+			dispose() {
+				host.removeEventListener('focusin', handleFocusin, true);
+				host.removeEventListener('keydown', handleKeydown, true);
+				host.removeEventListener('click', handleClick, true);
+			}
+		};
 	}
 
 	/** Returns the current Kusto markers so query failures can include actionable local diagnostics. */
@@ -188,6 +232,7 @@
 			editor.addCommand(runtime.monaco.KeyMod.CtrlCmd | runtime.monaco.KeyCode.Enter, () => {
 				onexecute?.();
 			});
+			findWidgetFocusGuardDisposable = registerFindWidgetFocusGuard(container, editor);
 
 			bindModel(editorModel);
 			await applySchema(activeDatabase.name);
@@ -207,6 +252,8 @@
 			schemaRequestId += 1;
 			changeDisposable?.dispose();
 			documentationHoverDisposable?.dispose();
+			findWidgetFocusGuardDisposable?.dispose();
+			if (container?.contains(document.activeElement)) editor?.focus();
 			editor?.dispose();
 			model?.dispose();
 		};
@@ -245,7 +292,7 @@
 	<div
 		bind:this={container}
 		class={cn(
-			'relative min-w-0 max-w-full overflow-hidden rounded-lg border bg-background',
+			'relative min-w-0 max-w-full overflow-visible rounded-lg border bg-background',
 			className
 		)}
 		style={`height: ${height};`}
@@ -263,6 +310,24 @@
 {/if}
 
 <style>
+	/*
+	 * Monaco mounts button tooltips next to the editor root. The host must allow
+	 * those context views to escape while the editor surface keeps rounded edges.
+	 */
+	:global(.monaco-editor),
+	:global(.monaco-editor .overflow-guard) {
+		border-radius: inherit;
+	}
+
+	/*
+	 * Compact command tooltips can wrap after Monaco calculates their position,
+	 * making the taller tooltip overlap its trigger and repeatedly dismiss itself.
+	 * Keep these labels on one line; rich editor hovers remain unaffected.
+	 */
+	:global(.monaco-editor ~ .context-view .monaco-hover.workbench-hover.compact .hover-contents) {
+		white-space: nowrap !important;
+	}
+
 	:global(.monaco-editor .rendered-markdown h1),
 	:global(.monaco-editor .rendered-markdown h2),
 	:global(.monaco-editor .rendered-markdown h3) {

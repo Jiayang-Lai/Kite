@@ -6,6 +6,17 @@ export const DEFAULT_KUSTO_CLUSTER_URL = 'http://localhost:8080';
 /** Stable synthetic endpoint used to identify Kite's in-memory schema catalog. */
 export const MOCK_KUSTO_CLUSTER_URL = 'mock://kite';
 
+export type KustoIngestionConfiguration = {
+	/** Ingestion support exposed by this connection. */
+	mode: 'emulator';
+	/** Absolute directory visible inside Kustainer that contains staged source files. */
+	containerRoot: string;
+	/** Largest browser-selected file accepted for chunked inline ingestion. */
+	maxInlineFileBytes: number;
+	/** Largest UTF-8 management command generated for one inline-file chunk. */
+	maxInlineCommandBytes: number;
+};
+
 export type KustoClusterConnection = {
 	/** Stable identifier used to select this connection independently of its endpoint. */
 	id: string;
@@ -17,6 +28,8 @@ export type KustoClusterConnection = {
 	url: string;
 	/** Whether the connection executes remotely or only supplies local schema metadata. */
 	kind: 'remote' | 'mock';
+	/** Optional ingestion behavior available for this connection. */
+	ingestion?: KustoIngestionConfiguration;
 };
 
 const SERVER_TIMEOUT_MS = 60_000;
@@ -38,7 +51,13 @@ const DEFAULT_KUSTO_CLUSTERS: KustoClusterConnection[] = [
 		id: '36a61d62-3326-45ef-8f99-7c86affd1cb1',
 		name: 'Local Kusto',
 		url: DEFAULT_KUSTO_CLUSTER_URL,
-		kind: 'remote'
+		kind: 'remote',
+		ingestion: {
+			mode: 'emulator',
+			containerRoot: '/kustodata/raw',
+			maxInlineFileBytes: 10 * 1024 * 1024,
+			maxInlineCommandBytes: 512 * 1024
+		}
 	},
 	{
 		id: '43bd513e-02dd-463e-864b-522a412983b6',
@@ -46,13 +65,22 @@ const DEFAULT_KUSTO_CLUSTERS: KustoClusterConnection[] = [
 		description:
 			'Uses the same local endpoint and deliberately long supporting text to verify selector labels truncate cleanly without affecting adjacent controls.',
 		url: DEFAULT_KUSTO_CLUSTER_URL,
-		kind: 'remote'
+		kind: 'remote',
+		ingestion: {
+			mode: 'emulator',
+			containerRoot: '/kustodata/raw',
+			maxInlineFileBytes: 10 * 1024 * 1024,
+			maxInlineCommandBytes: 512 * 1024
+		}
 	}
 ];
 
 /** Returns a copy of Kite's built-in cluster catalog. */
 export function getKustoClusters(): KustoClusterConnection[] {
-	return DEFAULT_KUSTO_CLUSTERS.map((cluster) => ({ ...cluster }));
+	return DEFAULT_KUSTO_CLUSTERS.map((cluster) => ({
+		...cluster,
+		ingestion: cluster.ingestion ? { ...cluster.ingestion } : undefined
+	}));
 }
 
 /** Returns the default browser-visible Kusto cluster URL. */

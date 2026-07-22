@@ -110,3 +110,32 @@ Read-only `.show` and `.explain` commands execute immediately. All other command
 potentially state-changing and require the user to review the target cluster/database, command
 text, and type `RUN` before execution. Kite relies on the connected Kusto cluster to enforce the
 caller’s permissions.
+
+## Data ingestion
+
+`/admin/ingestion` performs direct ingestion into an existing table for connections that explicitly
+declare Kustainer ingestion support. The built-in `Local Kusto` connection uses `/kustodata/raw` as
+its container-visible staging root. The Mock cluster remains schema-only and shows an unavailable
+state.
+
+The page has three source modes:
+
+- **Inline CSV** sends small, manually entered rows with `.ingest inline into table`. The text after
+  `<|` is preserved exactly and follows the selected table's column order.
+- **Inline file** preflights a browser-selected UTF-8 CSV file, optionally removes its header once,
+  and splits it at complete CSV record boundaries. Commands run sequentially with a 512 KiB ceiling
+  and stable per-target content hashes used as `ingest-by` tags. The default file limit is 10 MiB.
+- **Mounted file** ingests an existing Parquet or CSV file beneath `/kustodata/raw`. Users enter a
+  relative path; absolute paths and current/parent-directory segments are rejected before command
+  construction.
+
+Both modes show the ordered target schema and require a review of the cluster, database, table,
+source, and append behavior followed by typing `RUN`. Commands execute synchronously through the
+management endpoint and return their extent result directly. Inline-file progress reports confirmed
+chunks and rows, stops after the first failure, and can retry from the uncertain chunk using its
+stable ingestion tag. Stopping the client request only stops waiting; it does not promise to roll
+back an operation already accepted by Kusto. Previously completed chunks remain ingested.
+
+This workflow does not copy browser files into Kustainer's mounted filesystem, discover named
+ingestion mappings, create or modify tables, retry failed requests automatically, or model
+queued/streaming ingestion. Those capabilities are outside the local Kustainer flow.

@@ -462,6 +462,12 @@
 								<h2 class="font-semibold">Ingest into an existing table</h2>
 								<p class="text-muted-foreground mt-1 text-sm">
 									Direct ingestion appends data to the selected Kustainer table.
+									{#if selectedDatabase === 'NetDefaultDB'}
+										<span class="mt-1 block text-amber-700 dark:text-amber-300">
+											Data in NetDefaultDB is stored inside the Kustainer container and will be lost
+											if the container is destroyed.
+										</span>
+									{/if}
 								</p>
 							</div>
 							<Badge variant="outline">Local emulator</Badge>

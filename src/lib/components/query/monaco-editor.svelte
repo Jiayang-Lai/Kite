@@ -232,6 +232,15 @@
 			editor.addCommand(runtime.monaco.KeyMod.CtrlCmd | runtime.monaco.KeyCode.Enter, () => {
 				onexecute?.();
 			});
+			editor.addAction({
+				id: 'kite.toggleWordWrap',
+				label: 'Toggle Word Wrap',
+				keybindings: [runtime.monaco.KeyMod.Alt | runtime.monaco.KeyCode.KeyZ],
+				run: (targetEditor) => {
+					const wordWrap = targetEditor.getOption(runtime.monaco.editor.EditorOption.wordWrap);
+					targetEditor.updateOptions({ wordWrap: wordWrap === 'off' ? 'on' : 'off' });
+				}
+			});
 			findWidgetFocusGuardDisposable = registerFindWidgetFocusGuard(container, editor);
 
 			bindModel(editorModel);

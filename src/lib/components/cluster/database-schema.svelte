@@ -349,7 +349,11 @@
 					</article>
 				{:else}
 					<p class="text-muted-foreground py-8 text-center text-sm">
-						No tables or columns match “{filter}”.
+						{#if filter.trim()}
+							No tables or columns match “{filter}”.
+						{:else}
+							This database has no tables.
+						{/if}
 					</p>
 				{/each}
 			{/if}

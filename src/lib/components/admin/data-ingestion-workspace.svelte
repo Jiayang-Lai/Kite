@@ -460,8 +460,7 @@
 									Direct ingestion appends data to the selected Kustainer table.
 									{#if selectedDatabase === 'NetDefaultDB'}
 										<span class="mt-1 block text-amber-700 dark:text-amber-300">
-											Data in NetDefaultDB is stored inside the Kustainer container and will be lost
-											if the container is destroyed.
+											Data in NetDefaultDB is stored inside the Kustainer container and will be lost if the container is destroyed. It is highly recommended to create a new database at a mounted volume for persistent data.
 										</span>
 									{/if}
 								</p>

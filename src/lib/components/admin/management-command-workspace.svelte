@@ -51,9 +51,10 @@
 		{ label: 'Show ingestion failures', command: '.show ingestion failures' },
 		{ label: 'Show operations', command: '.show operations' },
 		{ label: 'Show queries', command: '.show queries' },
+		{ label: 'Create database', command: '.create database yourDbName persist (\n  @"/kustodata/dbs/yourDbName/md",\n  @"/kustodata/dbs/yourDbName/data"\n)' },
 		{
 			label: 'Attach database',
-			command: '.attach database <db name> from @"/kustodata/dbs/<db name>/md"'
+			command: '.attach database yourDbName from @"/kustodata/dbs/yourDbName/md"'
 		},
 	];
 

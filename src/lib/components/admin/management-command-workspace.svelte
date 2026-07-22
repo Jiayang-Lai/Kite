@@ -50,7 +50,11 @@
 		{ label: 'Show functions', command: '.show functions' },
 		{ label: 'Show ingestion failures', command: '.show ingestion failures' },
 		{ label: 'Show operations', command: '.show operations' },
-		{ label: 'Show queries', command: '.show queries' }
+		{ label: 'Show queries', command: '.show queries' },
+		{
+			label: 'Attach database',
+			command: '.attach database <db name> from @"/kustodata/dbs/<db name>/md"'
+		},
 	];
 
 	let commandText = $state('.show tables');

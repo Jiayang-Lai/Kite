@@ -15,13 +15,21 @@
 	type SavedQueriesNavProps = {
 		queries?: ExplorerQuery[];
 		filter?: string;
+		open?: boolean;
+		onopenchange?: (open: boolean) => void;
 		onselect?: (query: ExplorerQuery) => void;
 		delete?: (query: ExplorerQuery) => void;
 	};
 
-	let { queries = [], filter = '', onselect, delete: ondelete }: SavedQueriesNavProps = $props();
+	let {
+		queries = [],
+		filter = '',
+		open = false,
+		onopenchange,
+		onselect,
+		delete: ondelete
+	}: SavedQueriesNavProps = $props();
 	const sidebar = Sidebar.useSidebar();
-	let open = $state(true);
 	const isCollapsedDesktop = $derived(sidebar.state === 'collapsed' && !sidebar.isMobile);
 	const filteredQueries = $derived(
 		queries.filter((query) =>
@@ -36,7 +44,7 @@
 	}
 </script>
 
-<Collapsible.Root bind:open class="group/collapsible">
+<Collapsible.Root {open} onOpenChange={onopenchange} class="group/collapsible">
 	<Sidebar.Menu>
 		<Sidebar.MenuItem>
 			{#if isCollapsedDesktop}

@@ -280,6 +280,8 @@
 			bind:selectedDatabase
 			bind:selectedTable
 			bind:selectedFunction
+			expansionState={explorerExpansion}
+			onexpansionchange={updateExplorerExpansion}
 			clusterId={clusterSession.activeClusterId}
 			clusterUrl={activeClusterUrl}
 			clusterName={activeClusterName}

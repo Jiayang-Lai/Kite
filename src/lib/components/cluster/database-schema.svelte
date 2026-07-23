@@ -6,6 +6,10 @@
 	import TablePropertiesIcon from '@lucide/svelte/icons/table-properties';
 	import type { Snippet } from 'svelte';
 
+	import type {
+		ExplorerExpansionChange,
+		ExplorerExpansionState
+	} from '$lib/cluster/cluster-session.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -35,6 +39,10 @@
 		tableActions?: Snippet<[KustoTable]>;
 		/** Optional admin actions rendered beside each column type. */
 		columnActions?: Snippet<[KustoTable, KustoColumn]>;
+		/** Cluster-scoped expansion state shared across Admin and Query routes. */
+		expansionState: ExplorerExpansionState;
+		/** Updates the shared expansion state after a table card is toggled. */
+		onexpansionchange: (change: ExplorerExpansionChange) => void;
 	};
 
 	let {
@@ -45,17 +53,18 @@
 		height = '480px',
 		headerActions,
 		tableActions,
-		columnActions
+		columnActions,
+		expansionState,
+		onexpansionchange
 	}: DatabaseSchemaProps = $props();
 	let filter = $state('');
-	let collapsedDatabaseName = '';
-	let collapsedTables = $state<Record<string, boolean>>({});
+	const expandedTables = $derived(expansionState.schemaTables[database.name] ?? {});
 	const focusedFunction = $derived(
 		(database.functions ?? []).find((fn) => fn.name === selectedFunction)
 	);
 
 	const allTablesExpanded = $derived(
-		database.tables.length > 0 && database.tables.every((table) => !collapsedTables[table.name])
+		database.tables.length > 0 && database.tables.every((table) => expandedTables[table.name])
 	);
 
 	const filteredTables = $derived.by(() => {
@@ -96,27 +105,31 @@
 		}
 	});
 
-	$effect(() => {
-		if (database.name === collapsedDatabaseName) {
-			return;
-		}
-
-		collapsedDatabaseName = database.name;
-		collapsedTables = {};
-	});
-
 	function isTableExpanded(tableName: string) {
-		return selectedTable === tableName || Boolean(filter.trim()) || !collapsedTables[tableName];
+		return (
+			selectedTable === tableName || Boolean(filter.trim()) || Boolean(expandedTables[tableName])
+		);
 	}
 
 	function toggleTable(tableName: string) {
-		collapsedTables[tableName] = !collapsedTables[tableName];
+		onexpansionchange({
+			type: 'schema-table',
+			database: database.name,
+			table: tableName,
+			open: !expandedTables[tableName]
+		});
 	}
 
 	function toggleAllTables() {
-		collapsedTables = allTablesExpanded
-			? Object.fromEntries(database.tables.map((table) => [table.name, true]))
-			: {};
+		const open = !allTablesExpanded;
+		for (const table of database.tables) {
+			onexpansionchange({
+				type: 'schema-table',
+				database: database.name,
+				table: table.name,
+				open
+			});
+		}
 	}
 
 	function showAllObjects() {

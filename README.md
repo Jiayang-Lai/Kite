@@ -88,7 +88,8 @@ This writes `src/lib/generated/kusto-documentation-index.ts` and the Markdown fi
         - [x] Block stale table updates with execution-time schema preflights
         - [x] Rename columns with dependency warnings and explicit confirmation
         - [x] Remove columns with irreversible-data-loss confirmation
-        - [ ] Change column types (intentionally unsupported; use a data-preserving migration)
+        - [x] Reorder every existing column with an explicit before/after diff
+        - [x] Directly change column types with irreversible-data-loss confirmation
       - [x] Allows user to ingest pasted or chunked browser CSV and mounted Parquet or CSV files
       - [x] Allows user to view cluster, database and table
 

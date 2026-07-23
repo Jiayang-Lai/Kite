@@ -1,4 +1,5 @@
 <script lang="ts">
+	import BinaryIcon from '@lucide/svelte/icons/binary';
 	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
@@ -8,16 +9,20 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
+	import * as Select from '$lib/components/ui/select';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import {
+		buildChangeColumnTypePlan,
 		buildDropColumnPlan,
 		buildRenameColumnPlan,
+		KUSTO_SCALAR_TYPES,
+		type KustoScalarType,
 		type TableMutationPlan,
 		type TableSchemaSnapshot
 	} from '$lib/kusto/table-management';
 	import type { KustoColumn, KustoTable } from '$lib/types/kusto-schema';
 
-	export type ColumnMutationAction = 'rename' | 'drop';
+	export type ColumnMutationAction = 'rename' | 'change-type' | 'drop';
 
 	type ColumnMutationDialogProps = {
 		open?: boolean;
@@ -53,29 +58,44 @@
 
 	let initializedTarget = '';
 	let newColumnName = $state('');
+	let newColumnType = $state<KustoScalarType | ''>('');
 	let confirmationText = $state('');
 	let dialogContent = $state<HTMLElement | null>(null);
 	const isBusy = $derived(isPreparing || isRunning);
 	const confirmationPhrase = $derived(
-		action === 'rename' ? 'RENAME' : `${table.name}.${column.name}`
+		action === 'rename'
+			? 'RENAME'
+			: action === 'change-type'
+				? `CHANGE TYPE ${table.name}.${column.name}`
+				: `${table.name}.${column.name}`
 	);
 
 	const preparedPlan = $derived.by(() => {
 		try {
 			const existingColumnNames = table.columns.map((item) => item.name);
-			const plan =
-				action === 'rename'
-					? buildRenameColumnPlan({
-							tableName: table.name,
-							columnName: column.name,
-							newColumnName,
-							existingColumnNames
-						})
-					: buildDropColumnPlan({
-							tableName: table.name,
-							columnName: column.name,
-							existingColumnNames
-						});
+			let plan: TableMutationPlan;
+			if (action === 'rename') {
+				plan = buildRenameColumnPlan({
+					tableName: table.name,
+					columnName: column.name,
+					newColumnName,
+					existingColumnNames
+				});
+			} else if (action === 'change-type') {
+				plan = buildChangeColumnTypePlan({
+					tableName: table.name,
+					columnName: column.name,
+					currentColumnType: column.type,
+					newColumnType,
+					existingColumnNames
+				});
+			} else {
+				plan = buildDropColumnPlan({
+					tableName: table.name,
+					columnName: column.name,
+					existingColumnNames
+				});
+			}
 			return { plan, error: '' };
 		} catch (error) {
 			return {
@@ -92,6 +112,7 @@
 		if (!target || target === initializedTarget) return;
 		initializedTarget = target;
 		newColumnName = '';
+		newColumnType = '';
 		confirmationText = '';
 	});
 
@@ -128,12 +149,18 @@
 	>
 		<Dialog.Header class="border-b p-5 pr-14">
 			<Dialog.Title>
-				{action === 'rename' ? `Rename ${column.name}` : `Remove ${column.name}`}
+				{action === 'rename'
+					? `Rename ${column.name}`
+					: action === 'change-type'
+						? `Change ${column.name} type`
+						: `Remove ${column.name}`}
 			</Dialog.Title>
 			<Dialog.Description id="column-mutation-description">
 				{action === 'rename'
 					? 'Change this column name without converting or replacing its stored values.'
-					: 'Permanently remove this column and all values stored in it.'}
+					: action === 'change-type'
+						? 'Directly replace this column type and permanently clear its existing values.'
+						: 'Permanently remove this column and all values stored in it.'}
 			</Dialog.Description>
 		</Dialog.Header>
 
@@ -161,7 +188,7 @@
 						<dt class="text-muted-foreground">Risk</dt>
 						<dd>
 							<Badge variant="destructive">
-								{action === 'rename' ? 'Breaking change' : 'Irreversible'}
+								{action === 'rename' ? 'Breaking change' : 'Irreversible data loss'}
 							</Badge>
 						</dd>
 					</div>
@@ -219,6 +246,28 @@
 							<p class="text-destructive mt-1.5 text-xs">{preparedPlan.error}</p>
 						{/if}
 					</div>
+				{:else if action === 'change-type'}
+					<div>
+						<label class="text-sm font-medium" for="new-column-type">New column type</label>
+						<Select.Root type="single" bind:value={newColumnType} disabled={isBusy}>
+							<Select.Trigger id="new-column-type" class="mt-2 w-full font-mono">
+								<Select.Value placeholder="Select a new type" />
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Group>
+									{#each KUSTO_SCALAR_TYPES.filter((type) => type !== column.type) as type (type)}
+										<Select.Item value={type} label={type} />
+									{/each}
+								</Select.Group>
+							</Select.Content>
+						</Select.Root>
+						<p class="text-muted-foreground mt-1.5 text-xs">
+							Current type: <span class="font-mono">{column.type}</span>
+						</p>
+						{#if preparedPlan.error && newColumnType}
+							<p class="text-destructive mt-1.5 text-xs">{preparedPlan.error}</p>
+						{/if}
+					</div>
 				{/if}
 
 				{#if preparedPlan.plan}
@@ -237,12 +286,16 @@
 							<p class="text-sm font-medium">
 								{action === 'rename'
 									? 'Dependent references are not rewritten'
-									: 'Deleted column data cannot be recovered'}
+									: action === 'change-type'
+										? 'Every existing value in this column will become null'
+										: 'Deleted column data cannot be recovered'}
 							</p>
 							<p class="mt-1 text-xs leading-5">
 								{action === 'rename'
 									? 'Stored functions, ingestion mappings, policies, dashboards, and client queries may still reference the old name and can fail after this change.'
-									: 'All values in this column become unqueryable. Adding a column with the same name later will not restore them.'}
+									: action === 'change-type'
+										? 'Kusto does not convert the stored values. After this direct type change, the original data is permanently unrecoverable—even if you change the column back to its current type.'
+										: 'All values in this column become unqueryable. Adding a column with the same name later will not restore them.'}
 							</p>
 						</div>
 					</div>
@@ -288,18 +341,28 @@
 				</Button>
 				<Button disabled>
 					<Spinner />
-					{action === 'rename' ? 'Renaming column' : 'Removing column'}
+					{action === 'rename'
+						? 'Renaming column'
+						: action === 'change-type'
+							? 'Changing column type'
+							: 'Removing column'}
 				</Button>
 			{:else}
 				<Button variant="outline" onclick={() => (open = false)}>Cancel</Button>
 				<Button
-					variant={action === 'drop' ? 'destructive' : 'default'}
+					variant={action === 'rename' ? 'default' : 'destructive'}
 					disabled={!preparedPlan.plan ||
 						!preflightReady ||
 						confirmationText !== confirmationPhrase}
 					onclick={submitMutation}
 				>
-					{#if action === 'rename'}<PencilIcon /> Rename column{:else}<Trash2Icon /> Remove column{/if}
+					{#if action === 'rename'}
+						<PencilIcon /> Rename column
+					{:else if action === 'change-type'}
+						<BinaryIcon /> Change type
+					{:else}
+						<Trash2Icon /> Remove column
+					{/if}
 				</Button>
 			{/if}
 		</Dialog.Footer>

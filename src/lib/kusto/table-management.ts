@@ -22,6 +22,34 @@ export type NewTableColumn = {
 	type: KustoScalarType;
 };
 
+export type TableSchemaColumnDraft = {
+	/** Index of the original column represented by this row; absent for a new column. */
+	sourceIndex?: number;
+	name: string;
+	type: string;
+};
+
+export type TableSchemaChangeKind = 'added' | 'removed' | 'reordered' | 'renamed' | 'type-changed';
+
+export type TableSchemaDiffColumn = {
+	name: string;
+	type: string;
+	index: number;
+};
+
+export type TableSchemaDiffRow = {
+	sourceIndex?: number;
+	before?: TableSchemaDiffColumn;
+	after?: TableSchemaDiffColumn;
+	changes: readonly TableSchemaChangeKind[];
+};
+
+export type TableSchemaDiff = {
+	rows: readonly TableSchemaDiffRow[];
+	counts: Record<TableSchemaChangeKind, number>;
+	hasChanges: boolean;
+};
+
 export type TableMutationInput = {
 	tableName: string;
 	currentDocstring?: string;
@@ -55,7 +83,27 @@ export type DropColumnPlan = TableMutationPlanBase & {
 	columnName: string;
 };
 
-export type TableMutationPlan = UpdateTablePlan | RenameColumnPlan | DropColumnPlan;
+export type ChangeColumnTypePlan = TableMutationPlanBase & {
+	kind: 'change-column-type';
+	columnName: string;
+	currentColumnType: string;
+	newColumnType: KustoScalarType;
+};
+
+export type ReorderTableColumnsPlan = TableMutationPlanBase & {
+	kind: 'reorder-table-columns';
+	columns: readonly NewTableColumn[];
+	diff: TableSchemaDiff;
+	preservedDocstring: string;
+	preservedFolder: string;
+};
+
+export type TableMutationPlan =
+	| UpdateTablePlan
+	| RenameColumnPlan
+	| DropColumnPlan
+	| ChangeColumnTypePlan
+	| ReorderTableColumnsPlan;
 
 export type TableSchemaColumnSnapshot = {
 	name: string;
@@ -269,8 +317,7 @@ export function compareTableSnapshots(original: TableSchemaSnapshot, current: Ta
  * Builds the safe table-update subset exposed by Kite's structured editor.
  *
  * Existing columns are intentionally absent from this input: additive updates use
- * `.alter-merge`, while renaming, retyping, reordering, and dropping existing columns
- * remain available through the advanced management-command workspace.
+ * `.alter-merge`, while focused column and ordering actions handle existing columns.
  */
 export function buildTableMutationPlan(input: TableMutationInput): TableMutationPlan {
 	const tableName = quoteKustoEntity(input.tableName, 'Select a target table.');
@@ -371,5 +418,167 @@ export function buildDropColumnPlan(input: {
 		columnName,
 		risk: 'irreversible',
 		summary: `${columnName} removed`
+	};
+}
+
+/** Builds a direct and irreversible type replacement for one existing column. */
+export function buildChangeColumnTypePlan(input: {
+	tableName: string;
+	columnName: string;
+	currentColumnType: string;
+	newColumnType: string;
+	existingColumnNames: readonly string[];
+}): ChangeColumnTypePlan {
+	const tableName = quoteKustoEntity(input.tableName, 'Select a target table.');
+	const columnName = validatedExistingColumn(input.existingColumnNames, input.columnName);
+	const currentColumnType = input.currentColumnType.trim().toLowerCase();
+	const newColumnType = input.newColumnType.trim().toLowerCase();
+
+	if (!KUSTO_SCALAR_TYPES.includes(newColumnType as KustoScalarType)) {
+		throw new Error('Select a supported new column type.');
+	}
+	if (newColumnType === currentColumnType) {
+		throw new Error('Select a different column type.');
+	}
+
+	return {
+		kind: 'change-column-type',
+		command: `.alter column ${tableName}.${quoteKustoEntity(columnName, 'Select a target column.')} type=${newColumnType}`,
+		columnName,
+		currentColumnType,
+		newColumnType: newColumnType as KustoScalarType,
+		risk: 'irreversible',
+		summary: `${columnName} changed from ${currentColumnType} to ${newColumnType}`
+	};
+}
+
+/** Computes an identity-aware before/after schema diff. */
+export function diffTableSchema(
+	originalColumns: readonly TableSchemaColumnSnapshot[],
+	nextColumns: readonly TableSchemaColumnDraft[]
+): TableSchemaDiff {
+	const draftBySource = new Map<number, { column: TableSchemaColumnDraft; index: number }>();
+	for (const [index, column] of nextColumns.entries()) {
+		if (column.sourceIndex != null && !draftBySource.has(column.sourceIndex)) {
+			draftBySource.set(column.sourceIndex, { column, index });
+		}
+	}
+
+	const retainedSourceIndexes = originalColumns
+		.map((_, index) => index)
+		.filter((index) => draftBySource.has(index));
+	const retainedOrder = nextColumns
+		.filter((column) => column.sourceIndex != null && draftBySource.has(column.sourceIndex))
+		.map((column) => column.sourceIndex as number);
+	const reorderedSources = new Set(
+		retainedOrder.filter((sourceIndex, index) => retainedSourceIndexes[index] !== sourceIndex)
+	);
+
+	const rows: TableSchemaDiffRow[] = originalColumns.map((before, sourceIndex) => {
+		const draft = draftBySource.get(sourceIndex);
+		const beforeColumn = { ...before, index: sourceIndex };
+		if (!draft) {
+			return {
+				sourceIndex,
+				before: beforeColumn,
+				changes: ['removed']
+			};
+		}
+
+		const changes: TableSchemaChangeKind[] = [];
+		if (before.name !== draft.column.name.trim()) changes.push('renamed');
+		if (before.type !== draft.column.type) changes.push('type-changed');
+		if (reorderedSources.has(sourceIndex)) changes.push('reordered');
+		return {
+			sourceIndex,
+			before: beforeColumn,
+			after: {
+				name: draft.column.name.trim(),
+				type: draft.column.type,
+				index: draft.index
+			},
+			changes
+		};
+	});
+
+	for (const [index, column] of nextColumns.entries()) {
+		if (column.sourceIndex == null) {
+			rows.push({
+				after: { name: column.name.trim(), type: column.type, index },
+				changes: ['added']
+			});
+		}
+	}
+
+	const counts: Record<TableSchemaChangeKind, number> = {
+		added: 0,
+		removed: 0,
+		reordered: 0,
+		renamed: 0,
+		'type-changed': 0
+	};
+	for (const row of rows) {
+		for (const change of row.changes) counts[change] += 1;
+	}
+
+	return {
+		rows,
+		counts,
+		hasChanges: Object.values(counts).some((count) => count > 0)
+	};
+}
+
+/**
+ * Builds one complete `.alter table` command from a validated permutation.
+ * Every verified column is included exactly once with its original name and type.
+ */
+export function buildReorderTableColumnsPlan(input: {
+	snapshot: TableSchemaSnapshot;
+	orderedSourceIndexes: readonly number[];
+}): ReorderTableColumnsPlan {
+	const tableName = quoteKustoEntity(input.snapshot.tableName, 'Select a target table.');
+	if (input.orderedSourceIndexes.length !== input.snapshot.columns.length) {
+		throw new Error('The reordered schema must contain every verified column exactly once.');
+	}
+
+	const seenSourceIndexes = new Set<number>();
+	const columns: NewTableColumn[] = input.orderedSourceIndexes.map((sourceIndex) => {
+		if (
+			!Number.isInteger(sourceIndex) ||
+			sourceIndex < 0 ||
+			sourceIndex >= input.snapshot.columns.length ||
+			seenSourceIndexes.has(sourceIndex)
+		) {
+			throw new Error('The reordered schema must contain every verified column exactly once.');
+		}
+		seenSourceIndexes.add(sourceIndex);
+		const column = input.snapshot.columns[sourceIndex];
+		if (!KUSTO_SCALAR_TYPES.includes(column.type as KustoScalarType)) {
+			throw new Error(`“${column.type}” is not a supported Kusto scalar type.`);
+		}
+		return { name: column.name, type: column.type as KustoScalarType };
+	});
+
+	const nextColumns = input.orderedSourceIndexes.map((sourceIndex) => ({
+		sourceIndex,
+		...input.snapshot.columns[sourceIndex]
+	}));
+	const diff = diffTableSchema(input.snapshot.columns, nextColumns);
+	if (!diff.counts.reordered) throw new Error('Change the column order before reviewing.');
+
+	const schema = columns.map(formatColumn).join(', ');
+	const preservedDocstring = input.snapshot.docstring;
+	const preservedFolder = input.snapshot.folder ?? '';
+	const command = `.alter table ${tableName} (${schema}) with (docstring = ${quoteKustoString(preservedDocstring)}, folder = ${quoteKustoString(preservedFolder)})`;
+
+	return {
+		kind: 'reorder-table-columns',
+		command,
+		columns,
+		diff,
+		preservedDocstring,
+		preservedFolder,
+		risk: 'destructive',
+		summary: `${diff.counts.reordered} ${diff.counts.reordered === 1 ? 'column' : 'columns'} reordered`
 	};
 }

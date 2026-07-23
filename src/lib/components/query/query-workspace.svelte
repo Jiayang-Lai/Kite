@@ -559,6 +559,8 @@
 							? 'pointer-events-none h-full min-h-0 rounded-none border-0 opacity-60 shadow-none'
 							: 'h-full min-h-0 rounded-none border-0 shadow-none'}
 						database={databaseSchema[selectedDatabase]}
+						expansionState={explorerExpansion}
+						onexpansionchange={updateExplorerExpansion}
 						bind:selectedTable
 						bind:selectedFunction
 						height="100%"

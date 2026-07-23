@@ -101,12 +101,18 @@
 			<SavedQueriesNav
 				queries={savedQueries}
 				{filter}
+				open={Boolean(filter.trim()) || expansionState.sections['saved-queries']}
+				onopenchange={(open) =>
+					onexpansionchange({ type: 'section', section: 'saved-queries', open })}
 				onselect={selectRecentQuery}
 				delete={onsavedquerydelete}
 			/>
 			<RecentQueriesNav
 				queries={recentQueries}
 				{filter}
+				open={Boolean(filter.trim()) || expansionState.sections['recent-queries']}
+				onopenchange={(open) =>
+					onexpansionchange({ type: 'section', section: 'recent-queries', open })}
 				onselect={selectRecentQuery}
 				delete={onrecentquerydelete}
 			/>

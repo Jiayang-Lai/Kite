@@ -12,12 +12,20 @@
 	type RecentQueriesNavProps = {
 		queries?: ExplorerQuery[];
 		filter?: string;
+		open?: boolean;
+		onopenchange?: (open: boolean) => void;
 		onselect?: (query: ExplorerQuery) => void;
 		delete?: (query: ExplorerQuery) => void;
 	};
 
-	let { queries = [], filter = '', onselect, delete: ondelete }: RecentQueriesNavProps = $props();
-	let open = $state(true);
+	let {
+		queries = [],
+		filter = '',
+		open = false,
+		onopenchange,
+		onselect,
+		delete: ondelete
+	}: RecentQueriesNavProps = $props();
 	const filteredQueries = $derived(
 		queries.filter((query) =>
 			`${query.name} ${query.database}`.toLowerCase().includes(filter.trim().toLowerCase())
@@ -29,7 +37,7 @@
 	}
 </script>
 
-<Collapsible.Root bind:open class="group/collapsible">
+<Collapsible.Root {open} onOpenChange={onopenchange} class="group/collapsible">
 	<Sidebar.Menu>
 		<Sidebar.MenuItem>
 			<Collapsible.Trigger>

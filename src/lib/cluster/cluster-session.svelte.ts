@@ -7,11 +7,15 @@ const CLUSTER_SESSION = Symbol('cluster-session');
 export type ExplorerExpansionState = {
 	databases: Record<string, boolean>;
 	groups: Record<string, boolean>;
+	schemaTables: Record<string, Record<string, boolean>>;
+	sections: Record<'saved-queries' | 'recent-queries', boolean>;
 };
 
 export type ExplorerExpansionChange =
 	| { type: 'database'; database: string; open: boolean }
-	| { type: 'group'; database: string; group: 'tables' | 'functions'; open: boolean };
+	| { type: 'group'; database: string; group: 'tables' | 'functions'; open: boolean }
+	| { type: 'schema-table'; database: string; table: string; open: boolean }
+	| { type: 'section'; section: 'saved-queries' | 'recent-queries'; open: boolean };
 
 export type ClusterSession = {
 	activeClusterId: string;
@@ -33,14 +37,24 @@ export function createClusterSession(initialClusterId: string): ClusterSession {
 	let selectedFunction = $state<string>();
 	let pendingQuery = $state<string>();
 	let explorerExpansionByCluster = $state<Record<string, ExplorerExpansionState>>({
-		[initialClusterId]: { databases: {}, groups: {} }
+		[initialClusterId]: {
+			databases: {},
+			groups: {},
+			schemaTables: {},
+			sections: { 'saved-queries': false, 'recent-queries': false }
+		}
 	});
 
 	function getExplorerExpansion(clusterId: string) {
 		const existing = explorerExpansionByCluster[clusterId];
 		if (existing) return existing;
 
-		const expansion: ExplorerExpansionState = { databases: {}, groups: {} };
+		const expansion: ExplorerExpansionState = {
+			databases: {},
+			groups: {},
+			schemaTables: {},
+			sections: { 'saved-queries': false, 'recent-queries': false }
+		};
 		explorerExpansionByCluster[clusterId] = expansion;
 		return expansion;
 	}
@@ -49,8 +63,13 @@ export function createClusterSession(initialClusterId: string): ClusterSession {
 		const expansion = getExplorerExpansion(clusterId);
 		if (change.type === 'database') {
 			expansion.databases[change.database] = change.open;
-		} else {
+		} else if (change.type === 'group') {
 			expansion.groups[`${change.database}:${change.group}`] = change.open;
+		} else if (change.type === 'schema-table') {
+			const databaseTables = (expansion.schemaTables[change.database] ??= {});
+			databaseTables[change.table] = change.open;
+		} else {
+			expansion.sections[change.section] = change.open;
 		}
 	}
 

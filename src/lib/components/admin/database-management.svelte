@@ -10,7 +10,12 @@
 	import ColumnMutationDialog, {
 		type ColumnMutationAction
 	} from '$lib/components/admin/column-mutation-dialog.svelte';
+	import ColumnOrderDialog from '$lib/components/admin/column-order-dialog.svelte';
 	import TableEditorDialog from '$lib/components/admin/table-editor-dialog.svelte';
+	import type {
+		ExplorerExpansionChange,
+		ExplorerExpansionState
+	} from '$lib/cluster/cluster-session.svelte';
 	import DatabaseSchema from '$lib/components/cluster/database-schema.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -37,6 +42,8 @@
 		selectedDatabase?: string;
 		selectedTable?: string;
 		selectedFunction?: string;
+		expansionState: ExplorerExpansionState;
+		onexpansionchange: (change: ExplorerExpansionChange) => void;
 		clusterId: string;
 		clusterUrl: string;
 		clusterName: string;
@@ -52,6 +59,8 @@
 		selectedDatabase = $bindable(),
 		selectedTable = $bindable(),
 		selectedFunction = $bindable(),
+		expansionState,
+		onexpansionchange,
 		clusterId,
 		clusterUrl,
 		clusterName,
@@ -65,6 +74,7 @@
 	let databaseFilter = $state('');
 	let editorOpen = $state(false);
 	let columnEditorOpen = $state(false);
+	let columnOrderOpen = $state(false);
 	let columnMutationAction = $state<ColumnMutationAction>();
 	let editorTable = $state.raw<KustoTable>();
 	let editorColumn = $state.raw<KustoColumn>();
@@ -79,7 +89,7 @@
 	let mutationRequestId = 0;
 	let wasMutationDialogOpen = false;
 	const isBusy = $derived(isPreparingEditor || isMutating);
-	const isMutationDialogOpen = $derived(editorOpen || columnEditorOpen);
+	const isMutationDialogOpen = $derived(editorOpen || columnEditorOpen || columnOrderOpen);
 	const databaseEntries = $derived(Object.values(databases ?? {}));
 	const visibleDatabases = $derived(
 		databaseEntries.filter((database) =>
@@ -109,6 +119,7 @@
 		if (isMutationDialogOpen && editorClusterId && editorClusterId !== clusterId) {
 			editorOpen = false;
 			columnEditorOpen = false;
+			columnOrderOpen = false;
 			editorTable = undefined;
 			editorColumn = undefined;
 		}
@@ -119,6 +130,7 @@
 		if (isBusy) return;
 		editorOpen = false;
 		columnEditorOpen = false;
+		columnOrderOpen = false;
 		selectedDatabase = databaseName;
 		selectedTable = undefined;
 		selectedFunction = undefined;
@@ -137,6 +149,7 @@
 		mutationError = '';
 		mutationSuccess = '';
 		columnEditorOpen = false;
+		columnOrderOpen = false;
 		editorOpen = true;
 		void prepareTableEditor(canonicalTable, activeDatabase.name);
 	}
@@ -156,7 +169,26 @@
 		mutationError = '';
 		mutationSuccess = '';
 		editorOpen = false;
+		columnOrderOpen = false;
 		columnEditorOpen = true;
+		void prepareTableEditor(canonicalTable, activeDatabase.name);
+	}
+
+	function openColumnOrderEditor(table: KustoTable) {
+		if (!activeDatabase || isMockCluster || isBusy) return;
+		const canonicalTable = activeDatabase.tables.find((item) => item.name === table.name);
+		if (!canonicalTable) return;
+
+		editorTable = canonicalTable;
+		editorColumn = undefined;
+		editorDatabaseName = activeDatabase.name;
+		editorClusterId = clusterId;
+		editorSnapshot = undefined;
+		mutationError = '';
+		mutationSuccess = '';
+		editorOpen = false;
+		columnEditorOpen = false;
+		columnOrderOpen = true;
 		void prepareTableEditor(canonicalTable, activeDatabase.name);
 	}
 
@@ -204,6 +236,7 @@
 				if (closeAfterRefresh) {
 					editorOpen = false;
 					columnEditorOpen = false;
+					columnOrderOpen = false;
 				}
 			}
 		}
@@ -277,6 +310,7 @@
 				if (succeeded) {
 					editorOpen = false;
 					columnEditorOpen = false;
+					columnOrderOpen = false;
 				}
 			}
 		}
@@ -301,18 +335,32 @@
 {/snippet}
 
 {#snippet tableActions(table: KustoTable)}
-	<Button
-		size="xs"
-		variant="outline"
-		disabled={isMockCluster || isBusy}
-		onclick={() => openTableEditor(table)}
-		title={isMockCluster
-			? 'The Mock cluster is read-only'
-			: `Edit ${table.name} without replacing existing columns`}
-	>
-		<PencilIcon />
-		Edit table
-	</Button>
+	<div class="flex items-center gap-1">
+		<Button
+			size="xs"
+			variant="outline"
+			disabled={isMockCluster || isBusy}
+			onclick={() => openTableEditor(table)}
+			title={isMockCluster
+				? 'The Mock cluster is read-only'
+				: `Edit ${table.name} without replacing existing columns`}
+		>
+			<PencilIcon />
+			Edit table
+		</Button>
+		<Button
+			size="xs"
+			variant="outline"
+			disabled={isMockCluster || isBusy}
+			onclick={() => openColumnOrderEditor(table)}
+			title={isMockCluster
+				? 'The Mock cluster is read-only'
+				: `Change the column order for ${table.name}`}
+		>
+			<TablePropertiesIcon />
+			Reorder columns
+		</Button>
+	</div>
 {/snippet}
 
 {#snippet columnActions(table: KustoTable, column: KustoColumn)}
@@ -388,6 +436,8 @@
 			<DatabaseSchema
 				class="min-h-0 flex-1"
 				database={activeDatabase}
+				{expansionState}
+				{onexpansionchange}
 				bind:selectedTable
 				bind:selectedFunction
 				height="100%"
@@ -425,6 +475,22 @@
 {#if editorTable}
 	<TableEditorDialog
 		bind:open={editorOpen}
+		table={editorTable}
+		databaseName={editorDatabaseName}
+		{clusterName}
+		isPreparing={isPreparingEditor}
+		isRunning={isMutating}
+		preflightReady={Boolean(editorSnapshot)}
+		snapshot={editorSnapshot}
+		executionError={mutationError}
+		onsubmit={updateTable}
+		oncancel={cancelActiveOperation}
+	/>
+{/if}
+
+{#if editorTable}
+	<ColumnOrderDialog
+		bind:open={columnOrderOpen}
 		table={editorTable}
 		databaseName={editorDatabaseName}
 		{clusterName}

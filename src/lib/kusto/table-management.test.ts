@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { QueryResult } from '$lib/types/query-result';
 import {
+	buildChangeColumnTypePlan,
 	buildDropColumnPlan,
 	buildRenameColumnPlan,
+	buildReorderTableColumnsPlan,
 	buildTableMutationPlan,
 	buildTablePreflightCommands,
 	compareTableSnapshots,
+	diffTableSchema,
 	parseTablePreflightResults,
 	snapshotLoadedTable,
 	type TableSchemaSnapshot
@@ -198,6 +201,127 @@ describe('table management commands', () => {
 				existingColumnNames: ['Value']
 			})
 		).toThrow('last column');
+	});
+
+	it('builds a quoted irreversible direct column type change', () => {
+		expect(
+			buildChangeColumnTypePlan({
+				tableName: "Today's Metrics",
+				columnName: 'Trace Id',
+				currentColumnType: 'string',
+				newColumnType: 'guid',
+				existingColumnNames: ['Timestamp', 'Trace Id']
+			})
+		).toEqual({
+			kind: 'change-column-type',
+			command: ".alter column ['Today''s Metrics'].['Trace Id'] type=guid",
+			columnName: 'Trace Id',
+			currentColumnType: 'string',
+			newColumnType: 'guid',
+			risk: 'irreversible',
+			summary: 'Trace Id changed from string to guid'
+		});
+	});
+
+	it('rejects missing, unsupported, and unchanged column type changes', () => {
+		const changeType = (columnName: string, newColumnType: string) =>
+			buildChangeColumnTypePlan({
+				tableName: 'Metrics',
+				columnName,
+				currentColumnType: 'real',
+				newColumnType,
+				existingColumnNames: ['Timestamp', 'Value']
+			});
+
+		expect(() => changeType('Missing', 'long')).toThrow('no longer in the table');
+		expect(() => changeType('Value', 'real')).toThrow('different column type');
+		expect(() => changeType('Value', 'string); .drop table Metrics')).toThrow(
+			'supported new column type'
+		);
+	});
+
+	it('computes added, removed, reordered, renamed, and type-changed schema rows', () => {
+		const diff = diffTableSchema(currentPreflight.columns, [
+			{ sourceIndex: 1, name: 'Reading', type: 'long' },
+			{ name: 'Source', type: 'string' }
+		]);
+
+		expect(diff.counts).toEqual({
+			added: 1,
+			removed: 1,
+			reordered: 0,
+			renamed: 1,
+			'type-changed': 1
+		});
+		expect(diff.rows).toEqual([
+			{
+				sourceIndex: 0,
+				before: { name: 'Timestamp', type: 'datetime', index: 0 },
+				changes: ['removed']
+			},
+			{
+				sourceIndex: 1,
+				before: { name: 'Value', type: 'real', index: 1 },
+				after: { name: 'Reading', type: 'long', index: 0 },
+				changes: ['renamed', 'type-changed']
+			},
+			{
+				after: { name: 'Source', type: 'string', index: 1 },
+				changes: ['added']
+			}
+		]);
+	});
+
+	it('detects relative reordering without treating shifts from removal as reorders', () => {
+		expect(
+			diffTableSchema(currentPreflight.columns, [{ sourceIndex: 1, name: 'Value', type: 'real' }])
+				.counts.reordered
+		).toBe(0);
+
+		expect(
+			diffTableSchema(currentPreflight.columns, [
+				{ sourceIndex: 1, name: 'Value', type: 'real' },
+				{ sourceIndex: 0, name: 'Timestamp', type: 'datetime' }
+			]).counts.reordered
+		).toBe(2);
+	});
+
+	it('builds one complete reorder command while preserving metadata', () => {
+		const plan = buildReorderTableColumnsPlan({
+			snapshot: currentPreflight,
+			orderedSourceIndexes: [1, 0]
+		});
+
+		expect(plan).toMatchObject({
+			kind: 'reorder-table-columns',
+			command:
+				".alter table Metrics (Value:real, Timestamp:datetime) with (docstring = 'Telemetry.', folder = 'Operations')",
+			columns: [
+				{ name: 'Value', type: 'real' },
+				{ name: 'Timestamp', type: 'datetime' }
+			],
+			preservedDocstring: 'Telemetry.',
+			preservedFolder: 'Operations',
+			risk: 'destructive',
+			summary: '2 columns reordered'
+		});
+		expect(plan.diff.counts).toEqual({
+			added: 0,
+			removed: 0,
+			reordered: 2,
+			renamed: 0,
+			'type-changed': 0
+		});
+	});
+
+	it('rejects incomplete, duplicate, unknown, and unchanged reorder permutations', () => {
+		const build = (orderedSourceIndexes: readonly number[]) =>
+			buildReorderTableColumnsPlan({ snapshot: currentPreflight, orderedSourceIndexes });
+
+		expect(() => build([0])).toThrow('every verified column exactly once');
+		expect(() => build([0, 0])).toThrow('every verified column exactly once');
+		expect(() => build([0, 2])).toThrow('every verified column exactly once');
+		expect(() => build([0, 1])).toThrow('Change the column order');
 	});
 });
 

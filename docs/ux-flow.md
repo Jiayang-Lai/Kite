@@ -112,8 +112,21 @@ client queries aren't rewritten, and requires typing `RENAME`. Remove previews t
 command, identifies the column type and current table row count, and requires typing the exact
 `Table.Column` target. Removal is marked irreversible because adding a column with the same name
 later can't restore its stored values. Kite conservatively disables removing the final table column.
-Column type conversion is intentionally unsupported; a safe conversion needs a data-preserving
-migration rather than `.alter column`.
+
+Change type selects a different supported scalar type and previews the direct `.alter column`
+command. Kusto doesn't convert existing values: every preexisting value in that column returns
+`null` afterward, and changing back to the original type can't recover the data. The dialog marks
+the operation as irreversible data loss and requires typing `CHANGE TYPE Table.Column`.
+
+The **Reorder columns** action has one purpose: changing the order of every existing column. Names
+and types are locked, and the editor can't add or omit a column. Kite renders an identity-aware
+before/after order diff before review.
+
+The review generates exactly one complete `.alter table` command. A domain guard requires every
+verified column to appear exactly once, with its original name and type, and includes the verified
+`docstring` and `folder` values so they aren't accidentally cleared. It warns operators to stop
+order-dependent ingestion or use mapping objects before reordering. The user must type
+`REORDER TableName` before the command can run.
 
 Table updates run through the Kusto management endpoint and rely on Kusto to enforce Table Admin
 permissions. The selected cluster cannot be changed while an update is running. After a successful

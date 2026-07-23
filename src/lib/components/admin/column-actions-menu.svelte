@@ -1,4 +1,5 @@
 <script lang="ts">
+	import BinaryIcon from '@lucide/svelte/icons/binary';
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import FilePenLineIcon from '@lucide/svelte/icons/file-pen-line';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
@@ -40,15 +41,15 @@
 		{/snippet}
 	</DropdownMenu.Trigger>
 	<DropdownMenu.Content align="end" class="w-52">
-		<DropdownMenu.Label class="truncate" title={column.name}>{column.name}</DropdownMenu.Label>
+		<DropdownMenu.Label class="truncate" title={column.name}>Action for column {column.name}</DropdownMenu.Label>
 		<DropdownMenu.Separator />
 		<DropdownMenu.Item onSelect={() => selectAction('rename')}>
 			<FilePenLineIcon />
 			Rename column
 		</DropdownMenu.Item>
-		<DropdownMenu.Item disabled>
+		<DropdownMenu.Item variant="destructive" onSelect={() => selectAction('change-type')}>
+			<BinaryIcon />
 			Change type
-			<DropdownMenu.Shortcut>Unsupported</DropdownMenu.Shortcut>
 		</DropdownMenu.Item>
 		<DropdownMenu.Separator />
 		<DropdownMenu.Item

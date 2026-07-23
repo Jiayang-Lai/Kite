@@ -102,7 +102,12 @@ also loads the active cluster schema so Explorer content is available.
 ## Database and table management
 
 `/admin/databases` browses the active cluster schema and provides structured updates for existing
-tables on remote connections. The table editor can update a table description and append columns.
+tables on remote connections. **New table** creates an empty table in the selected database with a
+validated name, ordered initial columns, and optional description and folder. The dialog previews
+the single `.create table` command and requires typing `CREATE TableName`. Immediately before
+execution, Kite refreshes the database schema and blocks creation if that name is now occupied.
+
+The table editor can update a table description and append columns.
 The editor shows the generated management command and requires typing `RUN` before execution. The
 Mock cluster remains schema-only.
 

@@ -22,6 +22,17 @@ export type NewTableColumn = {
 	type: KustoScalarType;
 };
 
+export type CreateTablePlan = {
+	kind: 'create-table';
+	command: string;
+	tableName: string;
+	columns: readonly NewTableColumn[];
+	docstring: string;
+	folder: string;
+	risk: 'safe';
+	summary: string;
+};
+
 export type TableSchemaColumnDraft = {
 	/** Index of the original column represented by this row; absent for a new column. */
 	sourceIndex?: number;
@@ -177,6 +188,46 @@ function validateColumns(
 
 function formatColumn(column: NewTableColumn) {
 	return `${quoteKustoEntity(column.name, 'Enter a column name.')}:${column.type}`;
+}
+
+/** Builds one empty table creation command with an explicit initial schema. */
+export function buildCreateTablePlan(input: {
+	tableName: string;
+	existingTableNames: readonly string[];
+	columns: readonly NewTableColumn[];
+	docstring?: string;
+	folder?: string;
+}): CreateTablePlan {
+	const tableName = input.tableName.trim();
+	const quotedTableName = quoteKustoEntity(tableName, 'Enter a table name.');
+	if (
+		input.existingTableNames.some(
+			(existingName) => existingName.trim().toLowerCase() === tableName.toLowerCase()
+		)
+	) {
+		throw new Error(`Table “${tableName}” already exists in this database.`);
+	}
+	if (!input.columns.length) throw new Error('Add at least one column.');
+
+	const columns = validateColumns([], input.columns);
+	const docstring = input.docstring?.trim() ?? '';
+	const folder = input.folder?.trim() ?? '';
+	const properties = [
+		docstring ? `docstring = ${quoteKustoString(docstring)}` : '',
+		folder ? `folder = ${quoteKustoString(folder)}` : ''
+	].filter(Boolean);
+	const withClause = properties.length ? ` with (${properties.join(', ')})` : '';
+
+	return {
+		kind: 'create-table',
+		command: `.create table ${quotedTableName} (${columns.map(formatColumn).join(', ')})${withClause}`,
+		tableName,
+		columns,
+		docstring,
+		folder,
+		risk: 'safe',
+		summary: `created with ${columns.length} ${columns.length === 1 ? 'column' : 'columns'}`
+	};
 }
 
 function firstResultRecord(result: QueryResult) {

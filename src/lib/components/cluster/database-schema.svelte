@@ -199,14 +199,14 @@
 					</p>
 				</div>
 			</div>
-			<div class="flex shrink-0 items-center gap-1">
+			<div class="flex shrink-0 items-center gap-1.5">
 				{@render headerActions?.()}
 				{#if filter.trim() && !focusedFunction}
 					<Badge variant="outline">Matches expanded</Badge>
 				{:else if selectedTable || selectedFunction}
-					<Button variant="ghost" size="xs" onclick={showAllObjects}>Show all</Button>
+					<Button variant="ghost" size="sm" onclick={showAllObjects}>Show all</Button>
 				{:else}
-					<Button variant="ghost" size="xs" onclick={toggleAllTables}>
+					<Button variant="ghost" size="sm" onclick={toggleAllTables}>
 						{allTablesExpanded ? 'Collapse all' : 'Expand all'}
 					</Button>
 				{/if}

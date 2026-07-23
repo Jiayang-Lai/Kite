@@ -84,6 +84,7 @@ This writes `src/lib/generated/kusto-documentation-index.ts` and the Markdown fi
     - [ ] Kusto Admin Page:
       - [x] Allows user to run management commands
       - [ ] Allows user to manage databases and tables etc (read and write)
+        - [x] Create empty tables with an explicit initial schema and metadata
         - [x] Update table descriptions and append columns
         - [x] Block stale table updates with execution-time schema preflights
         - [x] Rename columns with dependency warnings and explicit confirmation

@@ -2,15 +2,17 @@
 	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import FileCode2Icon from '@lucide/svelte/icons/file-code-2';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
+	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import TablePropertiesIcon from '@lucide/svelte/icons/table-properties';
-	import { onDestroy } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
 
 	import ColumnActionsMenu from '$lib/components/admin/column-actions-menu.svelte';
 	import ColumnMutationDialog, {
 		type ColumnMutationAction
 	} from '$lib/components/admin/column-mutation-dialog.svelte';
 	import ColumnOrderDialog from '$lib/components/admin/column-order-dialog.svelte';
+	import CreateTableDialog from '$lib/components/admin/create-table-dialog.svelte';
 	import TableEditorDialog from '$lib/components/admin/table-editor-dialog.svelte';
 	import type {
 		ExplorerExpansionChange,
@@ -32,6 +34,7 @@
 		compareTableSnapshots,
 		parseTablePreflightResults,
 		snapshotLoadedTable,
+		type CreateTablePlan,
 		type TableMutationPlan,
 		type TableSchemaSnapshot
 	} from '$lib/kusto/table-management';
@@ -75,6 +78,7 @@
 	let editorOpen = $state(false);
 	let columnEditorOpen = $state(false);
 	let columnOrderOpen = $state(false);
+	let createTableOpen = $state(false);
 	let columnMutationAction = $state<ColumnMutationAction>();
 	let editorTable = $state.raw<KustoTable>();
 	let editorColumn = $state.raw<KustoColumn>();
@@ -85,11 +89,15 @@
 	let mutationSuccess = $state('');
 	let isPreparingEditor = $state(false);
 	let isMutating = $state(false);
+	let isCreatingTable = $state(false);
+	let createTableError = $state('');
 	let activeCancel: (() => void) | undefined;
 	let mutationRequestId = 0;
 	let wasMutationDialogOpen = false;
-	const isBusy = $derived(isPreparingEditor || isMutating);
-	const isMutationDialogOpen = $derived(editorOpen || columnEditorOpen || columnOrderOpen);
+	const isBusy = $derived(isPreparingEditor || isMutating || isCreatingTable);
+	const isMutationDialogOpen = $derived(
+		editorOpen || columnEditorOpen || columnOrderOpen || createTableOpen
+	);
 	const databaseEntries = $derived(Object.values(databases ?? {}));
 	const visibleDatabases = $derived(
 		databaseEntries.filter((database) =>
@@ -120,6 +128,7 @@
 			editorOpen = false;
 			columnEditorOpen = false;
 			columnOrderOpen = false;
+			createTableOpen = false;
 			editorTable = undefined;
 			editorColumn = undefined;
 		}
@@ -131,6 +140,7 @@
 		editorOpen = false;
 		columnEditorOpen = false;
 		columnOrderOpen = false;
+		createTableOpen = false;
 		selectedDatabase = databaseName;
 		selectedTable = undefined;
 		selectedFunction = undefined;
@@ -148,6 +158,7 @@
 		editorSnapshot = undefined;
 		mutationError = '';
 		mutationSuccess = '';
+		createTableOpen = false;
 		columnEditorOpen = false;
 		columnOrderOpen = false;
 		editorOpen = true;
@@ -168,6 +179,7 @@
 		editorSnapshot = undefined;
 		mutationError = '';
 		mutationSuccess = '';
+		createTableOpen = false;
 		editorOpen = false;
 		columnOrderOpen = false;
 		columnEditorOpen = true;
@@ -186,10 +198,27 @@
 		editorSnapshot = undefined;
 		mutationError = '';
 		mutationSuccess = '';
+		createTableOpen = false;
 		editorOpen = false;
 		columnEditorOpen = false;
 		columnOrderOpen = true;
 		void prepareTableEditor(canonicalTable, activeDatabase.name);
+	}
+
+	function openCreateTableDialog() {
+		if (!activeDatabase || isMockCluster || isBusy) return;
+		editorDatabaseName = activeDatabase.name;
+		editorClusterId = clusterId;
+		editorTable = undefined;
+		editorColumn = undefined;
+		editorSnapshot = undefined;
+		mutationError = '';
+		createTableError = '';
+		mutationSuccess = '';
+		editorOpen = false;
+		columnEditorOpen = false;
+		columnOrderOpen = false;
+		createTableOpen = true;
 	}
 
 	async function prepareTableEditor(table: KustoTable, databaseName: string) {
@@ -316,6 +345,82 @@
 		}
 	}
 
+	async function createTable(plan: CreateTablePlan) {
+		if (!editorDatabaseName || isMockCluster || isBusy) return;
+
+		const requestId = ++mutationRequestId;
+		const targetClusterId = clusterId;
+		const targetClusterUrl = clusterUrl;
+		const targetDatabase = editorDatabaseName;
+		let commandCompleted = false;
+		let succeeded = false;
+
+		createTableError = '';
+		mutationSuccess = '';
+		isCreatingTable = true;
+		onmutationstatechange?.(true);
+		try {
+			await onrefreshschema?.(targetClusterId);
+			await tick();
+			if (requestId !== mutationRequestId) return;
+
+			const refreshedDatabase = databases?.[targetDatabase];
+			if (
+				refreshedDatabase?.tables.some(
+					(table) => table.name.toLowerCase() === plan.tableName.toLowerCase()
+				)
+			) {
+				createTableError = `Creation blocked because “${plan.tableName}” now exists in ${targetDatabase}. Choose another name.`;
+				return;
+			}
+
+			const execution = startKustoManagementCommand(targetDatabase, plan.command, targetClusterUrl);
+			activeCancel = execution.cancel;
+			await execution.promise;
+			if (requestId !== mutationRequestId) return;
+			commandCompleted = true;
+
+			await onrefreshschema?.(targetClusterId);
+			await tick();
+			if (requestId !== mutationRequestId) return;
+
+			const createdTable = databases?.[targetDatabase]?.tables.find(
+				(table) => table.name === plan.tableName
+			);
+			const schemaMatches =
+				createdTable?.columns.length === plan.columns.length &&
+				createdTable.columns.every(
+					(column, index) =>
+						column.name === plan.columns[index].name && column.type === plan.columns[index].type
+				);
+			if (!createdTable || !schemaMatches || (createdTable.docstring ?? '') !== plan.docstring) {
+				createTableError = `The create command completed, but ${targetDatabase}.${plan.tableName} does not match the reviewed schema and description. Another client may have claimed this name; Kite did not replace that table.`;
+				return;
+			}
+
+			selectedDatabase = targetDatabase;
+			selectedTable = plan.tableName;
+			selectedFunction = undefined;
+			mutationSuccess = `${targetDatabase}.${plan.tableName}: ${plan.summary}.`;
+			succeeded = true;
+		} catch (error) {
+			if (requestId !== mutationRequestId) return;
+			const message = getKustoErrorMessage(error);
+			createTableError = commandCompleted
+				? `The create command completed, but Kite could not refresh and verify the table. Reconnect or refresh before continuing.\n\n${message}`
+				: message === 'Command cancelled.'
+					? 'Stopped waiting for creation. The Kusto operation may still complete; refresh the schema before retrying.'
+					: message;
+		} finally {
+			if (requestId === mutationRequestId) {
+				activeCancel = undefined;
+				isCreatingTable = false;
+				onmutationstatechange?.(false);
+				if (succeeded) createTableOpen = false;
+			}
+		}
+	}
+
 	function cancelActiveOperation() {
 		activeCancel?.();
 	}
@@ -328,7 +433,19 @@
 </script>
 
 {#snippet schemaActions()}
-	<Button size="xs" variant="outline" onclick={() => onopenquery?.()}>
+	<Button
+		size="sm"
+		variant="outline"
+		disabled={isMockCluster || isBusy}
+		onclick={openCreateTableDialog}
+		title={isMockCluster
+			? 'The Mock cluster is read-only'
+			: `Create a table in ${activeDatabase?.name}`}
+	>
+		<PlusIcon />
+		New table
+	</Button>
+	<Button size="sm" variant="outline" onclick={() => onopenquery?.()}>
 		<FileCode2Icon />
 		Open in Query
 	</Button>
@@ -471,6 +588,19 @@
 		{/if}
 	</div>
 </section>
+
+{#if editorDatabaseName}
+	<CreateTableDialog
+		bind:open={createTableOpen}
+		databaseName={editorDatabaseName}
+		{clusterName}
+		existingTableNames={databases?.[editorDatabaseName]?.tables.map((table) => table.name) ?? []}
+		isRunning={isCreatingTable}
+		executionError={createTableError}
+		onsubmit={createTable}
+		oncancel={cancelActiveOperation}
+	/>
+{/if}
 
 {#if editorTable}
 	<TableEditorDialog

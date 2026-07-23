@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { QueryResult } from '$lib/types/query-result';
 import {
 	buildChangeColumnTypePlan,
+	buildCreateTablePlan,
 	buildDropColumnPlan,
 	buildRenameColumnPlan,
 	buildReorderTableColumnsPlan,
@@ -42,6 +43,59 @@ const currentPreflight: TableSchemaSnapshot = {
 };
 
 describe('table management commands', () => {
+	it('builds a quoted table creation with columns and metadata', () => {
+		expect(
+			buildCreateTablePlan({
+				tableName: "Today's Events",
+				existingTableNames: ['Metrics'],
+				columns: [
+					{ name: 'Timestamp', type: 'datetime' },
+					{ name: 'Trace Id', type: 'guid' }
+				],
+				docstring: "Today's telemetry",
+				folder: 'Operations'
+			})
+		).toEqual({
+			kind: 'create-table',
+			command:
+				".create table ['Today''s Events'] (Timestamp:datetime, ['Trace Id']:guid) with (docstring = 'Today''s telemetry', folder = 'Operations')",
+			tableName: "Today's Events",
+			columns: [
+				{ name: 'Timestamp', type: 'datetime' },
+				{ name: 'Trace Id', type: 'guid' }
+			],
+			docstring: "Today's telemetry",
+			folder: 'Operations',
+			risk: 'safe',
+			summary: 'created with 2 columns'
+		});
+	});
+
+	it('rejects invalid table creation drafts', () => {
+		const build = (
+			tableName: string,
+			columns: Parameters<typeof buildCreateTablePlan>[0]['columns']
+		) =>
+			buildCreateTablePlan({
+				tableName,
+				existingTableNames: ['Metrics'],
+				columns
+			});
+
+		expect(() => build('', [{ name: 'Value', type: 'long' }])).toThrow('table name');
+		expect(() => build('metrics', [{ name: 'Value', type: 'long' }])).toThrow('already exists');
+		expect(() => build('Events', [])).toThrow('at least one column');
+		expect(() =>
+			build('Events', [
+				{ name: 'Value', type: 'long' },
+				{ name: 'value', type: 'string' }
+			])
+		).toThrow('must be unique');
+		expect(() =>
+			build('Events', [{ name: 'Value', type: 'string); .drop table Metrics' as 'string' }])
+		).toThrow('not a supported Kusto scalar type');
+	});
+
 	it('builds an additive schema update without repeating existing columns', () => {
 		expect(
 			buildTableMutationPlan({

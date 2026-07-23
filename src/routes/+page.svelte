@@ -40,7 +40,7 @@
 			Kite
 		</header>
 
-		<section class="py-14 sm:py-20 lg:py-24">
+		<section class="py-14 sm:py-20 lg:py-[clamp(3rem,8dvh,6rem)]">
 			<div
 				class="grid items-center gap-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)] lg:gap-16"
 			>

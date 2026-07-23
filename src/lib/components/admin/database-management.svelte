@@ -1,24 +1,50 @@
 <script lang="ts">
 	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import FileCode2Icon from '@lucide/svelte/icons/file-code-2';
+	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import TablePropertiesIcon from '@lucide/svelte/icons/table-properties';
+	import { onDestroy } from 'svelte';
 
+	import ColumnActionsMenu from '$lib/components/admin/column-actions-menu.svelte';
+	import ColumnMutationDialog, {
+		type ColumnMutationAction
+	} from '$lib/components/admin/column-mutation-dialog.svelte';
+	import TableEditorDialog from '$lib/components/admin/table-editor-dialog.svelte';
 	import DatabaseSchema from '$lib/components/cluster/database-schema.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { Skeleton } from '$lib/components/ui/skeleton';
-	import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
+	import {
+		getKustoErrorMessage,
+		startKustoManagementCommand,
+		startKustoReadOnlyManagementCommandBatch
+	} from '$lib/kusto/query-client';
+	import {
+		buildTablePreflightCommands,
+		compareTableSnapshots,
+		parseTablePreflightResults,
+		snapshotLoadedTable,
+		type TableMutationPlan,
+		type TableSchemaSnapshot
+	} from '$lib/kusto/table-management';
+	import type { KustoColumn, KustoDatabaseSchema, KustoTable } from '$lib/types/kusto-schema';
 
 	type DatabaseManagementProps = {
 		databases?: KustoDatabaseSchema;
 		selectedDatabase?: string;
 		selectedTable?: string;
 		selectedFunction?: string;
+		clusterId: string;
+		clusterUrl: string;
+		clusterName: string;
+		isMockCluster?: boolean;
 		isLoading?: boolean;
 		onopenquery?: () => void;
+		onrefreshschema?: (clusterId: string) => Promise<void> | void;
+		onmutationstatechange?: (running: boolean) => void;
 	};
 
 	let {
@@ -26,11 +52,34 @@
 		selectedDatabase = $bindable(),
 		selectedTable = $bindable(),
 		selectedFunction = $bindable(),
+		clusterId,
+		clusterUrl,
+		clusterName,
+		isMockCluster = false,
 		isLoading = false,
-		onopenquery
+		onopenquery,
+		onrefreshschema,
+		onmutationstatechange
 	}: DatabaseManagementProps = $props();
 
 	let databaseFilter = $state('');
+	let editorOpen = $state(false);
+	let columnEditorOpen = $state(false);
+	let columnMutationAction = $state<ColumnMutationAction>();
+	let editorTable = $state.raw<KustoTable>();
+	let editorColumn = $state.raw<KustoColumn>();
+	let editorDatabaseName = $state('');
+	let editorClusterId = $state('');
+	let editorSnapshot = $state.raw<TableSchemaSnapshot>();
+	let mutationError = $state('');
+	let mutationSuccess = $state('');
+	let isPreparingEditor = $state(false);
+	let isMutating = $state(false);
+	let activeCancel: (() => void) | undefined;
+	let mutationRequestId = 0;
+	let wasMutationDialogOpen = false;
+	const isBusy = $derived(isPreparingEditor || isMutating);
+	const isMutationDialogOpen = $derived(editorOpen || columnEditorOpen);
 	const databaseEntries = $derived(Object.values(databases ?? {}));
 	const visibleDatabases = $derived(
 		databaseEntries.filter((database) =>
@@ -50,12 +99,198 @@
 		}
 	});
 
+	$effect(() => {
+		const isOpen = isMutationDialogOpen;
+		if (wasMutationDialogOpen && !isOpen && isBusy) cancelActiveOperation();
+		wasMutationDialogOpen = isOpen;
+	});
+
+	$effect(() => {
+		if (isMutationDialogOpen && editorClusterId && editorClusterId !== clusterId) {
+			editorOpen = false;
+			columnEditorOpen = false;
+			editorTable = undefined;
+			editorColumn = undefined;
+		}
+	});
+
 	function selectDatabase(databaseName: string) {
 		if (databaseName === selectedDatabase) return;
+		if (isBusy) return;
+		editorOpen = false;
+		columnEditorOpen = false;
 		selectedDatabase = databaseName;
 		selectedTable = undefined;
 		selectedFunction = undefined;
 	}
+
+	function openTableEditor(table: KustoTable) {
+		if (!activeDatabase || isMockCluster || isBusy) return;
+		const canonicalTable = activeDatabase.tables.find((item) => item.name === table.name);
+		if (!canonicalTable) return;
+
+		editorTable = canonicalTable;
+		editorColumn = undefined;
+		editorDatabaseName = activeDatabase.name;
+		editorClusterId = clusterId;
+		editorSnapshot = undefined;
+		mutationError = '';
+		mutationSuccess = '';
+		columnEditorOpen = false;
+		editorOpen = true;
+		void prepareTableEditor(canonicalTable, activeDatabase.name);
+	}
+
+	function openColumnEditor(table: KustoTable, column: KustoColumn, action: ColumnMutationAction) {
+		if (!activeDatabase || isMockCluster || isBusy) return;
+		const canonicalTable = activeDatabase.tables.find((item) => item.name === table.name);
+		const canonicalColumn = canonicalTable?.columns.find((item) => item.name === column.name);
+		if (!canonicalTable || !canonicalColumn) return;
+
+		editorTable = canonicalTable;
+		editorColumn = canonicalColumn;
+		columnMutationAction = action;
+		editorDatabaseName = activeDatabase.name;
+		editorClusterId = clusterId;
+		editorSnapshot = undefined;
+		mutationError = '';
+		mutationSuccess = '';
+		editorOpen = false;
+		columnEditorOpen = true;
+		void prepareTableEditor(canonicalTable, activeDatabase.name);
+	}
+
+	async function prepareTableEditor(table: KustoTable, databaseName: string) {
+		const requestId = ++mutationRequestId;
+		const targetClusterId = clusterId;
+		const targetClusterUrl = clusterUrl;
+		const loadedSnapshot = snapshotLoadedTable(databaseName, table);
+		let closeAfterRefresh = false;
+
+		isPreparingEditor = true;
+		onmutationstatechange?.(true);
+		try {
+			const execution = startKustoReadOnlyManagementCommandBatch(
+				databaseName,
+				buildTablePreflightCommands(table.name),
+				targetClusterUrl
+			);
+			activeCancel = execution.cancel;
+			const results = await execution.promise;
+			if (requestId !== mutationRequestId) return;
+
+			const currentSnapshot = parseTablePreflightResults(results);
+			const conflicts = compareTableSnapshots(loadedSnapshot, currentSnapshot);
+			if (conflicts.length) {
+				await onrefreshschema?.(targetClusterId);
+				if (requestId !== mutationRequestId) return;
+				mutationSuccess =
+					'The table changed after the schema was loaded. Kite refreshed the schema; reopen the editor to continue.';
+				closeAfterRefresh = true;
+				return;
+			}
+			editorSnapshot = currentSnapshot;
+		} catch (error) {
+			if (requestId !== mutationRequestId) return;
+			const message = getKustoErrorMessage(error);
+			if (message !== 'Command cancelled.') {
+				mutationError = `Kite could not verify the current table schema. The update is disabled until verification succeeds.\n\n${message}`;
+			}
+		} finally {
+			if (requestId === mutationRequestId) {
+				activeCancel = undefined;
+				isPreparingEditor = false;
+				onmutationstatechange?.(false);
+				if (closeAfterRefresh) {
+					editorOpen = false;
+					columnEditorOpen = false;
+				}
+			}
+		}
+	}
+
+	async function updateTable(plan: TableMutationPlan) {
+		if (!editorTable || !editorDatabaseName || !editorSnapshot || isMockCluster || isBusy) {
+			return;
+		}
+
+		const requestId = ++mutationRequestId;
+		const targetClusterId = clusterId;
+		const targetClusterUrl = clusterUrl;
+		const targetDatabase = editorDatabaseName;
+		const targetTable = editorTable.name;
+		const originalSnapshot = editorSnapshot;
+		let commandCompleted = false;
+		let succeeded = false;
+
+		mutationError = '';
+		mutationSuccess = '';
+		isMutating = true;
+		onmutationstatechange?.(true);
+		try {
+			const preflight = startKustoReadOnlyManagementCommandBatch(
+				targetDatabase,
+				buildTablePreflightCommands(targetTable),
+				targetClusterUrl
+			);
+			activeCancel = preflight.cancel;
+			const preflightResults = await preflight.promise;
+			if (requestId !== mutationRequestId) return;
+
+			const currentSnapshot = parseTablePreflightResults(preflightResults);
+			const conflicts = compareTableSnapshots(originalSnapshot, currentSnapshot);
+			if (conflicts.length) {
+				editorSnapshot = undefined;
+				mutationError = `Update blocked because the table changed while this editor was open:\n\n${conflicts.map((conflict) => `• ${conflict.message}`).join('\n')}\n\nClose and reopen the editor to review the latest schema.`;
+				try {
+					await onrefreshschema?.(targetClusterId);
+				} catch (error) {
+					mutationError += `\n\nKite also could not refresh the schema:\n${getKustoErrorMessage(error)}`;
+				}
+				return;
+			}
+
+			const execution = startKustoManagementCommand(targetDatabase, plan.command, targetClusterUrl);
+			activeCancel = execution.cancel;
+			await execution.promise;
+			if (requestId !== mutationRequestId) return;
+			commandCompleted = true;
+
+			await onrefreshschema?.(targetClusterId);
+			if (requestId !== mutationRequestId) return;
+
+			mutationSuccess = `${targetDatabase}.${targetTable}: ${plan.summary}.`;
+			succeeded = true;
+		} catch (error) {
+			if (requestId !== mutationRequestId) return;
+			const message = getKustoErrorMessage(error);
+			mutationError = commandCompleted
+				? `The table update completed, but Kite could not refresh the schema. Reconnect or refresh before making another change.\n\n${message}`
+				: message === 'Command cancelled.'
+					? 'Stopped waiting for the update. The Kusto operation may still complete; refresh the schema before retrying.'
+					: message;
+		} finally {
+			if (requestId === mutationRequestId) {
+				activeCancel = undefined;
+				isMutating = false;
+				onmutationstatechange?.(false);
+				if (succeeded) {
+					editorOpen = false;
+					columnEditorOpen = false;
+				}
+			}
+		}
+	}
+
+	function cancelActiveOperation() {
+		activeCancel?.();
+	}
+
+	onDestroy(() => {
+		mutationRequestId += 1;
+		activeCancel?.();
+		onmutationstatechange?.(false);
+	});
 </script>
 
 {#snippet schemaActions()}
@@ -63,6 +298,34 @@
 		<FileCode2Icon />
 		Open in Query
 	</Button>
+{/snippet}
+
+{#snippet tableActions(table: KustoTable)}
+	<Button
+		size="xs"
+		variant="outline"
+		disabled={isMockCluster || isBusy}
+		onclick={() => openTableEditor(table)}
+		title={isMockCluster
+			? 'The Mock cluster is read-only'
+			: `Edit ${table.name} without replacing existing columns`}
+	>
+		<PencilIcon />
+		Edit table
+	</Button>
+{/snippet}
+
+{#snippet columnActions(table: KustoTable, column: KustoColumn)}
+	{@const canonicalTable =
+		activeDatabase?.tables.find((candidate) => candidate.name === table.name) ?? table}
+	{@const canonicalColumn =
+		canonicalTable.columns.find((candidate) => candidate.name === column.name) ?? column}
+	<ColumnActionsMenu
+		table={canonicalTable}
+		column={canonicalColumn}
+		disabled={isMockCluster || isBusy}
+		onaction={(action) => openColumnEditor(canonicalTable, canonicalColumn, action)}
+	/>
 {/snippet}
 
 <section class="flex min-h-0 flex-1 flex-col gap-2 lg:flex-row">
@@ -110,6 +373,18 @@
 
 	<div class="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
 		{#if activeDatabase}
+			{#if isMockCluster}
+				<p class="text-muted-foreground rounded-lg border bg-muted/20 px-3 py-2 text-xs">
+					The Mock cluster is schema-only. Select a connected cluster to update tables.
+				</p>
+			{:else if mutationSuccess}
+				<p
+					class="border-primary/20 bg-primary/5 text-foreground rounded-lg border px-3 py-2 text-xs"
+					role="status"
+				>
+					{mutationSuccess}
+				</p>
+			{/if}
 			<DatabaseSchema
 				class="min-h-0 flex-1"
 				database={activeDatabase}
@@ -117,6 +392,8 @@
 				bind:selectedFunction
 				height="100%"
 				headerActions={schemaActions}
+				{tableActions}
+				{columnActions}
 			/>
 		{:else if isLoading}
 			<Card.Root class="min-h-0 flex-1">
@@ -144,3 +421,37 @@
 		{/if}
 	</div>
 </section>
+
+{#if editorTable}
+	<TableEditorDialog
+		bind:open={editorOpen}
+		table={editorTable}
+		databaseName={editorDatabaseName}
+		{clusterName}
+		isPreparing={isPreparingEditor}
+		isRunning={isMutating}
+		preflightReady={Boolean(editorSnapshot)}
+		snapshot={editorSnapshot}
+		executionError={mutationError}
+		onsubmit={updateTable}
+		oncancel={cancelActiveOperation}
+	/>
+{/if}
+
+{#if editorTable && editorColumn && columnMutationAction}
+	<ColumnMutationDialog
+		bind:open={columnEditorOpen}
+		action={columnMutationAction}
+		table={editorTable}
+		column={editorColumn}
+		databaseName={editorDatabaseName}
+		{clusterName}
+		isPreparing={isPreparingEditor}
+		isRunning={isMutating}
+		preflightReady={Boolean(editorSnapshot)}
+		snapshot={editorSnapshot}
+		executionError={mutationError}
+		onsubmit={updateTable}
+		oncancel={cancelActiveOperation}
+	/>
+{/if}

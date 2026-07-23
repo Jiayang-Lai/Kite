@@ -45,6 +45,7 @@
 	);
 	let connectionError = $state('');
 	let isClusterSwitching = $state(false);
+	let isTableMutating = $state(false);
 	let selectedClusterId = $state(clusterSession.activeClusterId);
 	let failedClusterId = $state<string>();
 	let schemaRequestId = 0;
@@ -95,7 +96,7 @@
 			databases: {
 				title: 'Databases & tables',
 				description:
-					'Browse database schemas, tables, and stored functions for the selected cluster.'
+					'Browse database schemas, update tables, and inspect stored functions for the selected cluster.'
 			},
 			ingestion: {
 				title: 'Data ingestion',
@@ -139,7 +140,7 @@
 	async function connectCluster(clusterId = selectedClusterId) {
 		const requestId = ++schemaRequestId;
 		const cluster = clusters.find((item) => item.id === clusterId);
-		if (!cluster) return;
+		if (!cluster) return false;
 
 		connectionStatus = 'loading';
 		isClusterSwitching = Boolean(clusterSession.databaseSchema);
@@ -149,7 +150,7 @@
 				cluster.url === MOCK_KUSTO_CLUSTER_URL
 					? MOCK_DATABASES
 					: await loadBackendSchema(cluster.url);
-			if (requestId !== schemaRequestId || clusterId !== selectedClusterId) return;
+			if (requestId !== schemaRequestId || clusterId !== selectedClusterId) return false;
 			const firstDatabase = Object.values(schema)[0];
 			const shouldRestoreSelection = clusterId === clusterSession.activeClusterId;
 			const activeDatabase = shouldRestoreSelection
@@ -174,13 +175,15 @@
 			connectionStatus = 'ready';
 			isClusterSwitching = false;
 			failedClusterId = undefined;
+			return true;
 		} catch (error) {
-			if (requestId !== schemaRequestId) return;
+			if (requestId !== schemaRequestId) return false;
 			connectionError = getKustoErrorMessage(error);
 			connectionStatus = 'error';
 			isClusterSwitching = false;
 			failedClusterId = clusterId;
 			selectedClusterId = clusterSession.activeClusterId;
+			return false;
 		}
 	}
 
@@ -221,7 +224,7 @@
 	<ClusterConnectionSelector
 		{clusters}
 		{selectedClusterId}
-		disabled={isClusterSwitching}
+		disabled={isClusterSwitching || isTableMutating}
 		onclusterchange={switchCluster}
 	/>
 {/snippet}
@@ -231,7 +234,7 @@
 		databases={databaseSchema ?? {}}
 		{connectionStatus}
 		showCluster
-		clusterDisabled={isClusterSwitching || connectionStatus === 'loading'}
+		clusterDisabled={isClusterSwitching || isTableMutating || connectionStatus === 'loading'}
 		bind:selectedDatabase
 		bind:selectedTable
 		bind:selectedFunction
@@ -277,7 +280,17 @@
 			bind:selectedDatabase
 			bind:selectedTable
 			bind:selectedFunction
+			clusterId={clusterSession.activeClusterId}
+			clusterUrl={activeClusterUrl}
+			clusterName={activeClusterName}
+			{isMockCluster}
 			isLoading={connectionStatus === 'loading'}
+			onrefreshschema={async (clusterId) => {
+				if (!(await connectCluster(clusterId))) {
+					throw new Error('The backend schema refresh did not complete.');
+				}
+			}}
+			onmutationstatechange={(running) => (isTableMutating = running)}
 			onopenquery={() =>
 				openInQuery({
 					database: selectedDatabase,
@@ -292,7 +305,9 @@
 			clusterUrl={activeClusterUrl}
 			clusterName={activeClusterName}
 			{isMockCluster}
-			onrefreshschema={() => connectCluster(clusterSession.activeClusterId)}
+			onrefreshschema={async () => {
+				await connectCluster(clusterSession.activeClusterId);
+			}}
 		/>
 	{:else}
 		{#key clusterSession.activeClusterId}

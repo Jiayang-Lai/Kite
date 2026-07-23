@@ -1,4 +1,4 @@
-import type { QueryExecution, QueryResult } from '$lib/types/query-result';
+import type { CancellableExecution, QueryExecution, QueryResult } from '$lib/types/query-result';
 import { Client as KustoClient, ClientRequestProperties } from 'azure-kusto-data';
 
 /** Browser-visible endpoint for Kite's default Kusto connection. */
@@ -351,6 +351,67 @@ export function startKustoManagementCommand(
 		.then((response) =>
 			normalizeResponse(response as unknown as KustoResponse, startedAt, clientRequestId)
 		)
+		.catch((error: unknown) => {
+			if (cancelled) throw new Error('Command cancelled.');
+			throw error;
+		})
+		.finally(() => client.close());
+
+	return {
+		promise,
+		cancel() {
+			cancelled = true;
+			client.close();
+		}
+	};
+}
+
+/**
+ * Runs an ordered set of management commands through one cancellable client.
+ *
+ * This is intended for read-only metadata preflights that must be treated as one
+ * UI operation. It stops at the first failed command and returns normalized
+ * results in the same order as the supplied command list.
+ */
+export function startKustoReadOnlyManagementCommandBatch(
+	database: string,
+	commands: readonly string[],
+	clusterUrl = getKustoClusterUrl()
+): CancellableExecution<QueryResult[]> {
+	if (!commands.length) throw new Error('Provide at least one management command.');
+	for (const command of commands) {
+		if (!isManagementCommand(command)) {
+			throw new Error('Management commands must start with a period (for example, .show tables).');
+		}
+		if (!isReadOnlyManagementCommand(command)) {
+			throw new Error('Batched management commands must be read-only.');
+		}
+	}
+
+	const client = new KustoClient(clusterUrl);
+	const requestPrefix = `Kite.Admin.Preflight;${crypto.randomUUID()}`;
+	let cancelled = false;
+
+	const promise = (async () => {
+		const results: QueryResult[] = [];
+		for (const [index, command] of commands.entries()) {
+			if (cancelled) throw new Error('Command cancelled.');
+
+			const clientRequestId = `${requestPrefix};${index + 1}`;
+			const properties = new ClientRequestProperties();
+			properties.clientRequestId = clientRequestId;
+			properties.application = 'Kite';
+			properties.setTimeout(MANAGEMENT_SERVER_TIMEOUT_MS);
+			properties.setClientTimeout(MANAGEMENT_CLIENT_TIMEOUT_MS);
+			properties.setOption('truncationmaxrecords', MAX_SERVER_ROWS);
+			const startedAt = performance.now();
+			const response = await client.executeMgmt(database, command, properties);
+			results.push(
+				normalizeResponse(response as unknown as KustoResponse, startedAt, clientRequestId)
+			);
+		}
+		return results;
+	})()
 		.catch((error: unknown) => {
 			if (cancelled) throw new Error('Command cancelled.');
 			throw error;

@@ -99,6 +99,34 @@ The `Kite` breadcrumb links to `/`. The selected cluster, loaded schema, Explore
 and pending query remain available across route transitions. Opening an Admin route directly
 also loads the active cluster schema so Explorer content is available.
 
+## Database and table management
+
+`/admin/databases` browses the active cluster schema and provides structured updates for existing
+tables on remote connections. The table editor can update a table description and append columns.
+The editor shows the generated management command and requires typing `RUN` before execution. The
+Mock cluster remains schema-only.
+
+Each existing column also has an admin action menu. Rename opens a focused dialog, previews the
+`.rename column` command, warns that stored functions, ingestion mappings, policies, dashboards, and
+client queries aren't rewritten, and requires typing `RENAME`. Remove previews the `.drop column`
+command, identifies the column type and current table row count, and requires typing the exact
+`Table.Column` target. Removal is marked irreversible because adding a column with the same name
+later can't restore its stored values. Kite conservatively disables removing the final table column.
+Column type conversion is intentionally unsupported; a safe conversion needs a data-preserving
+migration rather than `.alter column`.
+
+Table updates run through the Kusto management endpoint and rely on Kusto to enforce Table Admin
+permissions. The selected cluster cannot be changed while an update is running. After a successful
+command, Kite reloads the backend schema instead of applying an optimistic local update, keeping the
+Admin browser, Explorer, Monaco completion, and ingestion table selection synchronized.
+
+Opening any structured table or column editor performs a read-only preflight that captures the table
+ID, ordered JSON schema, CSL schema, folder, docstring, and row count. Immediately before an update,
+Kite repeats the preflight and compares it with that original snapshot. A recreated table or any
+concurrent schema or metadata change blocks execution, refreshes the shared schema, and requires the
+user to reopen the editor. The comparison narrows the concurrency window but isn't a server-side
+transaction; Kusto does not make the preflight and subsequent management command atomic.
+
 ## Management commands
 
 `/admin/commands` executes database-scoped Kusto management commands against the active remote

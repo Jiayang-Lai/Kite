@@ -15,8 +15,11 @@ export type QueryResult = {
 	clientRequestId: string;
 };
 
-/** Handle for one in-flight SDK request. Closing it cancels only that request. */
-export type QueryExecution = {
-	promise: Promise<QueryResult>;
+/** Handle for one cancellable SDK operation. */
+export type CancellableExecution<T> = {
+	promise: Promise<T>;
 	cancel: () => void;
 };
+
+/** Handle for one in-flight query or management command. */
+export type QueryExecution = CancellableExecution<QueryResult>;

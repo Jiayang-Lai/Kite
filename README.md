@@ -84,6 +84,11 @@ This writes `src/lib/generated/kusto-documentation-index.ts` and the Markdown fi
     - [ ] Kusto Admin Page:
       - [x] Allows user to run management commands
       - [ ] Allows user to manage databases and tables etc (read and write)
+        - [x] Update table descriptions and append columns
+        - [x] Block stale table updates with execution-time schema preflights
+        - [x] Rename columns with dependency warnings and explicit confirmation
+        - [x] Remove columns with irreversible-data-loss confirmation
+        - [ ] Change column types (intentionally unsupported; use a data-preserving migration)
       - [x] Allows user to ingest pasted or chunked browser CSV and mounted Parquet or CSV files
       - [x] Allows user to view cluster, database and table
 

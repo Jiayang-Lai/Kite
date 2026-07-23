@@ -10,7 +10,12 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
-	import type { KustoDatabase, KustoFunction } from '$lib/types/kusto-schema';
+	import type {
+		KustoColumn,
+		KustoDatabase,
+		KustoFunction,
+		KustoTable
+	} from '$lib/types/kusto-schema';
 	import { cn } from '$lib/utils';
 
 	type DatabaseSchemaProps = {
@@ -26,6 +31,10 @@
 		height?: string;
 		/** Optional actions shown beside the schema controls in the header. */
 		headerActions?: Snippet;
+		/** Optional admin actions rendered within each expanded table card. */
+		tableActions?: Snippet<[KustoTable]>;
+		/** Optional admin actions rendered beside each column type. */
+		columnActions?: Snippet<[KustoTable, KustoColumn]>;
 	};
 
 	let {
@@ -34,7 +43,9 @@
 		selectedFunction = $bindable(),
 		class: className = '',
 		height = '480px',
-		headerActions
+		headerActions,
+		tableActions,
+		columnActions
 	}: DatabaseSchemaProps = $props();
 	let filter = $state('');
 	let collapsedDatabaseName = '';
@@ -317,10 +328,19 @@
 
 						{#if expanded}
 							<div class="border-t p-2.5 sm:p-3">
-								{#if table.docstring}
-									<p class="text-muted-foreground mb-2.5 text-xs">
-										{@render highlightedText(table.docstring)}
-									</p>
+								{#if table.docstring || tableActions}
+									<div class="mb-2.5 flex items-start justify-between gap-3">
+										{#if table.docstring}
+											<p class="text-muted-foreground min-w-0 text-xs">
+												{@render highlightedText(table.docstring)}
+											</p>
+										{:else}
+											<span></span>
+										{/if}
+										<div class="shrink-0">
+											{@render tableActions?.(table)}
+										</div>
+									</div>
 								{/if}
 
 								<dl class="min-w-0 divide-y rounded-md border bg-background">
@@ -338,9 +358,12 @@
 													</dd>
 												{/if}
 											</div>
-											<Badge variant="outline" class="shrink-0 font-mono text-[11px]">
-												{column.type}
-											</Badge>
+											<div class="flex shrink-0 items-center gap-1">
+												<Badge variant="outline" class="font-mono text-[11px]">
+													{column.type}
+												</Badge>
+												{@render columnActions?.(table, column)}
+											</div>
 										</div>
 									{/each}
 								</dl>

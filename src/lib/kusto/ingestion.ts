@@ -1,3 +1,7 @@
+import { quoteKustoEntity, quoteKustoString } from './command-format';
+
+export { quoteKustoEntity } from './command-format';
+
 export type MountedFileFormat = 'parquet' | 'csv';
 
 export type InlineIngestion = {
@@ -13,13 +17,6 @@ export type MountedFileIngestion = {
 	relativePath: string;
 	format: MountedFileFormat;
 };
-
-/** Quotes entity names only when Kusto's simple identifier syntax cannot represent them. */
-export function quoteKustoEntity(name: string) {
-	const entity = name.trim();
-	if (!entity) throw new Error('Select a target table.');
-	return /^[A-Za-z_][A-Za-z0-9_]*$/.test(entity) ? entity : `['${entity.replaceAll("'", "''")}']`;
-}
 
 /** Resolves a user-entered relative path without allowing it to leave the mounted root. */
 export function resolveMountedFilePath(containerRoot: string, relativePath: string) {
@@ -47,15 +44,11 @@ function quoteVerbatimString(value: string) {
 	return `@"${value.replaceAll('"', '""')}"`;
 }
 
-function quoteKustoString(value: string) {
-	return `'${value.replaceAll("'", "''")}'`;
-}
-
 function buildInlineIngestionPrefix(table: string, ingestBy?: string) {
 	const properties = ingestBy
 		? ` with (format="csv", tags=${quoteKustoString(JSON.stringify([`ingest-by:${ingestBy}`]))}, ingestIfNotExists=${quoteKustoString(JSON.stringify([ingestBy]))})`
 		: '';
-	return `.ingest inline into table ${quoteKustoEntity(table)}${properties} <|\n`;
+	return `.ingest inline into table ${quoteKustoEntity(table, 'Select a target table.')}${properties} <|\n`;
 }
 
 /** Builds a direct inline ingestion command while preserving the supplied CSV payload exactly. */
@@ -87,5 +80,5 @@ export function buildMountedFileIngestionCommand({
 		throw new Error('Select a supported file format.');
 	}
 	const sourcePath = resolveMountedFilePath(containerRoot, relativePath);
-	return `.ingest into table ${quoteKustoEntity(table)}(${quoteVerbatimString(sourcePath)}) with (format="${format}")`;
+	return `.ingest into table ${quoteKustoEntity(table, 'Select a target table.')}(${quoteVerbatimString(sourcePath)}) with (format="${format}")`;
 }

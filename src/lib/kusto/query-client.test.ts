@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
 	getKustoErrorMessage,
 	isManagementCommand,
-	isReadOnlyManagementCommand
+	isReadOnlyManagementCommand,
+	startKustoReadOnlyManagementCommandBatch
 } from './query-client';
 
 describe('getKustoErrorMessage', () => {
@@ -113,5 +114,17 @@ describe('management command classification', () => {
 		expect(isReadOnlyManagementCommand('.show tables')).toBe(true);
 		expect(isReadOnlyManagementCommand(' .explain .show tables')).toBe(true);
 		expect(isReadOnlyManagementCommand('.create table Metrics (Timestamp: datetime)')).toBe(false);
+	});
+
+	it('rejects empty and non-management command batches before execution', () => {
+		expect(() => startKustoReadOnlyManagementCommandBatch('DB', [])).toThrow(
+			'Provide at least one management command'
+		);
+		expect(() => startKustoReadOnlyManagementCommandBatch('DB', ['Table | take 1'])).toThrow(
+			'Management commands must start with a period'
+		);
+		expect(() => startKustoReadOnlyManagementCommandBatch('DB', ['.drop table T'])).toThrow(
+			'Batched management commands must be read-only'
+		);
 	});
 });

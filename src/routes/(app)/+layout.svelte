@@ -3,6 +3,10 @@
 
 	import { createAppShellState, setAppShellState } from '$lib/app/app-shell-state.svelte';
 	import { getPersistedActiveClusterId } from '$lib/cluster/active-cluster-preference';
+	import {
+		createClusterConnectionStore,
+		setClusterConnectionStore
+	} from '$lib/cluster/cluster-connection-store.svelte';
 	import { createClusterSession, setClusterSession } from '$lib/cluster/cluster-session.svelte';
 	import { SIDEBAR_COOKIE_NAME } from '$lib/components/ui/sidebar/constants.js';
 	import { getKustoClusters } from '$lib/kusto/query-client';
@@ -21,6 +25,8 @@
 	const initialClusterId =
 		clusters.find((cluster) => cluster.id === persistedClusterId)?.id ?? clusters[0].id;
 	setClusterSession(createClusterSession(initialClusterId));
+	const clusterConnectionStore = createClusterConnectionStore();
+	setClusterConnectionStore(clusterConnectionStore);
 	const recentQueryStore = createRecentQueryStore();
 	setRecentQueryStore(recentQueryStore);
 	const savedQueryStore = createSavedQueryStore();
@@ -34,6 +40,7 @@
 			appShellState.sidebarOpen = sidebarCookie.split('=')[1] !== 'false';
 		}
 
+		clusterConnectionStore.hydrate();
 		recentQueryStore.hydrate();
 		savedQueryStore.hydrate();
 	});

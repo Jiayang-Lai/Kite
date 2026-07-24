@@ -8,18 +8,21 @@
 	import { onMount } from 'svelte';
 
 	import { getPersistedActiveClusterId } from '$lib/cluster/active-cluster-preference';
+	import { createClusterConnectionStore } from '$lib/cluster/cluster-connection-store.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
-	import { getKustoClusters } from '$lib/kusto/query-client';
 
-	const clusters = getKustoClusters();
-	let activeClusterId = $state(clusters[0].id);
+	const clusterConnectionStore = createClusterConnectionStore();
+	const initialClusterId = clusterConnectionStore.clusters[0].id;
+	const clusters = $derived(clusterConnectionStore.clusters);
+	let activeClusterId = $state(initialClusterId);
 	const activeCluster = $derived(
 		clusters.find((cluster) => cluster.id === activeClusterId) ?? clusters[0]
 	);
 
 	onMount(() => {
+		clusterConnectionStore.hydrate();
 		const persistedClusterId = getPersistedActiveClusterId();
 		if (clusters.some((cluster) => cluster.id === persistedClusterId)) {
 			activeClusterId = persistedClusterId!;

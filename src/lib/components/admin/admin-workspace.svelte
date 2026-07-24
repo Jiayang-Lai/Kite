@@ -16,15 +16,18 @@
 		ExplorerSelection
 	} from '$lib/components/query/database-explorer/cluster-explorer-types';
 	import { getClusterSession } from '$lib/cluster/cluster-session.svelte';
-	import { persistActiveClusterId } from '$lib/cluster/active-cluster-preference';
+	import {
+		getPersistedActiveClusterId,
+		persistActiveClusterId
+	} from '$lib/cluster/active-cluster-preference';
+	import {
+		getClusterConnectionStore,
+		type NewClusterConnection
+	} from '$lib/cluster/cluster-connection-store.svelte';
 	import { MOCK_DATABASES } from '$lib/data/mock-databases';
 	import { MOCK_RECENT_QUERIES, MOCK_SAVED_QUERIES } from '$lib/data/mock-queries';
 	import { loadBackendSchema } from '$lib/kusto/backend-schema';
-	import {
-		getKustoClusters,
-		getKustoErrorMessage,
-		MOCK_KUSTO_CLUSTER_URL
-	} from '$lib/kusto/query-client';
+	import { getKustoErrorMessage, MOCK_KUSTO_CLUSTER_URL } from '$lib/kusto/query-client';
 	import { getRecentQueryStore } from '$lib/query/recent-query-store.svelte';
 	import { getSavedQueryStore } from '$lib/query/saved-query-store.svelte';
 
@@ -35,7 +38,9 @@
 	};
 
 	let { view = 'overview' }: AdminWorkspaceProps = $props();
-	const clusters = getKustoClusters();
+	const clusterConnectionStore = getClusterConnectionStore();
+	const clusters = $derived(clusterConnectionStore.clusters);
+	const customClusters = $derived(clusterConnectionStore.customClusters);
 	const clusterSession = getClusterSession();
 	const recentQueryStore = getRecentQueryStore();
 	const savedQueryStore = getSavedQueryStore();
@@ -64,9 +69,12 @@
 	const activeCluster = $derived(
 		clusters.find((cluster) => cluster.id === clusterSession.activeClusterId)
 	);
-	const isMockCluster = $derived(activeCluster?.url === MOCK_KUSTO_CLUSTER_URL);
+	let activeClusterUrl = $state(
+		clusterConnectionStore.clusters.find((cluster) => cluster.id === clusterSession.activeClusterId)
+			?.url ?? ''
+	);
+	const isMockCluster = $derived(activeClusterUrl === MOCK_KUSTO_CLUSTER_URL);
 	const activeClusterName = $derived(activeCluster?.name ?? 'current cluster');
-	const activeClusterUrl = $derived(activeCluster?.url ?? '');
 	const failedClusterName = $derived(
 		clusters.find((cluster) => cluster.id === failedClusterId)?.name ?? 'selected cluster'
 	);
@@ -160,6 +168,7 @@
 			clusterSession.getExplorerExpansion(clusterId);
 			clusterSession.activeClusterId = clusterId;
 			persistActiveClusterId(clusterId);
+			activeClusterUrl = cluster.url;
 			clusterSession.databaseSchema = schema;
 			selectedDatabase = activeDatabase.name;
 			selectedTable =
@@ -193,6 +202,23 @@
 		void connectCluster(clusterId);
 	}
 
+	function addCluster(draft: NewClusterConnection) {
+		const cluster = clusterConnectionStore.add(draft);
+		switchCluster(cluster.id);
+	}
+
+	function editCluster(clusterId: string, draft: NewClusterConnection) {
+		clusterConnectionStore.update(clusterId, draft);
+		if (clusterId === selectedClusterId) void connectCluster(clusterId);
+	}
+
+	function removeCluster(clusterId: string) {
+		const wasSelected =
+			clusterId === selectedClusterId || clusterId === clusterSession.activeClusterId;
+		clusterConnectionStore.remove(clusterId);
+		if (wasSelected) switchCluster(clusters[0].id);
+	}
+
 	function retryFailedCluster() {
 		if (!failedClusterId) return;
 		selectedClusterId = failedClusterId;
@@ -216,6 +242,15 @@
 	});
 
 	onMount(() => {
+		clusterConnectionStore.hydrate();
+		const persistedClusterId = getPersistedActiveClusterId();
+		if (
+			!clusterSession.databaseSchema &&
+			persistedClusterId &&
+			clusters.some((cluster) => cluster.id === persistedClusterId)
+		) {
+			selectedClusterId = persistedClusterId;
+		}
 		if (!clusterSession.databaseSchema) void connectCluster();
 	});
 </script>
@@ -223,9 +258,13 @@
 {#snippet sidebarHeader()}
 	<ClusterConnectionSelector
 		{clusters}
+		{customClusters}
 		{selectedClusterId}
 		disabled={isClusterSwitching || isTableMutating}
 		onclusterchange={switchCluster}
+		onclusteradd={addCluster}
+		onclusteredit={editCluster}
+		onclusterremove={removeCluster}
 	/>
 {/snippet}
 

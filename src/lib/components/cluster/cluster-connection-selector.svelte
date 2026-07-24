@@ -2,29 +2,71 @@
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
 	import FlaskConicalIcon from '@lucide/svelte/icons/flask-conical';
 	import LockIcon from '@lucide/svelte/icons/lock';
+	import PlusIcon from '@lucide/svelte/icons/plus';
 	import ServerIcon from '@lucide/svelte/icons/server';
+	import Settings2Icon from '@lucide/svelte/icons/settings-2';
 
+	import AddClusterDialog from '$lib/components/cluster/add-cluster-dialog.svelte';
+	import ManageClustersDialog from '$lib/components/cluster/manage-clusters-dialog.svelte';
+	import RemoveClusterDialog from '$lib/components/cluster/remove-cluster-dialog.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Sidebar from '$lib/components/ui/sidebar';
+	import type { NewClusterConnection } from '$lib/cluster/cluster-connection-store.svelte';
 	import type { KustoClusterConnection } from '$lib/kusto/query-client';
 
 	type ClusterConnectionSelectorProps = {
 		clusters: KustoClusterConnection[];
+		customClusters?: KustoClusterConnection[];
 		selectedClusterId: string;
 		disabled?: boolean;
 		locked?: boolean;
 		onclusterchange?: (clusterId: string) => void;
+		onclusteradd?: (cluster: NewClusterConnection) => void;
+		onclusteredit?: (clusterId: string, cluster: NewClusterConnection) => void;
+		onclusterremove?: (clusterId: string) => void;
 	};
 
 	let {
 		clusters,
+		customClusters = [],
 		selectedClusterId,
 		disabled = false,
 		locked = false,
-		onclusterchange
+		onclusterchange,
+		onclusteradd,
+		onclusteredit,
+		onclusterremove
 	}: ClusterConnectionSelectorProps = $props();
 
+	let connectionDialogOpen = $state(false);
+	let manageClustersOpen = $state(false);
+	let removeClusterOpen = $state(false);
+	let editingCluster = $state<KustoClusterConnection>();
+	let removingCluster = $state<KustoClusterConnection>();
 	const selectedCluster = $derived(clusters.find((cluster) => cluster.id === selectedClusterId));
+
+	function openAddCluster() {
+		editingCluster = undefined;
+		connectionDialogOpen = true;
+	}
+
+	function openEditCluster(cluster: KustoClusterConnection) {
+		editingCluster = cluster;
+		connectionDialogOpen = true;
+	}
+
+	function openRemoveCluster(cluster: KustoClusterConnection) {
+		removingCluster = cluster;
+		removeClusterOpen = true;
+	}
+
+	function saveCluster(draft: NewClusterConnection) {
+		if (editingCluster) {
+			onclusteredit?.(editingCluster.id, draft);
+		} else {
+			onclusteradd?.(draft);
+		}
+	}
 </script>
 
 <Sidebar.Menu>
@@ -104,7 +146,42 @@
 						</DropdownMenu.Item>
 					{/each}
 				</DropdownMenu.Group>
+				<DropdownMenu.Separator />
+				<DropdownMenu.Item
+					class="data-highlighted:bg-accent data-highlighted:text-accent-foreground flex cursor-default items-center gap-2 rounded-sm px-2 py-2 text-sm font-medium outline-none"
+					onSelect={openAddCluster}
+				>
+					<PlusIcon class="size-4" />
+					Add cluster
+				</DropdownMenu.Item>
+				<DropdownMenu.Item
+					class="data-highlighted:bg-accent data-highlighted:text-accent-foreground flex cursor-default items-center gap-2 rounded-sm px-2 py-2 text-sm font-medium outline-none"
+					disabled={customClusters.length === 0}
+					onSelect={() => (manageClustersOpen = true)}
+				>
+					<Settings2Icon class="size-4" />
+					Manage clusters
+				</DropdownMenu.Item>
 			</DropdownMenu.Content>
 		</DropdownMenu.Root>
 	</Sidebar.MenuItem>
 </Sidebar.Menu>
+
+<AddClusterDialog
+	bind:open={connectionDialogOpen}
+	cluster={editingCluster}
+	onsubmit={saveCluster}
+/>
+<ManageClustersDialog
+	bind:open={manageClustersOpen}
+	clusters={customClusters}
+	{selectedClusterId}
+	onedit={openEditCluster}
+	onremove={openRemoveCluster}
+/>
+<RemoveClusterDialog
+	bind:open={removeClusterOpen}
+	cluster={removingCluster}
+	isCurrent={removingCluster?.id === selectedClusterId}
+	onconfirm={onclusterremove}
+/>

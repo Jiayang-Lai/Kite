@@ -28,12 +28,18 @@
 	import * as Resizable from '$lib/components/ui/resizable';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import { getClusterSession } from '$lib/cluster/cluster-session.svelte';
-	import { persistActiveClusterId } from '$lib/cluster/active-cluster-preference';
+	import {
+		getPersistedActiveClusterId,
+		persistActiveClusterId
+	} from '$lib/cluster/active-cluster-preference';
+	import {
+		getClusterConnectionStore,
+		type NewClusterConnection
+	} from '$lib/cluster/cluster-connection-store.svelte';
 	import { MOCK_DATABASES } from '$lib/data/mock-databases';
 	import { MOCK_RECENT_QUERIES, MOCK_SAVED_QUERIES } from '$lib/data/mock-queries';
 	import { loadBackendSchema } from '$lib/kusto/backend-schema';
 	import {
-		getKustoClusters,
 		getKustoErrorMessage,
 		MOCK_KUSTO_CLUSTER_URL,
 		startKustoQuery
@@ -52,12 +58,16 @@
 	};
 
 	let { view = 'editor' }: QueryWorkspaceProps = $props();
-	const clusters = getKustoClusters();
+	const clusterConnectionStore = getClusterConnectionStore();
+	const initialClusters = clusterConnectionStore.clusters;
+	const clusters = $derived(clusterConnectionStore.clusters);
+	const customClusters = $derived(clusterConnectionStore.customClusters);
 	const clusterSession = getClusterSession();
 	const recentQueryStore = getRecentQueryStore();
 	const savedQueryStore = getSavedQueryStore();
 	const initialCluster =
-		clusters.find((cluster) => cluster.id === clusterSession.activeClusterId) ?? clusters[0];
+		initialClusters.find((cluster) => cluster.id === clusterSession.activeClusterId) ??
+		initialClusters[0];
 
 	// Schema metadata crosses the Monaco worker boundary and must remain structured-cloneable.
 	// `$state.raw` keeps the SDK-derived arrays and objects from becoming Svelte proxies.
@@ -214,6 +224,28 @@
 		void refreshSchema();
 	}
 
+	function addCluster(draft: NewClusterConnection) {
+		const cluster = clusterConnectionStore.add(draft);
+		switchCluster(cluster.id);
+	}
+
+	function editCluster(clusterId: string, draft: NewClusterConnection) {
+		clusterConnectionStore.update(clusterId, draft);
+		if (clusterId !== selectedClusterId) return;
+
+		queryRequestId += 1;
+		activeExecution?.cancel();
+		activeExecution = undefined;
+		isQueryRunning = false;
+		void refreshSchema();
+	}
+
+	function removeCluster(clusterId: string) {
+		const wasSelected = clusterId === selectedClusterId || clusterId === activeClusterId;
+		clusterConnectionStore.remove(clusterId);
+		if (wasSelected) switchCluster(clusters[0].id);
+	}
+
 	function retryFailedCluster() {
 		if (!failedClusterId) return;
 		selectedClusterId = failedClusterId;
@@ -348,6 +380,15 @@
 	}
 
 	onMount(() => {
+		clusterConnectionStore.hydrate();
+		const persistedClusterId = getPersistedActiveClusterId();
+		if (
+			!clusterSession.databaseSchema &&
+			persistedClusterId &&
+			clusters.some((cluster) => cluster.id === persistedClusterId)
+		) {
+			selectedClusterId = persistedClusterId;
+		}
 		void refreshSchema();
 		return () => {
 			schemaRequestId += 1;
@@ -364,9 +405,13 @@
 {#snippet sidebarHeader()}
 	<ClusterConnectionSelector
 		{clusters}
+		{customClusters}
 		{selectedClusterId}
 		disabled={isClusterSwitching}
 		onclusterchange={switchCluster}
+		onclusteradd={addCluster}
+		onclusteredit={editCluster}
+		onclusterremove={removeCluster}
 	/>
 {/snippet}
 

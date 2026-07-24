@@ -157,7 +157,9 @@
 
 	async function refreshSchema() {
 		const requestId = ++schemaRequestId;
-		const requestedCluster = clusters.find((cluster) => cluster.id === selectedClusterId);
+		const requestedCluster = clusterConnectionStore.clusters.find(
+			(cluster) => cluster.id === selectedClusterId
+		);
 		if (!requestedCluster) return;
 		const requestedClusterId = requestedCluster.id;
 		const requestedClusterUrl = requestedCluster.url;

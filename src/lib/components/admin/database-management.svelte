@@ -5,6 +5,7 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import TablePropertiesIcon from '@lucide/svelte/icons/table-properties';
+	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { onDestroy, tick } from 'svelte';
 
 	import ColumnActionsMenu from '$lib/components/admin/column-actions-menu.svelte';
@@ -13,7 +14,18 @@
 	} from '$lib/components/admin/column-mutation-dialog.svelte';
 	import ColumnOrderDialog from '$lib/components/admin/column-order-dialog.svelte';
 	import CreateTableDialog from '$lib/components/admin/create-table-dialog.svelte';
+	import MockDatabaseDialog, {
+		type MockDatabaseAction
+	} from '$lib/components/admin/mock-database-dialog.svelte';
 	import TableEditorDialog from '$lib/components/admin/table-editor-dialog.svelte';
+	import { getClusterConnectionStore } from '$lib/cluster/cluster-connection-store.svelte';
+	import {
+		applyMockCreateDatabase,
+		applyMockCreateTable,
+		applyMockDropDatabase,
+		applyMockRenameDatabase,
+		applyMockTableMutation
+	} from '$lib/cluster/mock-schema-management';
 	import type {
 		ExplorerExpansionChange,
 		ExplorerExpansionState
@@ -74,29 +86,35 @@
 		onmutationstatechange
 	}: DatabaseManagementProps = $props();
 
+	const clusterConnectionStore = getClusterConnectionStore();
 	let databaseFilter = $state('');
 	let editorOpen = $state(false);
 	let columnEditorOpen = $state(false);
 	let columnOrderOpen = $state(false);
 	let createTableOpen = $state(false);
+	let databaseDialogOpen = $state(false);
+	let databaseDialogAction = $state<MockDatabaseAction>('create');
+	let databaseDialogTarget = $state('');
 	let columnMutationAction = $state<ColumnMutationAction>();
 	let editorTable = $state.raw<KustoTable>();
 	let editorColumn = $state.raw<KustoColumn>();
 	let editorDatabaseName = $state('');
 	let editorClusterId = $state('');
 	let editorSnapshot = $state.raw<TableSchemaSnapshot>();
+	let editorMockSchemaRevision = 0;
 	let mutationError = $state('');
 	let mutationSuccess = $state('');
 	let isPreparingEditor = $state(false);
 	let isMutating = $state(false);
 	let isCreatingTable = $state(false);
+	let isDatabaseMutating = $state(false);
 	let createTableError = $state('');
 	let activeCancel: (() => void) | undefined;
 	let mutationRequestId = 0;
 	let wasMutationDialogOpen = false;
-	const isBusy = $derived(isPreparingEditor || isMutating || isCreatingTable);
+	const isBusy = $derived(isPreparingEditor || isMutating || isCreatingTable || isDatabaseMutating);
 	const isMutationDialogOpen = $derived(
-		editorOpen || columnEditorOpen || columnOrderOpen || createTableOpen
+		editorOpen || columnEditorOpen || columnOrderOpen || createTableOpen || databaseDialogOpen
 	);
 	const databaseEntries = $derived(Object.values(databases ?? {}));
 	const visibleDatabases = $derived(
@@ -129,6 +147,7 @@
 			columnEditorOpen = false;
 			columnOrderOpen = false;
 			createTableOpen = false;
+			databaseDialogOpen = false;
 			editorTable = undefined;
 			editorColumn = undefined;
 		}
@@ -147,7 +166,7 @@
 	}
 
 	function openTableEditor(table: KustoTable) {
-		if (!activeDatabase || isMockCluster || isBusy) return;
+		if (!activeDatabase || isBusy) return;
 		const canonicalTable = activeDatabase.tables.find((item) => item.name === table.name);
 		if (!canonicalTable) return;
 
@@ -166,7 +185,7 @@
 	}
 
 	function openColumnEditor(table: KustoTable, column: KustoColumn, action: ColumnMutationAction) {
-		if (!activeDatabase || isMockCluster || isBusy) return;
+		if (!activeDatabase || isBusy) return;
 		const canonicalTable = activeDatabase.tables.find((item) => item.name === table.name);
 		const canonicalColumn = canonicalTable?.columns.find((item) => item.name === column.name);
 		if (!canonicalTable || !canonicalColumn) return;
@@ -187,7 +206,7 @@
 	}
 
 	function openColumnOrderEditor(table: KustoTable) {
-		if (!activeDatabase || isMockCluster || isBusy) return;
+		if (!activeDatabase || isBusy) return;
 		const canonicalTable = activeDatabase.tables.find((item) => item.name === table.name);
 		if (!canonicalTable) return;
 
@@ -206,7 +225,7 @@
 	}
 
 	function openCreateTableDialog() {
-		if (!activeDatabase || isMockCluster || isBusy) return;
+		if (!activeDatabase || isBusy) return;
 		editorDatabaseName = activeDatabase.name;
 		editorClusterId = clusterId;
 		editorTable = undefined;
@@ -219,6 +238,65 @@
 		columnEditorOpen = false;
 		columnOrderOpen = false;
 		createTableOpen = true;
+		editorMockSchemaRevision =
+			clusterConnectionStore.clusters.find((cluster) => cluster.id === clusterId)
+				?.mockSchemaRevision ?? 0;
+	}
+
+	function openDatabaseDialog(action: MockDatabaseAction) {
+		if (!isMockCluster || isBusy) return;
+		databaseDialogAction = action;
+		databaseDialogTarget = action === 'create' ? '' : (activeDatabase?.name ?? '');
+		editorClusterId = clusterId;
+		editorMockSchemaRevision =
+			clusterConnectionStore.clusters.find((cluster) => cluster.id === clusterId)
+				?.mockSchemaRevision ?? 0;
+		mutationError = '';
+		mutationSuccess = '';
+		databaseDialogOpen = true;
+	}
+
+	async function mutateDatabase(name?: string) {
+		if (!isMockCluster || isDatabaseMutating) return;
+		const targetClusterId = clusterId;
+		const targetDatabase = databaseDialogTarget;
+		const action = databaseDialogAction;
+		isDatabaseMutating = true;
+		onmutationstatechange?.(true);
+		try {
+			const updatedCluster = clusterConnectionStore.updateMockSchema(
+				targetClusterId,
+				editorMockSchemaRevision,
+				(schema) => {
+					switch (action) {
+						case 'create':
+							return applyMockCreateDatabase(schema, name ?? '');
+						case 'rename':
+							return applyMockRenameDatabase(schema, targetDatabase, name ?? '');
+						case 'drop':
+							return applyMockDropDatabase(schema, targetDatabase);
+					}
+				}
+			);
+			editorMockSchemaRevision = updatedCluster.mockSchemaRevision ?? editorMockSchemaRevision;
+			const nextDatabase =
+				action === 'create' || action === 'rename'
+					? name?.trim()
+					: Object.keys(updatedCluster.mockSchema ?? {})[0];
+			selectedDatabase = nextDatabase;
+			selectedTable = undefined;
+			selectedFunction = undefined;
+			await onrefreshschema?.(targetClusterId);
+			mutationSuccess =
+				action === 'create'
+					? `Database ${nextDatabase} created.`
+					: action === 'rename'
+						? `Database ${targetDatabase} renamed to ${nextDatabase}.`
+						: `Database ${targetDatabase} deleted.`;
+		} finally {
+			isDatabaseMutating = false;
+			onmutationstatechange?.(false);
+		}
 	}
 
 	async function prepareTableEditor(table: KustoTable, databaseName: string) {
@@ -231,6 +309,14 @@
 		isPreparingEditor = true;
 		onmutationstatechange?.(true);
 		try {
+			if (isMockCluster) {
+				editorSnapshot = loadedSnapshot;
+				editorMockSchemaRevision =
+					clusterConnectionStore.clusters.find((cluster) => cluster.id === targetClusterId)
+						?.mockSchemaRevision ?? 0;
+				return;
+			}
+
 			const execution = startKustoReadOnlyManagementCommandBatch(
 				databaseName,
 				buildTablePreflightCommands(table.name),
@@ -272,7 +358,7 @@
 	}
 
 	async function updateTable(plan: TableMutationPlan) {
-		if (!editorTable || !editorDatabaseName || !editorSnapshot || isMockCluster || isBusy) {
+		if (!editorTable || !editorDatabaseName || !editorSnapshot || isBusy) {
 			return;
 		}
 
@@ -290,6 +376,22 @@
 		isMutating = true;
 		onmutationstatechange?.(true);
 		try {
+			if (isMockCluster) {
+				const updatedCluster = clusterConnectionStore.updateMockSchema(
+					targetClusterId,
+					editorMockSchemaRevision,
+					(schema) =>
+						applyMockTableMutation(schema, targetDatabase, targetTable, originalSnapshot, plan)
+				);
+				editorMockSchemaRevision = updatedCluster.mockSchemaRevision ?? editorMockSchemaRevision;
+				commandCompleted = true;
+				await onrefreshschema?.(targetClusterId);
+				if (requestId !== mutationRequestId) return;
+				mutationSuccess = `${targetDatabase}.${targetTable}: ${plan.summary}.`;
+				succeeded = true;
+				return;
+			}
+
 			const preflight = startKustoReadOnlyManagementCommandBatch(
 				targetDatabase,
 				buildTablePreflightCommands(targetTable),
@@ -346,7 +448,7 @@
 	}
 
 	async function createTable(plan: CreateTablePlan) {
-		if (!editorDatabaseName || isMockCluster || isBusy) return;
+		if (!editorDatabaseName || isBusy) return;
 
 		const requestId = ++mutationRequestId;
 		const targetClusterId = clusterId;
@@ -360,25 +462,39 @@
 		isCreatingTable = true;
 		onmutationstatechange?.(true);
 		try {
-			await onrefreshschema?.(targetClusterId);
-			await tick();
-			if (requestId !== mutationRequestId) return;
+			if (isMockCluster) {
+				const updatedCluster = clusterConnectionStore.updateMockSchema(
+					targetClusterId,
+					editorMockSchemaRevision,
+					(schema) => applyMockCreateTable(schema, targetDatabase, plan)
+				);
+				editorMockSchemaRevision = updatedCluster.mockSchemaRevision ?? editorMockSchemaRevision;
+				commandCompleted = true;
+			} else {
+				await onrefreshschema?.(targetClusterId);
+				await tick();
+				if (requestId !== mutationRequestId) return;
 
-			const refreshedDatabase = databases?.[targetDatabase];
-			if (
-				refreshedDatabase?.tables.some(
-					(table) => table.name.toLowerCase() === plan.tableName.toLowerCase()
-				)
-			) {
-				createTableError = `Creation blocked because “${plan.tableName}” now exists in ${targetDatabase}. Choose another name.`;
-				return;
+				const refreshedDatabase = databases?.[targetDatabase];
+				if (
+					refreshedDatabase?.tables.some(
+						(table) => table.name.toLowerCase() === plan.tableName.toLowerCase()
+					)
+				) {
+					createTableError = `Creation blocked because “${plan.tableName}” now exists in ${targetDatabase}. Choose another name.`;
+					return;
+				}
+
+				const execution = startKustoManagementCommand(
+					targetDatabase,
+					plan.command,
+					targetClusterUrl
+				);
+				activeCancel = execution.cancel;
+				await execution.promise;
+				if (requestId !== mutationRequestId) return;
+				commandCompleted = true;
 			}
-
-			const execution = startKustoManagementCommand(targetDatabase, plan.command, targetClusterUrl);
-			activeCancel = execution.cancel;
-			await execution.promise;
-			if (requestId !== mutationRequestId) return;
-			commandCompleted = true;
 
 			await onrefreshschema?.(targetClusterId);
 			await tick();
@@ -436,11 +552,9 @@
 	<Button
 		size="sm"
 		variant="outline"
-		disabled={isMockCluster || isBusy}
+		disabled={isBusy}
 		onclick={openCreateTableDialog}
-		title={isMockCluster
-			? 'The Mock cluster is read-only'
-			: `Create a table in ${activeDatabase?.name}`}
+		title={`Create a table in ${activeDatabase?.name}`}
 	>
 		<PlusIcon />
 		New table
@@ -456,11 +570,9 @@
 		<Button
 			size="xs"
 			variant="outline"
-			disabled={isMockCluster || isBusy}
+			disabled={isBusy}
 			onclick={() => openTableEditor(table)}
-			title={isMockCluster
-				? 'The Mock cluster is read-only'
-				: `Edit ${table.name} without replacing existing columns`}
+			title={`Edit ${table.name} without replacing existing columns`}
 		>
 			<PencilIcon />
 			Edit table
@@ -468,11 +580,9 @@
 		<Button
 			size="xs"
 			variant="outline"
-			disabled={isMockCluster || isBusy}
+			disabled={isBusy}
 			onclick={() => openColumnOrderEditor(table)}
-			title={isMockCluster
-				? 'The Mock cluster is read-only'
-				: `Change the column order for ${table.name}`}
+			title={`Change the column order for ${table.name}`}
 		>
 			<TablePropertiesIcon />
 			Reorder columns
@@ -488,7 +598,7 @@
 	<ColumnActionsMenu
 		table={canonicalTable}
 		column={canonicalColumn}
-		disabled={isMockCluster || isBusy}
+		disabled={isBusy}
 		onaction={(action) => openColumnEditor(canonicalTable, canonicalColumn, action)}
 	/>
 {/snippet}
@@ -498,6 +608,38 @@
 		<Card.Header>
 			<Card.Title>Databases</Card.Title>
 			<Card.Description>{databaseEntries.length} on the selected cluster</Card.Description>
+			{#if isMockCluster}
+				<div class="flex flex-wrap gap-1 pt-1">
+					<Button
+						size="xs"
+						variant="outline"
+						disabled={isBusy}
+						onclick={() => openDatabaseDialog('create')}
+					>
+						<PlusIcon />
+						New
+					</Button>
+					<Button
+						size="xs"
+						variant="outline"
+						disabled={!activeDatabase || isBusy}
+						onclick={() => openDatabaseDialog('rename')}
+					>
+						<PencilIcon />
+						Rename
+					</Button>
+					<Button
+						size="xs"
+						variant="outline"
+						class="text-destructive hover:text-destructive"
+						disabled={!activeDatabase || databaseEntries.length <= 1 || isBusy}
+						onclick={() => openDatabaseDialog('drop')}
+					>
+						<Trash2Icon />
+						Delete
+					</Button>
+				</div>
+			{/if}
 		</Card.Header>
 		<Card.Content class="min-h-0 flex flex-1 flex-col">
 			<div class="relative shrink-0">
@@ -540,9 +682,10 @@
 		{#if activeDatabase}
 			{#if isMockCluster}
 				<p class="text-muted-foreground rounded-lg border bg-muted/20 px-3 py-2 text-xs">
-					The Mock cluster is schema-only. Select a connected cluster to update tables.
+					Mock changes update this browser-local schema only; no backend data is created.
 				</p>
-			{:else if mutationSuccess}
+			{/if}
+			{#if mutationSuccess}
 				<p
 					class="border-primary/20 bg-primary/5 text-foreground rounded-lg border px-3 py-2 text-xs"
 					role="status"
@@ -588,6 +731,13 @@
 		{/if}
 	</div>
 </section>
+
+<MockDatabaseDialog
+	bind:open={databaseDialogOpen}
+	action={databaseDialogAction}
+	databaseName={databaseDialogTarget}
+	onsubmit={mutateDatabase}
+/>
 
 {#if editorDatabaseName}
 	<CreateTableDialog

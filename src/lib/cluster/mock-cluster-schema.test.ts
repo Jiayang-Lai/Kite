@@ -71,9 +71,29 @@ describe('mock cluster schemas', () => {
 			kind: 'mock' as const
 		};
 
-		expect(getMockClusterSchema(customCluster)).toBe(privateSchema);
+		expect(getMockClusterSchema(customCluster)).toEqual(privateSchema);
+		expect(getMockClusterSchema(customCluster)).not.toBe(privateSchema);
 		expect(usesBuiltInMockCatalog(customCluster)).toBe(false);
 		expect(usesBuiltInMockCatalog(builtInCluster)).toBe(true);
 		expect(getMockClusterSchema(builtInCluster)).toHaveProperty('Samples');
+	});
+
+	it('returns a worker-transferable snapshot when Svelte proxies the stored schema', () => {
+		const proxiedSchema = new Proxy(createStarterMockSchema(), {});
+		const proxiedCluster = new Proxy(
+			{
+				id: 'proxied',
+				name: 'Proxied',
+				url: 'mock://kite/proxied',
+				kind: 'mock' as const,
+				mockSchema: proxiedSchema
+			},
+			{}
+		);
+
+		const resolvedSchema = getMockClusterSchema(proxiedCluster);
+
+		expect(resolvedSchema).toEqual(proxiedSchema);
+		expect(() => structuredClone(resolvedSchema)).not.toThrow();
 	});
 });

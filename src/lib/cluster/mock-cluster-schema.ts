@@ -12,6 +12,11 @@ function requireNonEmptyString(value: unknown, path: string) {
 	}
 }
 
+/** Copies JSON-compatible schema metadata without failing on Svelte reactive proxies. */
+export function cloneMockSchema(schema: KustoDatabaseSchema): KustoDatabaseSchema {
+	return JSON.parse(JSON.stringify(schema)) as KustoDatabaseSchema;
+}
+
 /** Returns the smallest useful schema for a newly created independent mock cluster. */
 export function createStarterMockSchema(): KustoDatabaseSchema {
 	return {
@@ -83,7 +88,7 @@ export function normalizeMockSchema(value: unknown): KustoDatabaseSchema {
 		}
 	}
 
-	return structuredClone(value) as KustoDatabaseSchema;
+	return cloneMockSchema(value as KustoDatabaseSchema);
 }
 
 /** Resolves a mock connection to its private schema or the built-in sample catalog. */
@@ -91,7 +96,9 @@ export function getMockClusterSchema(cluster: KustoClusterConnection): KustoData
 	if (cluster.kind !== 'mock') {
 		throw new Error('A remote cluster does not have a mock schema.');
 	}
-	return cluster.mockSchema ?? MOCK_DATABASES;
+	// Connection records live in Svelte state. Return a plain snapshot so Monaco can
+	// transfer the schema to its web worker using the structured-clone algorithm.
+	return cloneMockSchema(cluster.mockSchema ?? MOCK_DATABASES);
 }
 
 /** Only Kite's built-in mock connection intentionally has no private schema payload. */

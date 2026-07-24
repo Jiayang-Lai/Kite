@@ -1,7 +1,11 @@
 import { browser } from '$app/environment';
 import { getContext, setContext } from 'svelte';
 
-import { createStarterMockSchema, normalizeMockSchema } from '$lib/cluster/mock-cluster-schema';
+import {
+	createStarterMockSchema,
+	getMockClusterSchema,
+	normalizeMockSchema
+} from '$lib/cluster/mock-cluster-schema';
 import {
 	getKustoClusters,
 	MOCK_KUSTO_CLUSTER_URL,
@@ -34,6 +38,11 @@ export type ClusterConnectionStore = {
 	hydrate: () => void;
 	add: (draft: NewClusterConnection) => KustoClusterConnection;
 	update: (clusterId: string, draft: NewClusterConnection) => KustoClusterConnection;
+	updateMockSchema: (
+		clusterId: string,
+		expectedRevision: number,
+		mutation: (schema: KustoDatabaseSchema) => KustoDatabaseSchema
+	) => KustoClusterConnection;
 	remove: (clusterId: string) => void;
 };
 
@@ -84,7 +93,13 @@ function parseStoredCluster(value: unknown): KustoClusterConnection | undefined 
 				description,
 				url: createMockClusterUrl(cluster.id),
 				kind: 'mock',
-				mockSchema: normalizeMockSchema(cluster.mockSchema ?? createStarterMockSchema())
+				mockSchema: normalizeMockSchema(cluster.mockSchema ?? createStarterMockSchema()),
+				mockSchemaRevision:
+					typeof cluster.mockSchemaRevision === 'number' &&
+					Number.isInteger(cluster.mockSchemaRevision) &&
+					cluster.mockSchemaRevision >= 0
+						? cluster.mockSchemaRevision
+						: 0
 			};
 		}
 		return {
@@ -119,15 +134,21 @@ export function createClusterConnectionStore(): ClusterConnectionStore {
 
 	function persist(nextClusters: KustoClusterConnection[]) {
 		if (!browser) return;
-		const customClusters = nextClusters.filter((item) => !builtInIds.has(item.id));
+		const storedClusters = nextClusters.filter(
+			(item) => !builtInIds.has(item.id) || (item.kind === 'mock' && item.mockSchema !== undefined)
+		);
 		try {
-			localStorage.setItem(STORAGE_KEY, JSON.stringify(customClusters));
+			localStorage.setItem(STORAGE_KEY, JSON.stringify(storedClusters));
 		} catch {
 			throw new Error('Cluster changes could not be saved in browser storage.');
 		}
 	}
 
-	function prepareCluster(draft: NewClusterConnection, id: string = createClusterId()) {
+	function prepareCluster(
+		draft: NewClusterConnection,
+		id: string = createClusterId(),
+		mockSchemaRevision = 0
+	) {
 		const name = draft.name.trim();
 		if (!name) throw new Error('Enter a cluster name.');
 
@@ -138,7 +159,8 @@ export function createClusterConnectionStore(): ClusterConnectionStore {
 				description: draft.description?.trim() || undefined,
 				url: createMockClusterUrl(id),
 				kind: 'mock' as const,
-				mockSchema: normalizeMockSchema(draft.mockSchema)
+				mockSchema: normalizeMockSchema(draft.mockSchema),
+				mockSchemaRevision
 			};
 		}
 
@@ -161,15 +183,29 @@ export function createClusterConnectionStore(): ClusterConnectionStore {
 			const parsed: unknown = JSON.parse(serialized);
 			if (!Array.isArray(parsed)) return;
 
+			const hydratedBuiltIns = [...builtInClusters];
 			const seenIds = new Set(builtInIds);
 			const storedClusters: KustoClusterConnection[] = [];
 			for (const value of parsed) {
 				const cluster = parseStoredCluster(value);
-				if (!cluster || seenIds.has(cluster.id)) continue;
+				if (!cluster) continue;
+				if (builtInIds.has(cluster.id)) {
+					const builtInIndex = hydratedBuiltIns.findIndex((item) => item.id === cluster.id);
+					const builtInCluster = hydratedBuiltIns[builtInIndex];
+					if (builtInCluster?.kind === 'mock' && cluster.kind === 'mock') {
+						hydratedBuiltIns[builtInIndex] = {
+							...builtInCluster,
+							mockSchema: cluster.mockSchema,
+							mockSchemaRevision: cluster.mockSchemaRevision
+						};
+					}
+					continue;
+				}
+				if (seenIds.has(cluster.id)) continue;
 				seenIds.add(cluster.id);
 				storedClusters.push(cluster);
 			}
-			clusters = [...builtInClusters, ...storedClusters];
+			clusters = [...hydratedBuiltIns, ...storedClusters];
 		} catch {
 			// Keep the built-in catalog available when browser storage is unreadable.
 		}
@@ -189,11 +225,45 @@ export function createClusterConnectionStore(): ClusterConnectionStore {
 			throw new Error('This cluster no longer exists.');
 		}
 
-		const cluster = prepareCluster(draft, clusterId);
+		const existingCluster = clusters.find((cluster) => cluster.id === clusterId)!;
+		const mockSchemaRevision =
+			draft.kind === 'mock'
+				? existingCluster.kind === 'mock'
+					? (existingCluster.mockSchemaRevision ?? 0) + 1
+					: 0
+				: 0;
+		const cluster = prepareCluster(draft, clusterId, mockSchemaRevision);
 		const nextClusters = clusters.map((item) => (item.id === clusterId ? cluster : item));
 		persist(nextClusters);
 		clusters = nextClusters;
 		return cluster;
+	}
+
+	function updateMockSchema(
+		clusterId: string,
+		expectedRevision: number,
+		mutation: (schema: KustoDatabaseSchema) => KustoDatabaseSchema
+	) {
+		const cluster = clusters.find((item) => item.id === clusterId);
+		if (!cluster) throw new Error('This cluster no longer exists.');
+		if (cluster.kind !== 'mock') throw new Error('Remote cluster schemas are managed by Kusto.');
+
+		const currentRevision = cluster.mockSchemaRevision ?? 0;
+		if (currentRevision !== expectedRevision) {
+			throw new Error(
+				'The mock schema changed while this editor was open. Review the refreshed schema and try again.'
+			);
+		}
+
+		const updatedCluster: KustoClusterConnection = {
+			...cluster,
+			mockSchema: normalizeMockSchema(mutation(getMockClusterSchema(cluster))),
+			mockSchemaRevision: currentRevision + 1
+		};
+		const nextClusters = clusters.map((item) => (item.id === clusterId ? updatedCluster : item));
+		persist(nextClusters);
+		clusters = nextClusters;
+		return updatedCluster;
 	}
 
 	function remove(clusterId: string) {
@@ -215,6 +285,7 @@ export function createClusterConnectionStore(): ClusterConnectionStore {
 		hydrate,
 		add,
 		update,
+		updateMockSchema,
 		remove
 	};
 }

@@ -116,6 +116,7 @@ describe('table management commands', () => {
 				{ name: 'Trace Id', type: 'guid' }
 			],
 			updatesDocstring: false,
+			nextDocstring: 'Telemetry.',
 			risk: 'safe',
 			summary: '2 columns added'
 		});

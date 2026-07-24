@@ -81,6 +81,7 @@ export type UpdateTablePlan = TableMutationPlanBase & {
 	kind: 'update-table';
 	addedColumns: readonly NewTableColumn[];
 	updatesDocstring: boolean;
+	nextDocstring: string;
 };
 
 export type RenameColumnPlan = TableMutationPlanBase & {
@@ -403,6 +404,7 @@ export function buildTableMutationPlan(input: TableMutationInput): TableMutation
 		command,
 		addedColumns,
 		updatesDocstring,
+		nextDocstring,
 		risk: 'safe',
 		summary: changes.join(' · ')
 	};

@@ -31,6 +31,8 @@ export type KustoClusterConnection = {
 	kind: 'remote' | 'mock';
 	/** Browser-local schema metadata owned by a custom mock connection. */
 	mockSchema?: KustoDatabaseSchema;
+	/** Optimistic concurrency token incremented after each browser-local schema mutation. */
+	mockSchemaRevision?: number;
 	/** Optional ingestion behavior available for this connection. */
 	ingestion?: KustoIngestionConfiguration;
 };

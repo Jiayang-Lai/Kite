@@ -100,6 +100,26 @@ describe('cluster connection store', () => {
 		expect(second.mockSchema?.Database.tables).toEqual([]);
 	});
 
+	it('updates mock schemas with optimistic revision checks', () => {
+		const store = createClusterConnectionStore();
+		const mock = store.clusters.find((cluster) => cluster.kind === 'mock')!;
+		const revision = mock.mockSchemaRevision ?? 0;
+
+		const updated = store.updateMockSchema(mock.id, revision, (schema) => ({
+			...schema,
+			Local: {
+				name: 'Local',
+				tables: []
+			}
+		}));
+
+		expect(updated.mockSchemaRevision).toBe(revision + 1);
+		expect(updated.mockSchema).toHaveProperty('Local');
+		expect(() => store.updateMockSchema(mock.id, revision, (schema) => schema)).toThrow(
+			'changed while this editor was open'
+		);
+	});
+
 	it.each(['not a url', 'ftp://example.test', 'https://user:secret@example.test'])(
 		'rejects unsupported endpoint %s',
 		(url) => {

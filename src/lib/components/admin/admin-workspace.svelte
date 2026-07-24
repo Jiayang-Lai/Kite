@@ -152,7 +152,7 @@
 
 	async function connectCluster(clusterId = selectedClusterId) {
 		const requestId = ++schemaRequestId;
-		const cluster = clusters.find((item) => item.id === clusterId);
+		const cluster = clusterConnectionStore.clusters.find((item) => item.id === clusterId);
 		if (!cluster) return false;
 
 		connectionStatus = 'loading';

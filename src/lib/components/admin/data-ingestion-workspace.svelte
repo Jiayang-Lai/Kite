@@ -428,7 +428,7 @@
 					<h2 class="font-semibold">Data ingestion needs a configured Kustainer connection</h2>
 					<p class="text-muted-foreground mt-2 text-sm leading-6">
 						{isMockCluster
-							? 'The Mock cluster supplies schema data only. Select Local Kusto to ingest data.'
+							? 'Cluster type of mock does not support ingestion.'
 							: 'This connection does not declare a mounted ingestion directory.'}
 					</p>
 				</div>

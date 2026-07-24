@@ -9,6 +9,7 @@ describe('cluster connection store', () => {
 
 		const cluster = store.add({
 			name: '  Analytics  ',
+			kind: 'remote',
 			url: 'https://example.kusto.windows.net/?ignored=true#fragment',
 			description: '  Production data  '
 		});
@@ -23,21 +24,102 @@ describe('cluster connection store', () => {
 		});
 	});
 
+	it('adds a mock connection backed by the in-memory catalog', () => {
+		const store = createClusterConnectionStore();
+
+		const cluster = store.add({
+			name: '  Demo catalog  ',
+			kind: 'mock',
+			description: '  Local sample data  ',
+			mockSchema: {
+				Demo: {
+					name: 'Demo',
+					tables: [
+						{
+							name: 'Events',
+							columns: [{ name: 'Timestamp', type: 'datetime' }]
+						}
+					]
+				}
+			}
+		});
+
+		expect(cluster).toMatchObject({
+			name: 'Demo catalog',
+			description: 'Local sample data',
+			kind: 'mock',
+			mockSchema: {
+				Demo: {
+					name: 'Demo',
+					tables: [
+						{
+							name: 'Events',
+							columns: [{ name: 'Timestamp', type: 'datetime' }]
+						}
+					]
+				}
+			}
+		});
+		expect(cluster.url).toBe(`mock://kite/${cluster.id}`);
+	});
+
+	it('keeps custom mock schemas independent', () => {
+		const store = createClusterConnectionStore();
+		const sharedDraftSchema = {
+			Database: {
+				name: 'Database',
+				tables: []
+			}
+		};
+		const first = store.add({
+			name: 'First mock',
+			kind: 'mock',
+			mockSchema: sharedDraftSchema
+		});
+		const second = store.add({
+			name: 'Second mock',
+			kind: 'mock',
+			mockSchema: sharedDraftSchema
+		});
+
+		expect(first.url).not.toBe(second.url);
+		expect(first.mockSchema).not.toBe(second.mockSchema);
+
+		const updatedFirst = store.update(first.id, {
+			name: first.name,
+			kind: 'mock',
+			mockSchema: {
+				Database: {
+					name: 'Database',
+					tables: [{ name: 'OnlyInFirst', columns: [] }]
+				}
+			}
+		});
+
+		expect(updatedFirst.mockSchema?.Database.tables).toHaveLength(1);
+		expect(second.mockSchema?.Database.tables).toEqual([]);
+	});
+
 	it.each(['not a url', 'ftp://example.test', 'https://user:secret@example.test'])(
 		'rejects unsupported endpoint %s',
 		(url) => {
 			const store = createClusterConnectionStore();
 
-			expect(() => store.add({ name: 'Invalid', url })).toThrow();
+			expect(() => store.add({ name: 'Invalid', kind: 'remote', url })).toThrow();
 		}
 	);
 
 	it('updates and removes custom connections', () => {
 		const store = createClusterConnectionStore();
-		const cluster = store.add({ name: 'Original', url: 'https://original.example.test' });
+		const cluster = store.add({
+			name: 'Original',
+			kind: 'remote',
+			url: 'https://original.example.test'
+		});
 
 		const updated = store.update(cluster.id, {
 			name: 'Updated',
+			kind: 'remote',
 			url: 'https://updated.example.test',
 			description: 'New endpoint'
 		});
@@ -57,7 +139,11 @@ describe('cluster connection store', () => {
 		const builtIn = store.clusters[0];
 
 		expect(() =>
-			store.update(builtIn.id, { name: 'Changed', url: 'https://example.test' })
+			store.update(builtIn.id, {
+				name: 'Changed',
+				kind: 'remote',
+				url: 'https://example.test'
+			})
 		).toThrow('Built-in clusters cannot be edited.');
 		expect(() => store.remove(builtIn.id)).toThrow('Built-in clusters cannot be removed.');
 	});

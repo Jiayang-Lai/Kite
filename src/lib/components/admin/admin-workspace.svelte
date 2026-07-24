@@ -24,10 +24,10 @@
 		getClusterConnectionStore,
 		type NewClusterConnection
 	} from '$lib/cluster/cluster-connection-store.svelte';
-	import { MOCK_DATABASES } from '$lib/data/mock-databases';
+	import { getMockClusterSchema, usesBuiltInMockCatalog } from '$lib/cluster/mock-cluster-schema';
 	import { MOCK_RECENT_QUERIES, MOCK_SAVED_QUERIES } from '$lib/data/mock-queries';
 	import { loadBackendSchema } from '$lib/kusto/backend-schema';
-	import { getKustoErrorMessage, MOCK_KUSTO_CLUSTER_URL } from '$lib/kusto/query-client';
+	import { getKustoErrorMessage } from '$lib/kusto/query-client';
 	import { getRecentQueryStore } from '$lib/query/recent-query-store.svelte';
 	import { getSavedQueryStore } from '$lib/query/saved-query-store.svelte';
 
@@ -73,7 +73,8 @@
 		clusterConnectionStore.clusters.find((cluster) => cluster.id === clusterSession.activeClusterId)
 			?.url ?? ''
 	);
-	const isMockCluster = $derived(activeClusterUrl === MOCK_KUSTO_CLUSTER_URL);
+	const isMockCluster = $derived(activeCluster?.kind === 'mock');
+	const hasBuiltInMockSamples = $derived(usesBuiltInMockCatalog(activeCluster));
 	const activeClusterName = $derived(activeCluster?.name ?? 'current cluster');
 	const failedClusterName = $derived(
 		clusters.find((cluster) => cluster.id === failedClusterId)?.name ?? 'selected cluster'
@@ -85,10 +86,14 @@
 		recentQueryStore.forCluster(clusterSession.activeClusterId)
 	);
 	const recentQueries = $derived<ExplorerQuery[]>(
-		storedRecentQueries.length ? storedRecentQueries : isMockCluster ? MOCK_RECENT_QUERIES : []
+		storedRecentQueries.length
+			? storedRecentQueries
+			: hasBuiltInMockSamples
+				? MOCK_RECENT_QUERIES
+				: []
 	);
 	const savedQueries = $derived<ExplorerQuery[]>([
-		...(isMockCluster ? MOCK_SAVED_QUERIES : []),
+		...(hasBuiltInMockSamples ? MOCK_SAVED_QUERIES : []),
 		...savedQueryStore.forCluster(clusterSession.activeClusterId)
 	]);
 	const activeView = $derived(
@@ -155,8 +160,8 @@
 		connectionError = '';
 		try {
 			const schema =
-				cluster.url === MOCK_KUSTO_CLUSTER_URL
-					? MOCK_DATABASES
+				cluster.kind === 'mock'
+					? getMockClusterSchema(cluster)
 					: await loadBackendSchema(cluster.url);
 			if (requestId !== schemaRequestId || clusterId !== selectedClusterId) return false;
 			const firstDatabase = Object.values(schema)[0];

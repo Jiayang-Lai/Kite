@@ -1,16 +1,32 @@
 import { browser } from '$app/environment';
 import { getContext, setContext } from 'svelte';
 
-import { getKustoClusters, type KustoClusterConnection } from '$lib/kusto/query-client';
+import { createStarterMockSchema, normalizeMockSchema } from '$lib/cluster/mock-cluster-schema';
+import {
+	getKustoClusters,
+	MOCK_KUSTO_CLUSTER_URL,
+	type KustoClusterConnection
+} from '$lib/kusto/query-client';
+import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 
 const CLUSTER_CONNECTION_STORE = Symbol('cluster-connection-store');
 const STORAGE_KEY = 'kite:cluster-connections:v1';
 
-export type NewClusterConnection = {
+type ClusterConnectionDraft = {
 	name: string;
-	url: string;
 	description?: string;
 };
+
+export type NewClusterConnection =
+	| (ClusterConnectionDraft & {
+			kind: 'remote';
+			url: string;
+	  })
+	| (ClusterConnectionDraft & {
+			kind: 'mock';
+			url?: never;
+			mockSchema: KustoDatabaseSchema;
+	  });
 
 export type ClusterConnectionStore = {
 	readonly clusters: KustoClusterConnection[];
@@ -50,22 +66,32 @@ function parseStoredCluster(value: unknown): KustoClusterConnection | undefined 
 	if (
 		typeof cluster.id !== 'string' ||
 		typeof cluster.name !== 'string' ||
-		typeof cluster.url !== 'string' ||
-		cluster.kind !== 'remote'
+		(cluster.kind !== 'remote' && cluster.kind !== 'mock')
 	) {
 		return undefined;
 	}
+	if (cluster.kind === 'remote' && typeof cluster.url !== 'string') return undefined;
 
 	try {
 		const name = cluster.name.trim();
 		if (!name) return undefined;
 		const description =
 			typeof cluster.description === 'string' ? cluster.description.trim() || undefined : undefined;
+		if (cluster.kind === 'mock') {
+			return {
+				id: cluster.id,
+				name,
+				description,
+				url: createMockClusterUrl(cluster.id),
+				kind: 'mock',
+				mockSchema: normalizeMockSchema(cluster.mockSchema ?? createStarterMockSchema())
+			};
+		}
 		return {
 			id: cluster.id,
 			name,
 			description,
-			url: normalizeClusterUrl(cluster.url),
+			url: normalizeClusterUrl(cluster.url as string),
 			kind: 'remote'
 		};
 	} catch {
@@ -78,6 +104,10 @@ function createClusterId() {
 		globalThis.crypto?.randomUUID?.() ??
 		`cluster-${Date.now()}-${Math.random().toString(36).slice(2)}`
 	);
+}
+
+function createMockClusterUrl(clusterId: string) {
+	return `${MOCK_KUSTO_CLUSTER_URL}/${encodeURIComponent(clusterId)}`;
 }
 
 /** Creates the browser-local catalog used by every cluster switcher in the app. */
@@ -100,6 +130,17 @@ export function createClusterConnectionStore(): ClusterConnectionStore {
 	function prepareCluster(draft: NewClusterConnection, id: string = createClusterId()) {
 		const name = draft.name.trim();
 		if (!name) throw new Error('Enter a cluster name.');
+
+		if (draft.kind === 'mock') {
+			return {
+				id,
+				name,
+				description: draft.description?.trim() || undefined,
+				url: createMockClusterUrl(id),
+				kind: 'mock' as const,
+				mockSchema: normalizeMockSchema(draft.mockSchema)
+			};
+		}
 
 		return {
 			id,

@@ -1,4 +1,5 @@
 import type { CancellableExecution, QueryExecution, QueryResult } from '$lib/types/query-result';
+import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 import { Client as KustoClient, ClientRequestProperties } from 'azure-kusto-data';
 
 /** Browser-visible endpoint for Kite's default Kusto connection. */
@@ -28,6 +29,8 @@ export type KustoClusterConnection = {
 	url: string;
 	/** Whether the connection executes remotely or only supplies local schema metadata. */
 	kind: 'remote' | 'mock';
+	/** Browser-local schema metadata owned by a custom mock connection. */
+	mockSchema?: KustoDatabaseSchema;
 	/** Optional ingestion behavior available for this connection. */
 	ingestion?: KustoIngestionConfiguration;
 };
@@ -44,26 +47,14 @@ const DEFAULT_KUSTO_CLUSTERS: KustoClusterConnection[] = [
 	{
 		id: '5dd7fadc-c5b0-421f-8735-97000e9332ec',
 		name: 'Mock cluster',
+		description: 'In-memory schema catalog for demo',
 		url: MOCK_KUSTO_CLUSTER_URL,
 		kind: 'mock'
 	},
 	{
 		id: '36a61d62-3326-45ef-8f99-7c86affd1cb1',
 		name: 'Local Kusto',
-		url: DEFAULT_KUSTO_CLUSTER_URL,
-		kind: 'remote',
-		ingestion: {
-			mode: 'emulator',
-			containerRoot: '/kustodata/raw',
-			maxInlineFileBytes: 10 * 1024 * 1024,
-			maxInlineCommandBytes: 512 * 1024
-		}
-	},
-	{
-		id: '43bd513e-02dd-463e-864b-522a412983b6',
-		name: 'Local Kusto development cluster connection with an intentionally very long display name',
-		description:
-			'Uses the same local endpoint and deliberately long supporting text to verify selector labels truncate cleanly without affecting adjacent controls.',
+		description: 'Kustainer running on localhost',
 		url: DEFAULT_KUSTO_CLUSTER_URL,
 		kind: 'remote',
 		ingestion: {

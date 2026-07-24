@@ -55,8 +55,6 @@
 	type DatabaseManagementProps = {
 		databases?: KustoDatabaseSchema;
 		selectedDatabase?: string;
-		selectedTable?: string;
-		selectedFunction?: string;
 		expansionState: ExplorerExpansionState;
 		onexpansionchange: (change: ExplorerExpansionChange) => void;
 		clusterId: string;
@@ -64,7 +62,7 @@
 		clusterName: string;
 		isMockCluster?: boolean;
 		isLoading?: boolean;
-		onopenquery?: () => void;
+		onopenquery?: (databaseName: string) => void;
 		onrefreshschema?: (clusterId: string) => Promise<void> | void;
 		onmutationstatechange?: (running: boolean) => void;
 	};
@@ -72,8 +70,6 @@
 	let {
 		databases,
 		selectedDatabase = $bindable(),
-		selectedTable = $bindable(),
-		selectedFunction = $bindable(),
 		expansionState,
 		onexpansionchange,
 		clusterId,
@@ -130,8 +126,6 @@
 		const firstDatabase = databaseEntries[0];
 		if (firstDatabase && !databases?.[selectedDatabase ?? '']) {
 			selectedDatabase = firstDatabase.name;
-			selectedTable = undefined;
-			selectedFunction = undefined;
 		}
 	});
 
@@ -161,8 +155,6 @@
 		columnOrderOpen = false;
 		createTableOpen = false;
 		selectedDatabase = databaseName;
-		selectedTable = undefined;
-		selectedFunction = undefined;
 	}
 
 	function openTableEditor(table: KustoTable) {
@@ -284,8 +276,6 @@
 					? name?.trim()
 					: Object.keys(updatedCluster.mockSchema ?? {})[0];
 			selectedDatabase = nextDatabase;
-			selectedTable = undefined;
-			selectedFunction = undefined;
 			await onrefreshschema?.(targetClusterId);
 			mutationSuccess =
 				action === 'create'
@@ -515,8 +505,6 @@
 			}
 
 			selectedDatabase = targetDatabase;
-			selectedTable = plan.tableName;
-			selectedFunction = undefined;
 			mutationSuccess = `${targetDatabase}.${plan.tableName}: ${plan.summary}.`;
 			succeeded = true;
 		} catch (error) {
@@ -559,7 +547,11 @@
 		<PlusIcon />
 		New table
 	</Button>
-	<Button size="sm" variant="outline" onclick={() => onopenquery?.()}>
+	<Button
+		size="sm"
+		variant="outline"
+		onclick={() => activeDatabase && onopenquery?.(activeDatabase.name)}
+	>
 		<FileCode2Icon />
 		Open in Query
 	</Button>
@@ -698,8 +690,6 @@
 				database={activeDatabase}
 				{expansionState}
 				{onexpansionchange}
-				bind:selectedTable
-				bind:selectedFunction
 				height="100%"
 				headerActions={schemaActions}
 				{tableActions}

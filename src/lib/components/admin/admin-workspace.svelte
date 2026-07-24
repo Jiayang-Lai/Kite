@@ -322,8 +322,6 @@
 		<DatabaseManagement
 			databases={databaseSchema}
 			bind:selectedDatabase
-			bind:selectedTable
-			bind:selectedFunction
 			expansionState={explorerExpansion}
 			onexpansionchange={updateExplorerExpansion}
 			clusterId={clusterSession.activeClusterId}
@@ -337,11 +335,9 @@
 				}
 			}}
 			onmutationstatechange={(running) => (isTableMutating = running)}
-			onopenquery={() =>
+			onopenquery={(database) =>
 				openInQuery({
-					database: selectedDatabase,
-					table: selectedTable,
-					function: selectedFunction
+					database
 				})}
 		/>
 	{:else if view === 'commands'}

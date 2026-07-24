@@ -28,7 +28,7 @@ services:
   kusto:
     image: mcr.microsoft.com/azuredataexplorer/kustainer-linux
     volumes:
-      - ./kusto-raw:/kustodata/raw:ro
+      - ./kusto-raw:/kustodata/raw
     ports:
       - 127.0.0.1:8080:8080
     environment:
@@ -83,7 +83,7 @@ This writes `src/lib/generated/kusto-documentation-index.ts` and the Markdown fi
     - [x] Kusto Query Page: explore clusters, databases, and tables; inspect schemas and functions; and run queries.
     - [ ] Kusto Admin Page:
       - [x] Allows user to run management commands
-      - [ ] Allows user to manage databases and tables etc (read and write)
+      - [x] Allows user to manage databases and tables etc (read and write)
         - [x] Create empty tables with an explicit initial schema and metadata
         - [x] Update table descriptions and append columns
         - [x] Block stale table updates with execution-time schema preflights
@@ -91,6 +91,7 @@ This writes `src/lib/generated/kusto-documentation-index.ts` and the Markdown fi
         - [x] Remove columns with irreversible-data-loss confirmation
         - [x] Reorder every existing column with an explicit before/after diff
         - [x] Directly change column types with irreversible-data-loss confirmation
+        - [ ] Better UI
       - [x] Allows user to ingest pasted or chunked browser CSV and mounted Parquet or CSV files
       - [x] Allows user to view cluster, database and table
 

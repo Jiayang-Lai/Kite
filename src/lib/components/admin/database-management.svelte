@@ -14,15 +14,20 @@
 	} from '$lib/components/admin/column-mutation-dialog.svelte';
 	import ColumnOrderDialog from '$lib/components/admin/column-order-dialog.svelte';
 	import CreateTableDialog from '$lib/components/admin/create-table-dialog.svelte';
-	import MockDatabaseDialog, {
-		type MockDatabaseAction
-	} from '$lib/components/admin/mock-database-dialog.svelte';
+	import DatabaseActionsMenu from '$lib/components/admin/database-actions-menu.svelte';
+	import DatabaseMutationDialog, {
+		type DatabaseMutationAction,
+		type DatabaseMutationRequest
+	} from '$lib/components/admin/database-mutation-dialog.svelte';
+	import TableDropDialog from '$lib/components/admin/table-drop-dialog.svelte';
 	import TableEditorDialog from '$lib/components/admin/table-editor-dialog.svelte';
 	import { getClusterConnectionStore } from '$lib/cluster/cluster-connection-store.svelte';
+	import { getDatabaseCapabilities } from '$lib/cluster/database-capabilities';
 	import {
 		applyMockCreateDatabase,
 		applyMockCreateTable,
 		applyMockDropDatabase,
+		applyMockDropTable,
 		applyMockRenameDatabase,
 		applyMockTableMutation
 	} from '$lib/cluster/mock-schema-management';
@@ -36,6 +41,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { quoteKustoEntity, quoteKustoString } from '$lib/kusto/command-format';
 	import {
 		getKustoErrorMessage,
 		startKustoManagementCommand,
@@ -43,6 +49,7 @@
 	} from '$lib/kusto/query-client';
 	import {
 		buildTablePreflightCommands,
+		buildDropTableCommand,
 		compareTableSnapshots,
 		parseTablePreflightResults,
 		snapshotLoadedTable,
@@ -89,8 +96,13 @@
 	let columnOrderOpen = $state(false);
 	let createTableOpen = $state(false);
 	let databaseDialogOpen = $state(false);
-	let databaseDialogAction = $state<MockDatabaseAction>('create');
+	let databaseDialogAction = $state<DatabaseMutationAction>('create');
 	let databaseDialogTarget = $state('');
+	let databaseDialogInitialName = $state('');
+	let tableDropOpen = $state(false);
+	let tableDropDatabaseName = $state('');
+	let tableDropTableName = $state('');
+	let tableDropSnapshot = $state.raw<TableSchemaSnapshot>();
 	let columnMutationAction = $state<ColumnMutationAction>();
 	let editorTable = $state.raw<KustoTable>();
 	let editorColumn = $state.raw<KustoColumn>();
@@ -104,18 +116,32 @@
 	let isMutating = $state(false);
 	let isCreatingTable = $state(false);
 	let isDatabaseMutating = $state(false);
+	let isDroppingTable = $state(false);
 	let createTableError = $state('');
 	let activeCancel: (() => void) | undefined;
 	let mutationRequestId = 0;
 	let wasMutationDialogOpen = false;
-	const isBusy = $derived(isPreparingEditor || isMutating || isCreatingTable || isDatabaseMutating);
+	const isBusy = $derived(
+		isPreparingEditor || isMutating || isCreatingTable || isDatabaseMutating || isDroppingTable
+	);
 	const isMutationDialogOpen = $derived(
-		editorOpen || columnEditorOpen || columnOrderOpen || createTableOpen || databaseDialogOpen
+		editorOpen ||
+			columnEditorOpen ||
+			columnOrderOpen ||
+			createTableOpen ||
+			databaseDialogOpen ||
+			tableDropOpen
 	);
 	const databaseEntries = $derived(Object.values(databases ?? {}));
+	const activeCluster = $derived(
+		clusterConnectionStore.clusters.find((cluster) => cluster.id === clusterId)
+	);
+	const databaseCapabilities = $derived(getDatabaseCapabilities(activeCluster));
 	const visibleDatabases = $derived(
 		databaseEntries.filter((database) =>
-			database.name.toLowerCase().includes(databaseFilter.trim().toLowerCase())
+			`${database.name} ${database.prettyName ?? ''}`
+				.toLowerCase()
+				.includes(databaseFilter.trim().toLowerCase())
 		)
 	);
 	const activeDatabase = $derived(
@@ -142,6 +168,7 @@
 			columnOrderOpen = false;
 			createTableOpen = false;
 			databaseDialogOpen = false;
+			tableDropOpen = false;
 			editorTable = undefined;
 			editorColumn = undefined;
 		}
@@ -235,10 +262,18 @@
 				?.mockSchemaRevision ?? 0;
 	}
 
-	function openDatabaseDialog(action: MockDatabaseAction) {
-		if (!isMockCluster || isBusy) return;
+	function openDatabaseDialog(action: DatabaseMutationAction, database = activeDatabase) {
+		const isSupported =
+			action === 'create'
+				? databaseCapabilities.create
+				: action === 'rename'
+					? Boolean(databaseCapabilities.rename)
+					: databaseCapabilities.drop;
+		if (!isSupported || isBusy) return;
 		databaseDialogAction = action;
-		databaseDialogTarget = action === 'create' ? '' : (activeDatabase?.name ?? '');
+		databaseDialogTarget = action === 'create' ? '' : (database?.name ?? '');
+		databaseDialogInitialName =
+			action === 'rename' ? (database?.prettyName ?? database?.name ?? '') : databaseDialogTarget;
 		editorClusterId = clusterId;
 		editorMockSchemaRevision =
 			clusterConnectionStore.clusters.find((cluster) => cluster.id === clusterId)
@@ -248,42 +283,185 @@
 		databaseDialogOpen = true;
 	}
 
-	async function mutateDatabase(name?: string) {
-		if (!isMockCluster || isDatabaseMutating) return;
+	function openDropTableDialog(table: KustoTable) {
+		if (!activeDatabase || isBusy) return;
+		const canonicalTable = activeDatabase.tables.find((candidate) => candidate.name === table.name);
+		if (!canonicalTable) return;
+
+		tableDropDatabaseName = activeDatabase.name;
+		tableDropTableName = canonicalTable.name;
+		tableDropSnapshot = snapshotLoadedTable(activeDatabase.name, canonicalTable);
+		editorClusterId = clusterId;
+		editorMockSchemaRevision =
+			clusterConnectionStore.clusters.find((cluster) => cluster.id === clusterId)
+				?.mockSchemaRevision ?? 0;
+		mutationError = '';
+		mutationSuccess = '';
+		tableDropOpen = true;
+	}
+
+	async function removeTable() {
+		if (!tableDropSnapshot || isDroppingTable) return;
+		const requestId = ++mutationRequestId;
 		const targetClusterId = clusterId;
+		const targetClusterUrl = clusterUrl;
+		const targetDatabase = tableDropDatabaseName;
+		const targetTable = tableDropTableName;
+		const originalSnapshot = tableDropSnapshot;
+		let commandCompleted = false;
+
+		isDroppingTable = true;
+		onmutationstatechange?.(true);
+		try {
+			if (isMockCluster) {
+				const updatedCluster = clusterConnectionStore.updateMockSchema(
+					targetClusterId,
+					editorMockSchemaRevision,
+					(schema) => applyMockDropTable(schema, targetDatabase, targetTable, originalSnapshot)
+				);
+				editorMockSchemaRevision = updatedCluster.mockSchemaRevision ?? editorMockSchemaRevision;
+				commandCompleted = true;
+			} else {
+				const preflight = startKustoReadOnlyManagementCommandBatch(
+					targetDatabase,
+					buildTablePreflightCommands(targetTable),
+					targetClusterUrl
+				);
+				activeCancel = preflight.cancel;
+				const preflightResults = await preflight.promise;
+				if (requestId !== mutationRequestId) return;
+
+				const currentSnapshot = parseTablePreflightResults(preflightResults);
+				const conflicts = compareTableSnapshots(originalSnapshot, currentSnapshot);
+				if (conflicts.length) {
+					await onrefreshschema?.(targetClusterId);
+					throw new Error(
+						`Removal blocked because the table changed after the schema was loaded:\n\n${conflicts
+							.map((conflict) => `• ${conflict.message}`)
+							.join('\n')}\n\nReview the refreshed schema before trying again.`
+					);
+				}
+
+				const execution = startKustoManagementCommand(
+					targetDatabase,
+					buildDropTableCommand(targetTable),
+					targetClusterUrl
+				);
+				activeCancel = execution.cancel;
+				await execution.promise;
+				if (requestId !== mutationRequestId) return;
+				commandCompleted = true;
+			}
+
+			await onrefreshschema?.(targetClusterId);
+			await tick();
+			if (requestId !== mutationRequestId) return;
+			if (
+				databases?.[targetDatabase]?.tables.some(
+					(table) => table.name.toLowerCase() === targetTable.toLowerCase()
+				)
+			) {
+				throw new Error(
+					`The remove command completed, but ${targetDatabase}.${targetTable} is still present after refreshing the schema.`
+				);
+			}
+			mutationSuccess = `Table ${targetDatabase}.${targetTable} removed.`;
+		} catch (error) {
+			const message = getKustoErrorMessage(error);
+			throw new Error(
+				commandCompleted && !message.startsWith('The remove command completed')
+					? `The table was removed, but Kite could not refresh and verify the schema. Refresh before continuing.\n\n${message}`
+					: message === 'Command cancelled.'
+						? 'Stopped waiting for removal. The Kusto operation may still complete; refresh the schema before retrying.'
+						: message
+			);
+		} finally {
+			if (requestId === mutationRequestId) activeCancel = undefined;
+			isDroppingTable = false;
+			onmutationstatechange?.(false);
+		}
+	}
+
+	async function mutateDatabase(request: DatabaseMutationRequest) {
+		if (isDatabaseMutating) return;
+		const requestId = ++mutationRequestId;
+		const targetClusterId = clusterId;
+		const targetClusterUrl = clusterUrl;
 		const targetDatabase = databaseDialogTarget;
 		const action = databaseDialogAction;
+		const requestedName = request.name?.trim() ?? '';
+		const targetCluster = clusterConnectionStore.clusters.find(
+			(cluster) => cluster.id === targetClusterId
+		);
+		if (!targetCluster) throw new Error('This cluster no longer exists.');
+
 		isDatabaseMutating = true;
 		onmutationstatechange?.(true);
 		try {
-			const updatedCluster = clusterConnectionStore.updateMockSchema(
-				targetClusterId,
-				editorMockSchemaRevision,
-				(schema) => {
-					switch (action) {
-						case 'create':
-							return applyMockCreateDatabase(schema, name ?? '');
-						case 'rename':
-							return applyMockRenameDatabase(schema, targetDatabase, name ?? '');
-						case 'drop':
-							return applyMockDropDatabase(schema, targetDatabase);
+			if (targetCluster.kind === 'mock') {
+				const updatedCluster = clusterConnectionStore.updateMockSchema(
+					targetClusterId,
+					editorMockSchemaRevision,
+					(schema) => {
+						switch (action) {
+							case 'create':
+								return applyMockCreateDatabase(schema, requestedName);
+							case 'rename':
+								return applyMockRenameDatabase(schema, targetDatabase, requestedName);
+							case 'drop':
+								return applyMockDropDatabase(schema, targetDatabase);
+						}
 					}
-				}
-			);
-			editorMockSchemaRevision = updatedCluster.mockSchemaRevision ?? editorMockSchemaRevision;
-			const nextDatabase =
-				action === 'create' || action === 'rename'
-					? name?.trim()
-					: Object.keys(updatedCluster.mockSchema ?? {})[0];
-			selectedDatabase = nextDatabase;
+				);
+				editorMockSchemaRevision = updatedCluster.mockSchemaRevision ?? editorMockSchemaRevision;
+				const nextDatabase =
+					action === 'create' || action === 'rename'
+						? requestedName
+						: Object.keys(updatedCluster.mockSchema ?? {})[0];
+				selectedDatabase = nextDatabase;
+				await onrefreshschema?.(targetClusterId);
+				if (requestId !== mutationRequestId) return;
+				mutationSuccess =
+					action === 'create'
+						? `Database ${nextDatabase} created.`
+						: action === 'rename'
+							? `Database ${targetDatabase} renamed to ${nextDatabase}.`
+							: `Database ${targetDatabase} deleted.`;
+				return;
+			}
+
 			await onrefreshschema?.(targetClusterId);
-			mutationSuccess =
-				action === 'create'
-					? `Database ${nextDatabase} created.`
-					: action === 'rename'
-						? `Database ${targetDatabase} renamed to ${nextDatabase}.`
-						: `Database ${targetDatabase} deleted.`;
+			await tick();
+			if (requestId !== mutationRequestId) return;
+
+			if (action !== 'rename') {
+				throw new Error('The local backend does not support remote database creation or deletion.');
+			}
+			if (
+				!Object.keys(databases ?? {}).some(
+					(candidate) => candidate.toLowerCase() === targetDatabase.toLowerCase()
+				)
+			) {
+				throw new Error(
+					`Database “${targetDatabase}” changed or no longer exists. The schema was refreshed.`
+				);
+			}
+
+			const command = `.alter database ${quoteKustoEntity(targetDatabase)} prettyname ${quoteKustoString(requestedName)}`;
+			const execution = startKustoManagementCommand(targetDatabase, command, targetClusterUrl);
+			activeCancel = execution.cancel;
+			await execution.promise;
+
+			if (requestId !== mutationRequestId) return;
+			await onrefreshschema?.(targetClusterId);
+			await tick();
+			if (requestId !== mutationRequestId) return;
+
+			mutationSuccess = `Database ${targetDatabase} display name changed to ${requestedName}.`;
+		} catch (error) {
+			throw new Error(getKustoErrorMessage(error));
 		} finally {
+			if (requestId === mutationRequestId) activeCancel = undefined;
 			isDatabaseMutating = false;
 			onmutationstatechange?.(false);
 		}
@@ -558,7 +736,7 @@
 {/snippet}
 
 {#snippet tableActions(table: KustoTable)}
-	<div class="flex items-center gap-1">
+	<div class="flex flex-wrap items-center justify-end gap-1">
 		<Button
 			size="xs"
 			variant="outline"
@@ -578,6 +756,17 @@
 		>
 			<TablePropertiesIcon />
 			Reorder columns
+		</Button>
+		<Button
+			size="xs"
+			variant="outline"
+			class="text-destructive hover:text-destructive"
+			disabled={isBusy}
+			onclick={() => openDropTableDialog(table)}
+			title={`Remove ${table.name} and all data stored in it`}
+		>
+			<Trash2Icon />
+			Remove table
 		</Button>
 	</div>
 {/snippet}
@@ -600,35 +789,17 @@
 		<Card.Header>
 			<Card.Title>Databases</Card.Title>
 			<Card.Description>{databaseEntries.length} on the selected cluster</Card.Description>
-			{#if isMockCluster}
+			{#if databaseCapabilities.create}
 				<div class="flex flex-wrap gap-1 pt-1">
 					<Button
 						size="xs"
 						variant="outline"
 						disabled={isBusy}
+						title="Create a database"
 						onclick={() => openDatabaseDialog('create')}
 					>
 						<PlusIcon />
 						New
-					</Button>
-					<Button
-						size="xs"
-						variant="outline"
-						disabled={!activeDatabase || isBusy}
-						onclick={() => openDatabaseDialog('rename')}
-					>
-						<PencilIcon />
-						Rename
-					</Button>
-					<Button
-						size="xs"
-						variant="outline"
-						class="text-destructive hover:text-destructive"
-						disabled={!activeDatabase || databaseEntries.length <= 1 || isBusy}
-						onclick={() => openDatabaseDialog('drop')}
-					>
-						<Trash2Icon />
-						Delete
 					</Button>
 				</div>
 			{/if}
@@ -647,21 +818,42 @@
 			<ScrollArea class="mt-2 min-h-0 flex-1" orientation="vertical" type="auto">
 				<div class="space-y-1">
 					{#each visibleDatabases as database (database.name)}
-						<button
-							type="button"
-							class="hover:bg-accent focus-visible:ring-ring flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none focus-visible:ring-2"
-							class:bg-accent={database.name === activeDatabase?.name}
-							onclick={() => selectDatabase(database.name)}
-						>
-							<DatabaseIcon class="text-muted-foreground size-4 shrink-0" />
-							<span class="min-w-0 flex-1">
-								<span class="block truncate text-sm font-medium">{database.name}</span>
-								<span class="text-muted-foreground block text-xs">
-									{database.tables.length}
-									{database.tables.length === 1 ? 'table' : 'tables'}
+						<div class="group/database-row relative">
+							<button
+								type="button"
+								class="hover:bg-accent focus-visible:ring-ring flex w-full min-w-0 items-center gap-2 rounded-md py-1.5 pr-9 pl-2 text-left outline-none focus-visible:ring-2"
+								class:bg-accent={database.name === activeDatabase?.name}
+								onclick={() => selectDatabase(database.name)}
+							>
+								<DatabaseIcon class="text-muted-foreground size-4 shrink-0" />
+								<span class="min-w-0 flex-1">
+									<span class="block truncate text-sm font-medium">
+										{database.prettyName ?? database.name}
+									</span>
+									{#if database.prettyName && database.prettyName !== database.name}
+										<span class="text-muted-foreground block truncate font-mono text-[10px]">
+											{database.name}
+										</span>
+									{/if}
+									<span class="text-muted-foreground block text-xs">
+										{database.tables.length}
+										{database.tables.length === 1 ? 'table' : 'tables'}
+									</span>
 								</span>
-							</span>
-						</button>
+							</button>
+							<DatabaseActionsMenu
+								databaseName={database.name}
+								renameLabel={databaseCapabilities.rename === 'display-name'
+									? 'Edit display name'
+									: 'Rename database'}
+								renameDisabled={!databaseCapabilities.rename}
+								showDrop={databaseCapabilities.drop}
+								dropDisabled={!databaseCapabilities.drop || databaseEntries.length <= 1}
+								dropDisabledReason="A cluster must keep at least one database"
+								disabled={isBusy}
+								onaction={(action) => openDatabaseDialog(action, database)}
+							/>
+						</div>
 					{:else}
 						<p class="text-muted-foreground px-2 py-3 text-xs">No databases found.</p>
 					{/each}
@@ -722,11 +914,22 @@
 	</div>
 </section>
 
-<MockDatabaseDialog
+<DatabaseMutationDialog
 	bind:open={databaseDialogOpen}
 	action={databaseDialogAction}
 	databaseName={databaseDialogTarget}
+	initialName={databaseDialogInitialName}
+	clusterKind={isMockCluster ? 'mock' : 'remote'}
+	renameMode={databaseCapabilities.rename || 'canonical'}
 	onsubmit={mutateDatabase}
+/>
+
+<TableDropDialog
+	bind:open={tableDropOpen}
+	databaseName={tableDropDatabaseName}
+	tableName={tableDropTableName}
+	clusterKind={isMockCluster ? 'mock' : 'remote'}
+	onsubmit={removeTable}
 />
 
 {#if editorDatabaseName}

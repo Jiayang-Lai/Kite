@@ -5,6 +5,7 @@ import {
 	buildChangeColumnTypePlan,
 	buildCreateTablePlan,
 	buildDropColumnPlan,
+	buildDropTableCommand,
 	buildRenameColumnPlan,
 	buildReorderTableColumnsPlan,
 	buildTableMutationPlan,
@@ -43,6 +44,11 @@ const currentPreflight: TableSchemaSnapshot = {
 };
 
 describe('table management commands', () => {
+	it('quotes table names in drop commands', () => {
+		expect(buildDropTableCommand('Event Logs')).toBe(".drop table ['Event Logs']");
+		expect(() => buildDropTableCommand('')).toThrow('Select a target table.');
+	});
+
 	it('builds a quoted table creation with columns and metadata', () => {
 		expect(
 			buildCreateTablePlan({

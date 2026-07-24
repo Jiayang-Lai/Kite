@@ -74,7 +74,10 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="gap-0 sm:max-w-xl" aria-describedby="add-cluster-dialog-description">
+	<Dialog.Content
+		class="max-h-[calc(100dvh-2rem)] gap-0 overflow-y-auto sm:max-w-xl"
+		aria-describedby="add-cluster-dialog-description"
+	>
 		<Dialog.Header class="border-b p-5 pr-14">
 			<Dialog.Title>{cluster ? 'Edit cluster' : 'Add cluster'}</Dialog.Title>
 			<Dialog.Description id="add-cluster-dialog-description">
@@ -86,7 +89,7 @@
 
 		<form onsubmit={addCluster}>
 			<div class="space-y-4 p-5">
-				<div class="space-y-1.5">
+				<div class="grid gap-1.5">
 					<label class="text-sm font-medium" for="new-cluster-name">Name</label>
 					<Input
 						id="new-cluster-name"
@@ -98,7 +101,7 @@
 					/>
 				</div>
 
-				<div class="space-y-1.5">
+				<div class="grid gap-1.5">
 					<label class="text-sm font-medium" for="new-cluster-kind">Kind</label>
 					<Select.Root type="single" bind:value={kind}>
 						<Select.Trigger id="new-cluster-kind" class="w-full">
@@ -117,7 +120,7 @@
 				</div>
 
 				{#if kind === 'remote'}
-					<div class="space-y-1.5">
+					<div class="grid gap-1.5">
 						<label class="text-sm font-medium" for="new-cluster-url">Cluster URL</label>
 						<Input
 							id="new-cluster-url"
@@ -133,7 +136,7 @@
 						</p>
 					</div>
 				{:else}
-					<div class="space-y-1.5">
+					<div class="grid gap-1.5">
 						<label class="text-sm font-medium" for="new-cluster-mock-schema">Schema JSON</label>
 						<Textarea
 							id="new-cluster-mock-schema"
@@ -150,7 +153,7 @@
 					</div>
 				{/if}
 
-				<div class="space-y-1.5">
+				<div class="grid gap-1.5">
 					<label class="text-sm font-medium" for="new-cluster-description">
 						Description <span class="text-muted-foreground font-normal">(optional)</span>
 					</label>

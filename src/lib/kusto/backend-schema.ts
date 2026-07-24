@@ -82,16 +82,22 @@ export async function loadBackendSchema(
 ): Promise<KustoDatabaseSchema> {
 	const client = new KustoClient(clusterUrl);
 	try {
-		const databaseResponse = await client.executeMgmt('NetDefaultDB', '.show databases');
+		const databaseResponse = await client.executeMgmt('NetDefaultDB', '.show databases details');
 		const databaseTable = databaseResponse.primaryResults[0];
-		const databaseNames = databaseTable
-			? Array.from(databaseTable.rows(), (row) => String(row.DatabaseName))
+		const databaseDetails = databaseTable
+			? Array.from(databaseTable.rows(), (row) => ({
+					name: String(row.DatabaseName),
+					prettyName:
+						typeof row.PrettyName === 'string' && row.PrettyName.trim()
+							? row.PrettyName.trim()
+							: undefined
+				}))
 			: [];
 
-		if (!databaseNames.length) throw new Error('The Kusto backend returned no databases.');
+		if (!databaseDetails.length) throw new Error('The Kusto backend returned no databases.');
 
 		const schema: KustoDatabaseSchema = {};
-		for (const databaseName of databaseNames) {
+		for (const { name: databaseName, prettyName } of databaseDetails) {
 			const response = await client.executeMgmt(databaseName, '.show database schema as json');
 			const row = response.primaryResults[0]
 				? firstRow(response.primaryResults[0].rows())
@@ -102,6 +108,7 @@ export async function loadBackendSchema(
 			}
 
 			Object.assign(schema, parseBackendSchema(serializedSchema));
+			if (schema[databaseName] && prettyName) schema[databaseName].prettyName = prettyName;
 		}
 
 		if (!Object.keys(schema).length) throw new Error('The backend schema was empty.');

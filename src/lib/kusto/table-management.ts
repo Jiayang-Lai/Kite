@@ -260,6 +260,11 @@ export function buildTablePreflightCommands(tableName: string) {
 	] as const;
 }
 
+/** Builds an irreversible table removal command without masking races with `ifexists`. */
+export function buildDropTableCommand(tableName: string) {
+	return `.drop table ${quoteKustoEntity(tableName, 'Select a target table.')}`;
+}
+
 /** Captures the schema already loaded into Kite when the editor is opened. */
 export function snapshotLoadedTable(databaseName: string, table: KustoTable): TableSchemaSnapshot {
 	return {

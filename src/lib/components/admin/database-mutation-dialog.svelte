@@ -3,21 +3,30 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 
-	export type MockDatabaseAction = 'create' | 'rename' | 'drop';
+	export type DatabaseMutationAction = 'create' | 'rename' | 'drop';
+	export type DatabaseMutationRequest = {
+		name?: string;
+	};
 
-	type MockDatabaseDialogProps = {
+	type DatabaseMutationDialogProps = {
 		open?: boolean;
-		action: MockDatabaseAction;
+		action: DatabaseMutationAction;
 		databaseName?: string;
-		onsubmit?: (name?: string) => Promise<void> | void;
+		initialName?: string;
+		clusterKind: 'mock' | 'remote';
+		renameMode?: 'canonical' | 'display-name';
+		onsubmit?: (request: DatabaseMutationRequest) => Promise<void> | void;
 	};
 
 	let {
 		open = $bindable(false),
 		action,
 		databaseName,
+		initialName,
+		clusterKind,
+		renameMode = 'canonical',
 		onsubmit
-	}: MockDatabaseDialogProps = $props();
+	}: DatabaseMutationDialogProps = $props();
 	let name = $state('');
 	let confirmation = $state('');
 	let error = $state('');
@@ -29,10 +38,10 @@
 			initializedTarget = '';
 			return;
 		}
-		const target = `${action}:${databaseName ?? ''}`;
+		const target = `${clusterKind}:${action}:${databaseName ?? ''}:${initialName ?? ''}`;
 		if (target === initializedTarget) return;
 		initializedTarget = target;
-		name = action === 'rename' ? (databaseName ?? '') : '';
+		name = action === 'rename' ? (initialName ?? databaseName ?? '') : '';
 		confirmation = '';
 		error = '';
 	});
@@ -43,7 +52,9 @@
 		error = '';
 		isSubmitting = true;
 		try {
-			await onsubmit?.(action === 'drop' ? undefined : name);
+			await onsubmit?.({
+				name: action === 'drop' ? undefined : name
+			});
 			open = false;
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : String(cause);
@@ -54,28 +65,36 @@
 
 	const title = $derived(
 		action === 'create'
-			? 'Create mock database'
+			? 'Create database'
 			: action === 'rename'
-				? 'Rename mock database'
-				: 'Delete mock database'
+				? renameMode === 'display-name'
+					? 'Edit database display name'
+					: 'Rename database'
+				: 'Delete database'
 	);
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="gap-0 sm:max-w-md" aria-describedby="mock-database-dialog-description">
+	<Dialog.Content class="gap-0 sm:max-w-md" aria-describedby="database-mutation-description">
 		<Dialog.Header class="border-b p-5 pr-14">
 			<Dialog.Title>{title}</Dialog.Title>
-			<Dialog.Description id="mock-database-dialog-description">
+			<Dialog.Description id="database-mutation-description">
 				{action === 'drop'
-					? `Permanently remove ${databaseName} and all of its schema metadata from this browser.`
-					: 'This changes schema metadata in this browser only.'}
+					? clusterKind === 'mock'
+						? `Permanently remove ${databaseName} and all of its schema metadata from this browser.`
+						: `Remote database deletion is not available for the local backend.`
+					: clusterKind === 'mock'
+						? 'This changes schema metadata in this browser only.'
+						: renameMode === 'display-name' && action === 'rename'
+							? 'This changes the friendly display name, not the canonical database identifier.'
+							: 'Remote database creation is not available for the local backend.'}
 			</Dialog.Description>
 		</Dialog.Header>
 
 		<form onsubmit={submit}>
 			<div class="space-y-4 p-5">
 				{#if action === 'drop'}
-					<div class="space-y-1.5">
+					<div class="grid gap-1.5">
 						<label class="text-sm font-medium" for="mock-database-confirmation">
 							Type <span class="font-mono">{databaseName}</span> to confirm
 						</label>
@@ -87,10 +106,14 @@
 						/>
 					</div>
 				{:else}
-					<div class="space-y-1.5">
-						<label class="text-sm font-medium" for="mock-database-name">Database name</label>
+					<div class="grid gap-1.5">
+						<label class="text-sm font-medium" for="database-mutation-name">
+							{action === 'rename' && renameMode === 'display-name'
+								? 'Display name'
+								: 'Database name'}
+						</label>
 						<Input
-							id="mock-database-name"
+							id="database-mutation-name"
 							bind:value={name}
 							autocomplete="off"
 							required
@@ -121,7 +144,9 @@
 					{action === 'create'
 						? 'Create database'
 						: action === 'rename'
-							? 'Rename database'
+							? renameMode === 'display-name'
+								? 'Update display name'
+								: 'Rename database'
 							: 'Delete database'}
 				</Button>
 			</Dialog.Footer>

@@ -4,6 +4,7 @@ import {
 	applyMockCreateDatabase,
 	applyMockCreateTable,
 	applyMockDropDatabase,
+	applyMockDropTable,
 	applyMockRenameDatabase,
 	applyMockTableMutation
 } from './mock-schema-management';
@@ -85,6 +86,35 @@ describe('mock schema management', () => {
 			docstring: 'Mock metrics'
 		});
 		expect(schema.Analytics.tables).toHaveLength(1);
+	});
+
+	it('drops a table only when its loaded schema is still current', () => {
+		const schema = createSchema();
+		const snapshot = snapshotLoadedTable('Analytics', schema.Analytics.tables[0]);
+
+		const updated = applyMockDropTable(schema, 'Analytics', 'Events', snapshot);
+
+		expect(updated.Analytics.tables).toEqual([]);
+		expect(schema.Analytics.tables).toHaveLength(1);
+
+		const changedBase = createSchema();
+		const changedSchema: KustoDatabaseSchema = {
+			Analytics: {
+				...changedBase.Analytics,
+				tables: [
+					{
+						...changedBase.Analytics.tables[0],
+						columns: [
+							...changedBase.Analytics.tables[0].columns,
+							{ name: 'AddedLater', type: 'string' }
+						]
+					}
+				]
+			}
+		};
+		expect(() => applyMockDropTable(changedSchema, 'Analytics', 'Events', snapshot)).toThrow(
+			'changed while this editor was open'
+		);
 	});
 
 	it('applies all table mutation plan variants while preserving column metadata', () => {

@@ -191,11 +191,13 @@
 					<DatabaseIcon class="text-muted-foreground size-4 shrink-0" />
 				{/if}
 				<div class="min-w-0">
-					<h2 class="truncate text-sm font-semibold">{database.name}</h2>
+					<h2 class="truncate text-sm font-semibold">{database.prettyName ?? database.name}</h2>
 					<p class="text-muted-foreground text-xs">
-						{selectedFunction ??
-							selectedTable ??
-							`${database.tables.length} ${database.tables.length === 1 ? 'table' : 'tables'} · ${database.functions?.length ?? 0} ${(database.functions?.length ?? 0) === 1 ? 'function' : 'functions'}`}
+						{database.prettyName && database.prettyName !== database.name
+							? database.name
+							: (selectedFunction ??
+								selectedTable ??
+								`${database.tables.length} ${database.tables.length === 1 ? 'table' : 'tables'} · ${database.functions?.length ?? 0} ${(database.functions?.length ?? 0) === 1 ? 'function' : 'functions'}`)}
 					</p>
 				</div>
 			</div>

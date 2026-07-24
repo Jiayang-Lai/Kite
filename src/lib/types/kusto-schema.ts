@@ -15,6 +15,9 @@ export type KustoDatabase = Pick<Database, 'name' | 'tables'> &
 			Database,
 			'alternateName' | 'functions' | 'graphs' | 'entityGroups' | 'majorVersion' | 'minorVersion'
 		>
-	>;
+	> & {
+		/** Friendly remote database label returned by `.show databases details`. */
+		prettyName?: string;
+	};
 
 export type KustoDatabaseSchema = Record<string, KustoDatabase>;

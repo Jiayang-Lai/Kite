@@ -61,6 +61,24 @@ export function applyMockCreateTable(
 	return nextSchema;
 }
 
+/** Removes one table after confirming the loaded schema still matches. */
+export function applyMockDropTable(
+	schema: KustoDatabaseSchema,
+	databaseName: string,
+	tableName: string,
+	expectedSnapshot: TableSchemaSnapshot
+) {
+	const nextSchema = cloneMockSchema(schema);
+	const database = requireDatabase(nextSchema, databaseName);
+	const table = requireTable(database, tableName);
+	assertTableSnapshot(table, expectedSnapshot);
+	nextSchema[databaseName] = {
+		...database,
+		tables: database.tables.filter((candidate) => candidate.name !== tableName)
+	};
+	return nextSchema;
+}
+
 /** Applies the semantic portion of an existing table plan without executing Kusto. */
 export function applyMockTableMutation(
 	schema: KustoDatabaseSchema,

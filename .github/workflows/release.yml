@@ -1,0 +1,328 @@
+name: Release
+run-name: Release ${{ github.ref_name }}
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: read
+  deployments: read
+
+jobs:
+  classify:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      base_tag: ${{ steps.tag.outputs.baseTag }}
+      commit_sha: ${{ steps.commit.outputs.sha }}
+      rc_tag: ${{ steps.commit.outputs.rc_tag }}
+      tag: ${{ steps.tag.outputs.tag }}
+      type: ${{ steps.tag.outputs.type }}
+      version: ${{ steps.tag.outputs.version }}
+
+    steps:
+      - name: Check out the tagged revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+
+      - name: Validate the tag format
+        id: tag
+        run: |
+          npm run --silent release:validate-tag -- \
+            --tag "$GITHUB_REF_NAME" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Validate the tagged commit
+        id: commit
+        env:
+          BASE_TAG: ${{ steps.tag.outputs.baseTag }}
+          RELEASE_TYPE: ${{ steps.tag.outputs.type }}
+        run: |
+          commit_sha="$(git rev-parse "$GITHUB_REF^{commit}")"
+          git merge-base --is-ancestor "$commit_sha" refs/remotes/origin/main
+          echo "sha=$commit_sha" >> "$GITHUB_OUTPUT"
+
+          if [[ "$RELEASE_TYPE" == "rc" ]]; then
+            echo "rc_tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          rc_tag=""
+          while IFS= read -r candidate; do
+            if npm run --silent release:validate-tag -- --tag "$candidate" >/dev/null 2>&1; then
+              rc_tag="$candidate"
+              break
+            fi
+          done < <(git tag --points-at "$commit_sha" --list "$BASE_TAG-rc.*" --sort=-v:refname)
+
+          if [[ -z "$rc_tag" ]]; then
+            echo "::error::Stable tag $GITHUB_REF_NAME must point to the same commit as a valid $BASE_TAG-rc.N tag."
+            exit 1
+          fi
+
+          echo "rc_tag=$rc_tag" >> "$GITHUB_OUTPUT"
+
+  verify:
+    name: Verify promoted revision
+    needs: classify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      artifact_id: ${{ steps.artifact.outputs.id }}
+      artifact_run_id: ${{ steps.artifact.outputs.run_id }}
+
+    steps:
+      - name: Find the successful UAT artifact
+        id: artifact
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          COMMIT_SHA: ${{ needs.classify.outputs.commit_sha }}
+          MAIN_ARTIFACT_NAME: kite-pages-${{ needs.classify.outputs.commit_sha }}
+          RC_ARTIFACT_NAME: kite-rc-${{ needs.classify.outputs.rc_tag }}
+          RELEASE_TYPE: ${{ needs.classify.outputs.type }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const isCandidate = process.env.RELEASE_TYPE === 'rc';
+            const artifactName = isCandidate
+              ? process.env.MAIN_ARTIFACT_NAME
+              : process.env.RC_ARTIFACT_NAME;
+            const artifacts = await github.paginate(
+              github.rest.actions.listArtifactsForRepo,
+              { owner, repo, name: artifactName, per_page: 100 }
+            );
+
+            const candidates = artifacts
+              .filter((artifact) => !artifact.expired && artifact.workflow_run)
+              .sort((left, right) => new Date(right.created_at) - new Date(left.created_at));
+
+            for (const artifact of candidates) {
+              const { data: run } = await github.rest.actions.getWorkflowRun({
+                owner,
+                repo,
+                run_id: artifact.workflow_run.id
+              });
+
+              const expectedSource =
+                isCandidate
+                  ? run.name === 'Main UAT' && run.head_branch === 'main'
+                  : run.name === 'Release';
+
+              if (
+                expectedSource &&
+                run.event === 'push' &&
+                run.head_sha === process.env.COMMIT_SHA &&
+                run.conclusion === 'success'
+              ) {
+                core.setOutput('id', String(artifact.id));
+                core.setOutput('run_id', String(run.id));
+                return;
+              }
+            }
+
+            core.setFailed(
+              `No successful ${isCandidate ? 'Main UAT' : 'release-candidate'} artifact named ${artifactName} exists for ${process.env.COMMIT_SHA}.`
+            );
+
+      - name: Verify final RC deployment
+        if: needs.classify.outputs.type == 'stable'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          RC_TAG: ${{ needs.classify.outputs.rc_tag }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const deployments = await github.paginate(
+              github.rest.repos.listDeployments,
+              {
+                owner,
+                repo,
+                environment: 'release-candidate',
+                ref: process.env.RC_TAG,
+                per_page: 100
+              }
+            );
+
+            for (const deployment of deployments) {
+              const statuses = await github.paginate(
+                github.rest.repos.listDeploymentStatuses,
+                {
+                  owner,
+                  repo,
+                  deployment_id: deployment.id,
+                  per_page: 100
+                }
+              );
+
+              if (statuses.some((status) => status.state === 'success')) {
+                core.info(`Verified successful release-candidate deployment for ${process.env.RC_TAG}.`);
+                return;
+              }
+            }
+
+            core.setFailed(
+              `No successful release-candidate deployment exists for ${process.env.RC_TAG}.`
+            );
+
+  release-candidate:
+    name: Deploy release candidate
+    if: needs.classify.outputs.type == 'rc'
+    needs:
+      - classify
+      - verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: release-candidate
+      url: ${{ steps.deploy.outputs.deployment-url }}
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+
+    steps:
+      - name: Check out the tagged revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install deployment dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Download the UAT artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.verify.outputs.artifact_id }}
+          path: site
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.verify.outputs.artifact_run_id }}
+          digest-mismatch: error
+
+      - name: Retain the immutable RC artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: kite-rc-${{ needs.classify.outputs.tag }}
+          path: site
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 90
+
+      - name: Validate release-candidate configuration
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_PAGES_BRANCH: ${{ vars.CLOUDFLARE_PAGES_BRANCH }}
+          CLOUDFLARE_PAGES_PROJECT_NAME: ${{ vars.CLOUDFLARE_PAGES_PROJECT_NAME }}
+        run: |
+          : "${CLOUDFLARE_ACCOUNT_ID:?Apply the GitHub Terraform to set the repository variable}"
+          : "${CLOUDFLARE_API_TOKEN:?Set the CLOUDFLARE_API_TOKEN release-candidate environment secret}"
+          : "${CLOUDFLARE_PAGES_BRANCH:?Set the CLOUDFLARE_PAGES_BRANCH release-candidate environment variable}"
+          : "${CLOUDFLARE_PAGES_PROJECT_NAME:?Apply the GitHub Terraform to set the repository variable}"
+
+      - name: Deploy the release candidate
+        id: deploy
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3.15.0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          packageManager: npm
+          command: >-
+            pages deploy site
+            --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT_NAME }}
+            --branch=${{ vars.CLOUDFLARE_PAGES_BRANCH }}
+            --commit-hash=${{ needs.classify.outputs.commit_sha }}
+            --commit-message="Release candidate ${{ needs.classify.outputs.tag }}"
+            --commit-dirty=false
+
+      - name: Smoke test the release candidate
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+        run: npm run test:smoke -- --url "$DEPLOYMENT_URL"
+
+  production:
+    name: Deploy production
+    if: needs.classify.outputs.type == 'stable'
+    needs:
+      - classify
+      - verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.deployment-url }}
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+
+    steps:
+      - name: Check out the tagged revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install deployment dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Download the approved RC artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.verify.outputs.artifact_id }}
+          path: site
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.verify.outputs.artifact_run_id }}
+          digest-mismatch: error
+
+      - name: Validate production configuration
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_PAGES_BRANCH: ${{ vars.CLOUDFLARE_PAGES_BRANCH }}
+          CLOUDFLARE_PAGES_PROJECT_NAME: ${{ vars.CLOUDFLARE_PAGES_PROJECT_NAME }}
+        run: |
+          : "${CLOUDFLARE_ACCOUNT_ID:?Apply the GitHub Terraform to set the repository variable}"
+          : "${CLOUDFLARE_API_TOKEN:?Set the CLOUDFLARE_API_TOKEN production environment secret}"
+          : "${CLOUDFLARE_PAGES_BRANCH:?Set the CLOUDFLARE_PAGES_BRANCH production environment variable}"
+          : "${CLOUDFLARE_PAGES_PROJECT_NAME:?Apply the GitHub Terraform to set the repository variable}"
+
+      - name: Deploy production
+        id: deploy
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3.15.0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          packageManager: npm
+          command: >-
+            pages deploy site
+            --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT_NAME }}
+            --branch=${{ vars.CLOUDFLARE_PAGES_BRANCH }}
+            --commit-hash=${{ needs.classify.outputs.commit_sha }}
+            --commit-message="Production ${{ needs.classify.outputs.tag }}"
+            --commit-dirty=false
+
+      - name: Smoke test production
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+        run: npm run test:smoke -- --url "$DEPLOYMENT_URL"

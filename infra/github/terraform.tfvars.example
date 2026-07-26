@@ -1,0 +1,14 @@
+cloudflare_account_id              = "your-cloudflare-account-id"
+cloudflare_pages_project_name      = "your-pages-project"
+cloudflare_pages_production_branch = "your-configured-production-branch"
+
+# Solo repository defaults:
+# required_approving_review_count = 0
+# production_reviewer_user_ids    = [32904024]
+# production_prevent_self_review  = false
+
+# Recommended when a second maintainer is available:
+# required_approving_review_count = 1
+# require_last_push_approval      = true
+# production_reviewer_user_ids    = [32904024]
+# production_prevent_self_review  = true

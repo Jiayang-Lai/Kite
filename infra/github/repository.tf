@@ -1,6 +1,21 @@
 resource "github_repository" "kite" {
-  name       = var.repository_name
-  visibility = "public"
+  name         = var.repository_name
+  description  = "A local-first Kusto application for exploring data, writing KQL, and operating clusters without cloud-hosted infrastructure."
+  homepage_url = "https://kite.humblehamster.com"
+  visibility   = "public"
+
+  topics = [
+    "azure-data-explorer",
+    "data-exploration",
+    "kql",
+    "kusto",
+    "kustainer",
+    "local-first",
+    "query-editor",
+    "self-hosted",
+    "sveltekit",
+    "typescript",
+  ]
 
   has_issues      = true
   has_projects    = true

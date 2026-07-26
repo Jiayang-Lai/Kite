@@ -2,6 +2,7 @@
 
 This Terraform root manages the GitHub-side controls used by Kite's CI/CD process:
 
+- repository About metadata (description, website, and topics);
 - repository merge settings and the `main` default branch;
 - the `preview`, `integration-uat`, `release-candidate`, and `production` environments;
 - deployment source policies for those environments;

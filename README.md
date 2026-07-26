@@ -4,24 +4,33 @@
   <img src="docs/.pics/kite.svg" alt="Kite application icon" width="128" height="128">
 </p>
 
+[![Latest release](https://img.shields.io/github/v/release/Jiayang-Lai/Kite?display_name=tag&sort=semver)](https://github.com/Jiayang-Lai/Kite/releases/latest)
 [![Main UAT](https://github.com/Jiayang-Lai/Kite/actions/workflows/main-uat.yml/badge.svg?branch=main&event=push)](https://github.com/Jiayang-Lai/Kite/actions/workflows/main-uat.yml)
 [![Website](https://img.shields.io/website?url=https%3A%2F%2Fkite.humblehamster.com&label=website)](https://kite.humblehamster.com/)
 [![License: MIT](https://img.shields.io/github/license/Jiayang-Lai/Kite)](LICENSE)
 [![Node.js >=22](https://img.shields.io/badge/Node.js-%3E%3D22-339933?logo=nodedotjs&logoColor=white)](package.json)
 
-A focused, browser-based workspace for exploring data and operating local
-[Kusto](https://learn.microsoft.com/kusto/) clusters.
+A local-first [Kusto](https://learn.microsoft.com/kusto/) application for exploring data, writing KQL, and operating clusters without any cloud-hosted infrastructure.
 
 [Try Kite online](https://kite.humblehamster.com/)
 
 > [!NOTE]
 > Kite is currently in alpha.
 
+> [!WARNING]
+> Kite is evolving rapidly. Always maintain a separate backup of your Kustainer data and saved queries, especially before updating or reconfiguring the application. Do not rely on Kite or its local storage as the only copy of important data.
+
+> [!IMPORTANT]
+> Connection support is currently limited to two modes:
+>
+> - **Mock** provides schema browsing and editor language features, but cannot execute queries.
+> - **Remote** can execute queries, but currently supports only a Kustainer instance running on the local machine. Hosted Azure Data Explorer and other remote Kusto clusters are not yet supported.
+
 ## About
 
-Kite brings KQL authoring, schema exploration, and cluster administration into one interface. It
-includes a Monaco-powered query editor with Kusto language support and a built-in mock catalog, so
-you can explore the application without configuring a backend.
+Kite makes the Kusto workflow available entirely on your own machine. Pair the browser-based workspace with a local Kustainer instance to query data, explore schemas, administer databases, and ingest files without provisioning Azure Data Explorer or sending your data to a cloud service. The hosted Kite site is optional—the application and Kusto backend can both run locally.
+
+Kite brings KQL authoring, schema exploration, and cluster administration into one interface. It includes a Monaco-powered query editor with Kusto language support and a built-in mock catalog, so you can explore the interface even before starting a local backend.
 
 With Kite, you can:
 
@@ -40,7 +49,7 @@ Kite is built with SvelteKit, TypeScript, Tailwind CSS, Monaco Editor, and the A
 
 - [Node.js](https://nodejs.org/) 22 or later
 - npm
-- Optional: a browser-accessible Kusto endpoint for executing queries
+- Optional: a local Kustainer instance for executing queries
 
 ### Run locally
 
@@ -60,14 +69,11 @@ npm run dev
 
 Open the URL shown in the terminal, usually <http://localhost:5173>.
 
-Kite opens with its built-in **Mock cluster** selected. The mock catalog supports schema browsing
-and editor language features, but it does not execute queries.
+Kite opens with its built-in **Mock cluster** selected. The mock catalog supports schema browsing and editor language features, but it does not execute queries.
 
 ### Connect to local Kusto
 
-Kite includes a **Local Kusto** connection for `http://localhost:8080`. Start a
-[Kustainer](https://learn.microsoft.com/azure/data-explorer/kustainer) instance on that address,
-then select **Local Kusto** from Kite's cluster selector to run queries and management commands.
+Kite includes a **Local Kusto** connection for `http://localhost:8080`. Start a [Kustainer](https://learn.microsoft.com/en-us/azure/data-explorer/kusto-emulator-install) instance on that address, then select **Local Kusto** from Kite's cluster selector to run queries and management commands.
 
 For mounted-file ingestion, mount a host directory at `/kustodata/raw`:
 
@@ -78,16 +84,15 @@ services:
     ports:
       - '127.0.0.1:8080:8080'
     volumes:
-      - ./kusto-raw:/kustodata/raw
+      - kustodata:/kustodata
     environment:
       - ACCEPT_EULA=Y
+    restart: always
 ```
 
-The Kusto endpoint must allow requests from Kite's browser origin through CORS. Kustainer does not
-provide authentication or an encrypted connection, so keep it bound to your local machine.
+The Kusto endpoint must allow requests from Kite's browser origin through CORS. Kustainer does not provide authentication or an encrypted connection, so keep it bound to your local machine.
 
-You can also add another browser-accessible endpoint from the cluster settings. Custom connections
-are saved only in your browser.
+Kite labels executable connections as **Remote** because queries are sent to a Kusto HTTP endpoint. At present, this mode supports only a local Kustainer endpoint.
 
 ## Available scripts
 

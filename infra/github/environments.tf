@@ -44,7 +44,7 @@ resource "github_repository_environment" "production" {
 resource "github_repository_environment_deployment_policy" "preview" {
   repository     = github_repository.kite.name
   environment    = github_repository_environment.deployment["preview"].environment
-  branch_pattern = "refs/pull/*/merge"
+  branch_pattern = "main"
 }
 
 resource "github_repository_environment_deployment_policy" "integration_uat" {

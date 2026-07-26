@@ -94,6 +94,8 @@ The Kusto endpoint must allow requests from Kite's browser origin through CORS. 
 
 Kite labels executable connections as **Remote** because queries are sent to a Kusto HTTP endpoint. At present, this mode supports only a local Kustainer endpoint.
 
+If you are interested in more self-hosted Kusto examples and a Docker-based local lab, check out my other repo [100 Days of KQL](https://github.com/Jiayang-Lai/100-Days-of-KQL).
+
 ## Available scripts
 
 | Command                       | Description                                           |

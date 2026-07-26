@@ -1,0 +1,9 @@
+cloudflare_account_id = "your-32-character-cloudflare-account-id"
+
+pages_project_name      = ""
+pages_production_branch = ""
+pages_custom_domain     = ""
+
+# Prefer an expiry and rotate the token before this time. Leave unset only when
+# reliable rotation is not yet available.
+deployment_token_expires_on = "2027-07-26T00:00:00Z"

@@ -81,7 +81,7 @@ jobs:
     timeout-minutes: 15
     environment:
       name: preview
-      url: ${{ steps.deploy.outputs.pages-deployment-alias-url }}
+      deployment: false
     permissions:
       actions: read
       contents: read
@@ -122,6 +122,23 @@ jobs:
           : "${CLOUDFLARE_API_TOKEN:?Set the CLOUDFLARE_API_TOKEN preview environment secret}"
           : "${CLOUDFLARE_PAGES_PROJECT_NAME:?Apply the GitHub Terraform to set the repository variable}"
 
+      - name: Create the pull request deployment
+        id: github-deployment
+        uses: chrnorm/deployment-action@500aa6a23c81ffa1acf71072aee3cfa2cc2e556a # v2.0.8
+        with:
+          token: ${{ github.token }}
+          ref: ${{ needs.resolve.outputs.head_sha }}
+          initial-status: in_progress
+          environment: preview
+          description: Preview PR #${{ needs.resolve.outputs.number }}
+          log-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          auto-merge: false
+          transient-environment: true
+          production-environment: false
+          auto-inactive: false
+          payload: >-
+            {"pull_request":${{ needs.resolve.outputs.number }},"workflow_run":${{ github.run_id }}}
+
       - name: Deploy the preview
         id: deploy
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3.15.0
@@ -136,3 +153,27 @@ jobs:
             --commit-hash=${{ needs.resolve.outputs.head_sha }}
             --commit-message="Preview PR #${{ needs.resolve.outputs.number }}"
             --commit-dirty=false
+
+      - name: Mark the pull request deployment successful
+        uses: chrnorm/deployment-status@6df8d036fd2fee9eb82936733953da1f8382b41e # v2.0.4
+        with:
+          token: ${{ github.token }}
+          deployment-id: ${{ steps.github-deployment.outputs.deployment_id }}
+          state: success
+          environment: preview
+          environment-url: ${{ steps.deploy.outputs.pages-deployment-alias-url }}
+          log-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          description: Preview deployment succeeded
+          auto-inactive: false
+
+      - name: Mark the pull request deployment failed
+        if: failure() && steps.github-deployment.outputs.deployment_id != ''
+        uses: chrnorm/deployment-status@6df8d036fd2fee9eb82936733953da1f8382b41e # v2.0.4
+        with:
+          token: ${{ github.token }}
+          deployment-id: ${{ steps.github-deployment.outputs.deployment_id }}
+          state: failure
+          environment: preview
+          log-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          description: Preview deployment failed
+          auto-inactive: false

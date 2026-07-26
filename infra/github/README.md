@@ -133,7 +133,9 @@ The `preview` environment admits `main`, rather than pull-request merge refs, be
 credential-bearing `Preview` workflow is triggered through `workflow_run` and executes from the
 trusted default branch. That workflow verifies the originating run is successful and belongs to
 the current revision of an open, same-repository pull request targeting `main` before deploying the
-validated artifact.
+validated artifact. It uses the environment for its branch policy and secret access with automatic
+deployment creation disabled, then creates a transient GitHub Deployment against the verified PR
+head SHA so GitHub associates the status and preview URL with the pull request.
 
 The tag ruleset similarly targets `v*`. GitHub's tag-name regex rule is available only to
 enterprise-owned repositories, so the strict `vMAJOR.MINOR.PATCH[-rc.N]` syntax continues to be

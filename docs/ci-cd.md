@@ -360,13 +360,14 @@ beginning with `v`. It also verifies that:
 | `cloudflare/wrangler-action@v3`               | Upload the verified artifact to Cloudflare Pages in Actions  |
 
 The build workflows upload the Cloudflare adapter output together with its required
-`.svelte-kit/cloudflare-tmp` and `.svelte-kit/output/server` siblings using GitHub's official
-artifact action. This preserves the relative imports used by the generated `_worker.js`. Each upload
-receives an immutable artifact ID and SHA-256 digest. Deployment jobs bind downloads to the exact
-producing workflow run; release promotion additionally selects artifacts by immutable ID. The
-official download action fails on a digest mismatch. Cloudflare's Wrangler action deploys the
-downloaded `cloudflare` directory and supplies the exact deployment URL used by the smoke test and
-GitHub Environment.
+`.svelte-kit/cloudflare-tmp` and `.svelte-kit/output/server` siblings and the generated
+`.svelte-kit/tsconfig.json` using GitHub's official artifact action. This preserves the relative
+imports used by the generated `_worker.js` and gives Wrangler the generated SvelteKit compiler
+configuration without retaining the entire `.svelte-kit` tree. Each upload receives an immutable
+artifact ID and SHA-256 digest. Deployment jobs bind downloads to the exact producing workflow run;
+release promotion additionally selects artifacts by immutable ID. The official download action
+fails on a digest mismatch. Cloudflare's Wrangler action deploys only the downloaded `cloudflare`
+directory and supplies the exact deployment URL used by the smoke test and GitHub Environment.
 
 The preview workflow uses published deployment actions rather than maintaining GitHub Deployment
 API scripts in the repository. Like the other third-party actions, they are pinned to immutable

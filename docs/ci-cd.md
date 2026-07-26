@@ -328,7 +328,10 @@ The pull-request workflow never receives Cloudflare credentials. A separate `wor
 workflow defined on trusted `main` verifies that the successful run belongs to the current revision
 of an open, same-repository pull request targeting `main`. It then downloads that run's validated
 artifact and deploys it with dependencies installed from the trusted `main` lockfile. Pull requests
-from forks therefore run validation but cannot start a credential-bearing deployment job.
+from forks therefore run validation but cannot start a credential-bearing deployment job. Because
+`workflow_run` itself is associated with `main`, the preview job disables GitHub's automatic
+environment deployment record and explicitly creates a transient deployment for the originating PR
+head SHA. The resulting preview URL and deployment status therefore appear on the pull request.
 
 The release workflow rejects malformed tags even though its broad trigger observes all tags
 beginning with `v`. It also verifies that:
@@ -352,14 +355,22 @@ beginning with `v`. It also verifies that:
 | `npm run test:ci`                             | Run formatting, type, unit, build, and end-to-end validation |
 | `npm run security:audit`                      | Fail on high or critical production dependency advisories    |
 | `npm run release:validate-tag -- --tag <tag>` | Validate stable and RC semantic-version tags                 |
+| `chrnorm/deployment-action@v2`                | Create the preview's transient GitHub Deployment             |
+| `chrnorm/deployment-status@v2`                | Record the preview deployment URL and final status           |
 | `cloudflare/wrangler-action@v3`               | Upload the verified artifact to Cloudflare Pages in Actions  |
 
-The build workflows upload `.svelte-kit/cloudflare` with GitHub's official artifact action. Each
-upload receives an immutable artifact ID and SHA-256 digest. Deployment jobs bind downloads to the
-exact producing workflow run; release promotion additionally selects artifacts by immutable ID.
-The official download action fails on a digest mismatch. Cloudflare's Wrangler action deploys the
-downloaded directory and supplies the exact deployment URL used by the smoke test and GitHub
-Environment.
+The build workflows upload the Cloudflare adapter output together with its required
+`.svelte-kit/cloudflare-tmp` and `.svelte-kit/output/server` siblings using GitHub's official
+artifact action. This preserves the relative imports used by the generated `_worker.js`. Each upload
+receives an immutable artifact ID and SHA-256 digest. Deployment jobs bind downloads to the exact
+producing workflow run; release promotion additionally selects artifacts by immutable ID. The
+official download action fails on a digest mismatch. Cloudflare's Wrangler action deploys the
+downloaded `cloudflare` directory and supplies the exact deployment URL used by the smoke test and
+GitHub Environment.
+
+The preview workflow uses published deployment actions rather than maintaining GitHub Deployment
+API scripts in the repository. Like the other third-party actions, they are pinned to immutable
+commit SHAs in the workflow.
 
 A successful RC run retains its downloaded artifact under the immutable RC tag. The stable release
 selects that RC artifact by ID from the successful RC workflow rather than selecting another build
@@ -399,8 +410,9 @@ deployments with stable aliases. If the environments later use separate Pages pr
 
 The GitHub `preview` environment admits deployments from `main` because the privileged
 `workflow_run` job executes the workflow definition and deployment tooling from the default branch.
-The workflow itself verifies and records the originating pull request before accessing its
-artifact.
+The workflow itself verifies the originating pull request before accessing its artifact. It uses the
+environment for its branch policy and secrets without creating a `main` deployment, then records a
+separate transient GitHub Deployment against the verified pull-request head SHA.
 
 The Cloudflare token should be limited to the account and Pages permissions required for
 deployment. Production should require authorized reviewers and should prevent self-approval when

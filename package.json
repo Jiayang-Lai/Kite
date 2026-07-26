@@ -3,21 +3,32 @@
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",
+	"packageManager": "npm@11.14.1",
+	"engines": {
+		"node": ">=22"
+	},
 	"scripts": {
 		"generate:kusto-docs": "node scripts/generate-kusto-documentation-index.mjs",
 		"dev": "vite dev",
 		"prebuild": "npm run generate:kusto-docs",
 		"build": "vite build",
 		"preview": "vite preview",
-		"prepare": "svelte-kit sync || echo ''",
+		"prepare": "svelte-kit sync",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"lint": "prettier --check .",
+		"lint:ci": "prettier --check package.json playwright.config.ts README.md docs/ci-cd.md infra/README.md infra/*/README.md scripts .github tests",
 		"format": "prettier --write .",
 		"test:unit": "vitest",
+		"test:unit:run": "vitest --run",
 		"test": "npm run test:unit -- --run && npm run test:e2e",
-		"test:e2e": "playwright install && playwright test",
-		"deploy": "npm run build && wrangler pages deploy"
+		"test:e2e": "npm run build && npm run test:e2e:run",
+		"test:e2e:run": "playwright test",
+		"test:e2e:install": "playwright install --with-deps chromium",
+		"test:smoke": "node scripts/smoke-test.mjs",
+		"test:ci": "npm run lint:ci && npm run check && npm run test:unit:run && npm run build && npm run test:e2e:run",
+		"security:audit": "npm audit --omit=dev --audit-level=high",
+		"release:validate-tag": "node scripts/validate-release-tag.mjs"
 	},
 	"devDependencies": {
 		"@fontsource-variable/inter": "^5.2.8",

@@ -1,100 +1,108 @@
-## Kusto backend
+# Kite
 
-The editor opens on its built-in **Mock cluster**, so every visitor can explore the schema and
-editor language features without a backend. `Local Kusto` (`http://localhost:8080`) remains
-available in the cluster selector and is the connection used for query execution.
+[![Main UAT](https://github.com/Jiayang-Lai/Kite/actions/workflows/main-uat.yml/badge.svg?branch=main&event=push)](https://github.com/Jiayang-Lai/Kite/actions/workflows/main-uat.yml)
+[![Website](https://img.shields.io/website?url=https%3A%2F%2Fkite.humblehamster.com&label=website)](https://kite.humblehamster.com/)
+[![License: MIT](https://img.shields.io/github/license/Jiayang-Lai/Kite)](LICENSE)
+[![Node.js >=22](https://img.shields.io/badge/Node.js-%3E%3D22-339933?logo=nodedotjs&logoColor=white)](package.json)
 
-The built-in **Mock cluster** is always available in the selector. It uses the local mock database
-catalog for schema browsing and editor language features; query execution is disabled for it.
+A focused, browser-based workspace for exploring data and operating local
+[Kusto](https://learn.microsoft.com/kusto/) clusters.
 
-The endpoint must allow the app origin through CORS. On startup, Kite discovers databases and
-their schemas with read-only management commands. Queries entered in Monaco are sent only to the
-Kusto query endpoint, and can be run with the **Run** button or `Ctrl/Cmd+Enter`.
+[Try Kite online](https://kite.humblehamster.com/)
 
-### Local Kustainer ingestion
+> [!NOTE]
+> Kite is currently in alpha.
 
-The `Local Kusto` connection supports direct ingestion into existing tables. Pasted CSV and
-browser-selected CSV files are sent with `.ingest inline` management commands. Browser files are
-preflighted as UTF-8 CSV and split at complete record boundaries into commands no larger than 512
-KiB. The default browser-file limit is 10 MiB. A header row can be removed once before chunking, and
-each chunk receives a stable `ingest-by` tag so an interrupted chunk can be retried without knowingly
-duplicating it.
+## About
 
-Mounted-file ingestion expects Parquet or CSV files beneath `/kustodata/raw` inside the Kustainer
-container. Mount a host staging directory at that location, for example:
+Kite brings KQL authoring, schema exploration, and cluster administration into one interface. It
+includes a Monaco-powered query editor with Kusto language support and a built-in mock catalog, so
+you can explore the application without configuring a backend.
+
+With Kite, you can:
+
+- Browse clusters, databases, tables, functions, and schemas.
+- Write and format KQL with completion, validation, hover help, and inline documentation.
+- Run queries and inspect their results.
+- Save queries and revisit recent work in browser storage.
+- Execute management commands and manage database tables.
+- Ingest inline CSV, browser-selected CSV, and files mounted into a local Kustainer instance.
+
+Kite is built with SvelteKit, TypeScript, Tailwind CSS, Monaco Editor, and the Azure Kusto SDK.
+
+## Getting started
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) 22 or later
+- npm
+- Optional: a browser-accessible Kusto endpoint for executing queries
+
+### Run locally
+
+Clone the repository and install its dependencies:
+
+```bash
+git clone https://github.com/Jiayang-Lai/Kite.git
+cd Kite
+npm ci
+```
+
+Start the development server:
+
+```bash
+npm run dev
+```
+
+Open the URL shown in the terminal, usually <http://localhost:5173>.
+
+Kite opens with its built-in **Mock cluster** selected. The mock catalog supports schema browsing
+and editor language features, but it does not execute queries.
+
+### Connect to local Kusto
+
+Kite includes a **Local Kusto** connection for `http://localhost:8080`. Start a
+[Kustainer](https://learn.microsoft.com/azure/data-explorer/kustainer) instance on that address,
+then select **Local Kusto** from Kite's cluster selector to run queries and management commands.
+
+For mounted-file ingestion, mount a host directory at `/kustodata/raw`:
 
 ```yaml
 services:
   kusto:
     image: mcr.microsoft.com/azuredataexplorer/kustainer-linux
+    ports:
+      - '127.0.0.1:8080:8080'
     volumes:
       - ./kusto-raw:/kustodata/raw
-    ports:
-      - 127.0.0.1:8080:8080
     environment:
       - ACCEPT_EULA=Y
 ```
 
-Mounted-file paths are relative to `/kustodata/raw`; Kite does not copy browser files into that
-directory. Inline-file contents remain in the browser and are sent sequentially through the Kusto
-management endpoint. Kustainer has no authentication or encrypted connection, so keep it bound to
-the local machine. Direct ingestion is intended for local development and does not provide managed
-queues, automatic retries, rollback, or durable job history.
+The Kusto endpoint must allow requests from Kite's browser origin through CORS. Kustainer does not
+provide authentication or an encrypted connection, so keep it bound to your local machine.
 
-## Research Note: Kusto Monaco Documentation
+You can also add another browser-accessible endpoint from the cluster settings. Custom connections
+are saved only in your browser.
 
-`@kusto/monaco-kusto` uses `@kusto/language-service-next` to produce KQL completion candidates. The next language service provides completion text and kinds, but it does not provide Markdown documentation for query operators such as `where` or `make-series`.
+## Available scripts
 
-The Monaco adapter has a documentation path, but it consults the legacy `Kusto.Data.IntelliSense.CslDocumentation` registry. That registry is empty in the published browser package, and it runs in the Kusto worker rather than the Svelte window. Applications therefore need to enrich completion items themselves.
+| Command                       | Description                                           |
+| ----------------------------- | ----------------------------------------------------- |
+| `npm run dev`                 | Start the development server                          |
+| `npm run build`               | Generate Kusto docs and create a production build     |
+| `npm run preview`             | Preview the production build locally                  |
+| `npm run check`               | Run Svelte and TypeScript checks                      |
+| `npm run lint`                | Check formatting with Prettier                        |
+| `npm run lint:ci`             | Check formatting for files currently enforced by CI   |
+| `npm run test:unit:run`       | Run unit tests once                                   |
+| `npm run test:e2e:install`    | Install Playwright Chromium and system dependencies   |
+| `npm run test:e2e`            | Build the app and run end-to-end tests                |
+| `npm run test:e2e:run`        | Run end-to-end tests against an existing build        |
+| `npm run test:ci`             | Run the complete local CI validation suite            |
+| `npm run security:audit`      | Audit production dependencies                         |
+| `npm run generate:kusto-docs` | Refresh the bundled Kusto documentation and its index |
 
-This project uses `kustoDefaults.setLanguageSettings({ onDidProvideCompletionItems })` to add completion details and Markdown documentation. `npm run generate:kusto-docs` downloads Microsoft's rendered Markdown export (`?accept=text/markdown`) into `static/kusto-docs`, avoiding browser CORS and remote per-completion requests. The hook lazy-loads the matching same-origin Markdown file, removes front matter and Learn include directives when choosing the inline summary, and shows the full Markdown in Monaco's completion documentation pane. The `view online` link uses the normal public Learn URL.
+## License
 
-The documentation lookup index is generated from Microsoft's Kusto query TOC instead of maintaining a hand-written operator list:
-
-```sh
-npm run generate:kusto-docs
-```
-
-This writes `src/lib/generated/kusto-documentation-index.ts` and the Markdown files under `static/kusto-docs`. The generated map includes query operator and function document paths. The current `monaco-kusto` completion callback does not preserve the original Kusto completion kind, so this TOC-derived map is used to resolve a completion label to its documentation path.
-
-# Todos
-
-- [x] Basic linting:
-  - [x] Syntax validation
-  - [x] Hover tooltip
-  - [x] Auto completion
-  - [x] Inline doc
-  - [x] Formatting
-- [ ] UI:
-  - [ ] Components:
-    - [x] Main editor
-    - [x] Database explorer
-    - [x] Table explorer
-    - [x] Theme toggle
-    - [x] Status bar for connection status
-    - [x] Cluster switcher
-    - [ ] Cluster connection editor (can view/edit cluster connections)
-    - [x] Query history (using local storage)
-    - [x] Saved queries (using local storage)
-    - [x] Show more as a row if there are too many entries for saved queries, and show a list page when clicked
-    - [x] Result drawer
-    - [ ] Result drawer (use shadcn table via tanstack)
-  - [ ] Pages:
-    - [x] Kusto Query Page: explore clusters, databases, and tables; inspect schemas and functions; and run queries.
-    - [ ] Kusto Admin Page:
-      - [x] Allows user to run management commands
-      - [x] Allows user to manage databases and tables etc (read and write)
-        - [x] Create empty tables with an explicit initial schema and metadata
-        - [x] Update table descriptions and append columns
-        - [x] Block stale table updates with execution-time schema preflights
-        - [x] Rename columns with dependency warnings and explicit confirmation
-        - [x] Remove columns with irreversible-data-loss confirmation
-        - [x] Reorder every existing column with an explicit before/after diff
-        - [x] Directly change column types with irreversible-data-loss confirmation
-        - [ ] Better UI
-      - [x] Allows user to ingest pasted or chunked browser CSV and mounted Parquet or CSV files
-      - [x] Allows user to view cluster, database and table
-
-Myself:
-
-- [ ] Learn the different terms for theming
+Kite is available under the [MIT License](LICENSE).

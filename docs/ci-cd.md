@@ -317,16 +317,18 @@ Every deployment should record:
 
 ## Implemented workflows
 
-| Workflow           | Trigger                       | Result                                                                                       |
-| ------------------ | ----------------------------- | -------------------------------------------------------------------------------------------- |
-| `pull-request.yml` | Pull request targeting `main` | Runs validation, uploads the prospective merge, and deploys an internal-branch preview       |
-| `main-uat.yml`     | Push to `main`                | Runs validation, retains the commit artifact, deploys integration UAT, and runs a smoke test |
-| `release.yml`      | Tag matching `v*`             | Validates the tag, retains the approved RC artifact, and promotes it to RC or production     |
+| Workflow           | Trigger                          | Result                                                                                       |
+| ------------------ | -------------------------------- | -------------------------------------------------------------------------------------------- |
+| `pull-request.yml` | Pull request targeting `main`    | Runs unprivileged validation and uploads the prospective merge artifact                      |
+| `preview.yml`      | Successful Pull Request workflow | Verifies the current internal PR and deploys its artifact using trusted `main` tooling       |
+| `main-uat.yml`     | Push to `main`                   | Runs validation, retains the commit artifact, deploys integration UAT, and runs a smoke test |
+| `release.yml`      | Tag matching `v*`                | Validates the tag, retains the approved RC artifact, and promotes it to RC or production     |
 
-Pull requests from forks run validation but do not deploy previews because forked workflows do not
-receive deployment credentials. The preview deployment job checks out its deployment tooling from
-the trusted `main` branch before receiving Cloudflare credentials; only the previously validated
-site artifact comes from the pull request.
+The pull-request workflow never receives Cloudflare credentials. A separate `workflow_run`
+workflow defined on trusted `main` verifies that the successful run belongs to the current revision
+of an open, same-repository pull request targeting `main`. It then downloads that run's validated
+artifact and deploys it with dependencies installed from the trusted `main` lockfile. Pull requests
+from forks therefore run validation but cannot start a credential-bearing deployment job.
 
 The release workflow rejects malformed tags even though its broad trigger observes all tags
 beginning with `v`. It also verifies that:
@@ -353,10 +355,11 @@ beginning with `v`. It also verifies that:
 | `cloudflare/wrangler-action@v3`               | Upload the verified artifact to Cloudflare Pages in Actions  |
 
 The build workflows upload `.svelte-kit/cloudflare` with GitHub's official artifact action. Each
-upload receives an immutable artifact ID and SHA-256 digest. Deployment jobs download by artifact
-ID, and the official download action fails on a digest mismatch. Cloudflare's Wrangler action
-deploys the downloaded directory and supplies the exact deployment URL used by the smoke test and
-GitHub Environment.
+upload receives an immutable artifact ID and SHA-256 digest. Deployment jobs bind downloads to the
+exact producing workflow run; release promotion additionally selects artifacts by immutable ID.
+The official download action fails on a digest mismatch. Cloudflare's Wrangler action deploys the
+downloaded directory and supplies the exact deployment URL used by the smoke test and GitHub
+Environment.
 
 A successful RC run retains its downloaded artifact under the immutable RC tag. The stable release
 selects that RC artifact by ID from the successful RC workflow rather than selecting another build
@@ -393,6 +396,11 @@ environment's `CLOUDFLARE_PAGES_BRANCH` must exactly match the production branch
 Cloudflare Pages. The UAT and RC branches use different names so Cloudflare treats them as preview
 deployments with stable aliases. If the environments later use separate Pages projects, move
 `CLOUDFLARE_PAGES_PROJECT_NAME` from a repository variable to environment variables.
+
+The GitHub `preview` environment admits deployments from `main` because the privileged
+`workflow_run` job executes the workflow definition and deployment tooling from the default branch.
+The workflow itself verifies and records the originating pull request before accessing its
+artifact.
 
 The Cloudflare token should be limited to the account and Pages permissions required for
 deployment. Production should require authorized reviewers and should prevent self-approval when

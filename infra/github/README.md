@@ -129,6 +129,12 @@ workflow remains the stricter gate: it classifies tags with the committed valida
 production job only for exact stable semantic-version tags. RC tags run only the release-candidate
 job.
 
+The `preview` environment admits `main`, rather than pull-request merge refs, because its
+credential-bearing `Preview` workflow is triggered through `workflow_run` and executes from the
+trusted default branch. That workflow verifies the originating run is successful and belongs to
+the current revision of an open, same-repository pull request targeting `main` before deploying the
+validated artifact.
+
 The tag ruleset similarly targets `v*`. GitHub's tag-name regex rule is available only to
 enterprise-owned repositories, so the strict `vMAJOR.MINOR.PATCH[-rc.N]` syntax continues to be
 enforced by the release workflow.

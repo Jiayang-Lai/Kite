@@ -93,6 +93,7 @@ jobs:
           COMMIT_SHA: ${{ needs.classify.outputs.commit_sha }}
           MAIN_ARTIFACT_NAME: kite-pages-${{ needs.classify.outputs.commit_sha }}
           RC_ARTIFACT_NAME: kite-rc-${{ needs.classify.outputs.rc_tag }}
+          RC_TAG: ${{ needs.classify.outputs.rc_tag }}
           RELEASE_TYPE: ${{ needs.classify.outputs.type }}
         with:
           script: |
@@ -119,8 +120,9 @@ jobs:
 
               const expectedSource =
                 isCandidate
-                  ? run.name === 'Main UAT' && run.head_branch === 'main'
-                  : run.name === 'Release';
+                  ? run.path === '.github/workflows/main-uat.yml' && run.head_branch === 'main'
+                  : run.path === '.github/workflows/release.yml' &&
+                    run.head_branch === process.env.RC_TAG;
 
               if (
                 expectedSource &&

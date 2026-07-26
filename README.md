@@ -1,5 +1,9 @@
 # Kite
 
+<p align="center">
+  <img src="docs/.pics/kite.svg" alt="Kite application icon" width="128" height="128">
+</p>
+
 [![Main UAT](https://github.com/Jiayang-Lai/Kite/actions/workflows/main-uat.yml/badge.svg?branch=main&event=push)](https://github.com/Jiayang-Lai/Kite/actions/workflows/main-uat.yml)
 [![Website](https://img.shields.io/website?url=https%3A%2F%2Fkite.humblehamster.com&label=website)](https://kite.humblehamster.com/)
 [![License: MIT](https://img.shields.io/github/license/Jiayang-Lai/Kite)](LICENSE)

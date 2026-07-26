@@ -67,6 +67,7 @@ jobs:
           test -f .svelte-kit/cloudflare/_worker.js
           test -f .svelte-kit/cloudflare-tmp/manifest.js
           test -f .svelte-kit/output/server/index.js
+          test -f .svelte-kit/tsconfig.json
 
       - name: Upload the preview artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -76,6 +77,7 @@ jobs:
             .svelte-kit/cloudflare
             .svelte-kit/cloudflare-tmp
             .svelte-kit/output/server
+            .svelte-kit/tsconfig.json
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 7

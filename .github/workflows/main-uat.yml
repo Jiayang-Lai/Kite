@@ -53,6 +53,7 @@ jobs:
           test -f .svelte-kit/cloudflare/_worker.js
           test -f .svelte-kit/cloudflare-tmp/manifest.js
           test -f .svelte-kit/output/server/index.js
+          test -f .svelte-kit/tsconfig.json
 
       - name: Upload the release artifact
         id: artifact
@@ -63,6 +64,7 @@ jobs:
             .svelte-kit/cloudflare
             .svelte-kit/cloudflare-tmp
             .svelte-kit/output/server
+            .svelte-kit/tsconfig.json
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 90

@@ -130,7 +130,7 @@ jobs:
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           packageManager: npm
           command: >-
-            pages deploy site
+            pages deploy site/cloudflare
             --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT_NAME }}
             --branch=pr-${{ needs.resolve.outputs.number }}
             --commit-hash=${{ needs.resolve.outputs.head_sha }}

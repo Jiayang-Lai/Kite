@@ -48,12 +48,21 @@ jobs:
       - name: Validate and build
         run: npm run test:ci
 
+      - name: Validate the Cloudflare deployment bundle
+        run: |
+          test -f .svelte-kit/cloudflare/_worker.js
+          test -f .svelte-kit/cloudflare-tmp/manifest.js
+          test -f .svelte-kit/output/server/index.js
+
       - name: Upload the release artifact
         id: artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: kite-pages-${{ github.sha }}
-          path: .svelte-kit/cloudflare
+          path: |
+            .svelte-kit/cloudflare
+            .svelte-kit/cloudflare-tmp
+            .svelte-kit/output/server
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 90
@@ -113,7 +122,7 @@ jobs:
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           packageManager: npm
           command: >-
-            pages deploy site
+            pages deploy site/cloudflare
             --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT_NAME }}
             --branch=${{ vars.CLOUDFLARE_PAGES_BRANCH }}
             --commit-hash=${{ github.sha }}

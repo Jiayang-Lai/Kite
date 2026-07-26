@@ -354,12 +354,14 @@ beginning with `v`. It also verifies that:
 | `npm run release:validate-tag -- --tag <tag>` | Validate stable and RC semantic-version tags                 |
 | `cloudflare/wrangler-action@v3`               | Upload the verified artifact to Cloudflare Pages in Actions  |
 
-The build workflows upload `.svelte-kit/cloudflare` with GitHub's official artifact action. Each
-upload receives an immutable artifact ID and SHA-256 digest. Deployment jobs bind downloads to the
-exact producing workflow run; release promotion additionally selects artifacts by immutable ID.
-The official download action fails on a digest mismatch. Cloudflare's Wrangler action deploys the
-downloaded directory and supplies the exact deployment URL used by the smoke test and GitHub
-Environment.
+The build workflows upload the Cloudflare adapter output together with its required
+`.svelte-kit/cloudflare-tmp` and `.svelte-kit/output/server` siblings using GitHub's official
+artifact action. This preserves the relative imports used by the generated `_worker.js`. Each upload
+receives an immutable artifact ID and SHA-256 digest. Deployment jobs bind downloads to the exact
+producing workflow run; release promotion additionally selects artifacts by immutable ID. The
+official download action fails on a digest mismatch. Cloudflare's Wrangler action deploys the
+downloaded `cloudflare` directory and supplies the exact deployment URL used by the smoke test and
+GitHub Environment.
 
 A successful RC run retains its downloaded artifact under the immutable RC tag. The stable release
 selects that RC artifact by ID from the successful RC workflow rather than selecting another build

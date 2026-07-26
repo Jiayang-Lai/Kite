@@ -62,11 +62,20 @@ jobs:
       - name: Validate and build
         run: npm run test:ci
 
+      - name: Validate the Cloudflare deployment bundle
+        run: |
+          test -f .svelte-kit/cloudflare/_worker.js
+          test -f .svelte-kit/cloudflare-tmp/manifest.js
+          test -f .svelte-kit/output/server/index.js
+
       - name: Upload the preview artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: kite-preview
-          path: .svelte-kit/cloudflare
+          path: |
+            .svelte-kit/cloudflare
+            .svelte-kit/cloudflare-tmp
+            .svelte-kit/output/server
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 7

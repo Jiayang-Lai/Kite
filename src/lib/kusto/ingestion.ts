@@ -18,6 +18,13 @@ export type MountedFileIngestion = {
 	format: MountedFileFormat;
 };
 
+export type RemoteFileIngestion = {
+	table: string;
+	url: string;
+	format: MountedFileFormat;
+	ignoreFirstRecord?: boolean;
+};
+
 /** Resolves a user-entered relative path without allowing it to leave the mounted root. */
 export function resolveMountedFilePath(containerRoot: string, relativePath: string) {
 	const root = containerRoot.trim().replace(/\/+$/, '');
@@ -42,6 +49,39 @@ export function resolveMountedFilePath(containerRoot: string, relativePath: stri
 
 function quoteVerbatimString(value: string) {
 	return `@"${value.replaceAll('"', '""')}"`;
+}
+
+function quoteObfuscatedString(value: string) {
+	return `h'${value.replaceAll("'", "''")}'`;
+}
+
+function validateFileFormat(format: MountedFileFormat) {
+	if (format !== 'parquet' && format !== 'csv') {
+		throw new Error('Select a supported file format.');
+	}
+}
+
+/** Validates a remote source while preserving signed URL bytes exactly as entered. */
+export function resolveRemoteFileUrl(url: string) {
+	const sourceUrl = url.trim();
+	if (!sourceUrl) throw new Error('Enter the URL of a remote file.');
+	if (/[\0-\x20\x7f\\]/.test(sourceUrl)) {
+		throw new Error('The remote file URL contains unsupported characters.');
+	}
+
+	let parsedUrl: URL;
+	try {
+		parsedUrl = new URL(sourceUrl);
+	} catch {
+		throw new Error('Enter a valid remote file URL.');
+	}
+	if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+		throw new Error('Remote file URLs must use HTTP or HTTPS.');
+	}
+	if (!parsedUrl.hostname) throw new Error('Enter a valid remote file URL.');
+	if (parsedUrl.hash) throw new Error('Remove the fragment from the remote file URL.');
+
+	return sourceUrl;
 }
 
 function buildInlineIngestionPrefix(table: string, ingestBy?: string) {
@@ -76,9 +116,23 @@ export function buildMountedFileIngestionCommand({
 	relativePath,
 	format
 }: MountedFileIngestion) {
-	if (format !== 'parquet' && format !== 'csv') {
-		throw new Error('Select a supported file format.');
-	}
+	validateFileFormat(format);
 	const sourcePath = resolveMountedFilePath(containerRoot, relativePath);
 	return `.ingest into table ${quoteKustoEntity(table, 'Select a target table.')}(${quoteVerbatimString(sourcePath)}) with (format="${format}")`;
+}
+
+/** Builds a pull-ingestion command so Kusto, rather than the browser, downloads the source. */
+export function buildRemoteFileIngestionCommand({
+	table,
+	url,
+	format,
+	ignoreFirstRecord = false
+}: RemoteFileIngestion) {
+	validateFileFormat(format);
+	const sourceUrl = resolveRemoteFileUrl(url);
+	const ingestionProperties =
+		format === 'csv' && ignoreFirstRecord
+			? `format="${format}", ignoreFirstRecord=true`
+			: `format="${format}"`;
+	return `.ingest into table ${quoteKustoEntity(table, 'Select a target table.')}(${quoteObfuscatedString(sourceUrl)}) with (${ingestionProperties})`;
 }

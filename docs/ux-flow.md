@@ -164,7 +164,7 @@ declare Kustainer ingestion support. The built-in `Local Kusto` connection uses 
 its container-visible staging root. The Mock cluster remains schema-only and shows an unavailable
 state.
 
-The page has three source modes:
+The page has four source modes:
 
 - **Inline CSV** sends small, manually entered rows with `.ingest inline into table`. The text after
   `<|` is preserved exactly and follows the selected table's column order.
@@ -174,8 +174,11 @@ The page has three source modes:
 - **Mounted file** ingests an existing Parquet or CSV file beneath `/kustodata/raw`. Users enter a
   relative path; absolute paths and current/parent-directory segments are rejected before command
   construction.
+- **Remote file** imports a CSV or Parquet file from a public HTTP(S) URL or a signed URL with
+  temporary read access. CSV is selected by default and can optionally skip its first line. The
+  command uses a Kusto obfuscated string literal to keep credentials out of service traces.
 
-Both modes show the ordered target schema and require a review of the cluster, database, table,
+All modes show the ordered target schema and require a review of the cluster, database, table,
 source, and append behavior followed by typing `RUN`. Commands execute synchronously through the
 management endpoint and return their extent result directly. Inline-file progress reports confirmed
 chunks and rows, stops after the first failure, and can retry from the uncertain chunk using its

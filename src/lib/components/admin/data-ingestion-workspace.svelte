@@ -1,6 +1,7 @@
 <script lang="ts">
 	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert';
 	import CircleStopIcon from '@lucide/svelte/icons/circle-stop';
+	import CloudDownloadIcon from '@lucide/svelte/icons/cloud-download';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import FileUpIcon from '@lucide/svelte/icons/file-up';
@@ -24,7 +25,9 @@
 	import {
 		buildInlineIngestionCommand,
 		buildMountedFileIngestionCommand,
+		buildRemoteFileIngestionCommand,
 		getInlineFilePayloadBudget,
+		resolveRemoteFileUrl,
 		resolveMountedFilePath,
 		type MountedFileFormat
 	} from '$lib/kusto/ingestion';
@@ -44,7 +47,7 @@
 	import type { QueryExecution, QueryResult } from '$lib/types/query-result';
 	import type { PaneAPI } from 'paneforge';
 
-	type SourceMode = 'inline' | 'inline-file' | 'file';
+	type SourceMode = 'inline' | 'inline-file' | 'file' | 'remote-file';
 	type InlineFileState =
 		'idle' | 'scanning' | 'ready' | 'running' | 'partial' | 'cancelled' | 'succeeded' | 'failed';
 
@@ -90,6 +93,9 @@
 	let scanController: AbortController | undefined;
 	let relativePath = $state('');
 	let fileFormat = $state<MountedFileFormat>('parquet');
+	let remoteFileUrl = $state('');
+	let remoteFileFormat = $state<MountedFileFormat>('csv');
+	let remoteFileSkipFirstLine = $state(false);
 	let result = $state<QueryResult>();
 	let ingestionError = $state('');
 	let isRunning = $state(false);
@@ -117,20 +123,38 @@
 			return '';
 		}
 	});
+	const resolvedRemoteFileUrl = $derived.by(() => {
+		if (!remoteFileUrl.trim()) return '';
+		try {
+			return resolveRemoteFileUrl(remoteFileUrl);
+		} catch {
+			return '';
+		}
+	});
 	const preparedCommand = $derived.by(() => {
 		try {
 			if (!ingestion) throw new Error('Data ingestion is not configured for this connection.');
 			const table = selectedTable ?? '';
 			if (sourceMode === 'inline-file') return { command: '', error: '' };
-			const command =
-				sourceMode === 'inline'
-					? buildInlineIngestionCommand({ table, data: inlineData })
-					: buildMountedFileIngestionCommand({
-							table,
-							containerRoot: ingestion.containerRoot,
-							relativePath,
-							format: fileFormat
-						});
+			const command = (() => {
+				if (sourceMode === 'inline') {
+					return buildInlineIngestionCommand({ table, data: inlineData });
+				}
+				if (sourceMode === 'remote-file') {
+					return buildRemoteFileIngestionCommand({
+						table,
+						url: remoteFileUrl,
+						format: remoteFileFormat,
+						ignoreFirstRecord: remoteFileFormat === 'csv' && remoteFileSkipFirstLine
+					});
+				}
+				return buildMountedFileIngestionCommand({
+					table,
+					containerRoot: ingestion.containerRoot,
+					relativePath,
+					format: fileFormat
+				});
+			})();
 			return { command, error: '' };
 		} catch (error) {
 			return { command: '', error: error instanceof Error ? error.message : String(error) };
@@ -152,7 +176,9 @@
 			? Boolean(inlineData)
 			: sourceMode === 'inline-file'
 				? Boolean(inlineFile)
-				: Boolean(relativePath)
+				: sourceMode === 'remote-file'
+					? Boolean(remoteFileUrl)
+					: Boolean(relativePath)
 	);
 	const fileExecutionProgress = $derived(
 		inlineFilePlan?.chunks.length
@@ -169,7 +195,9 @@
 			? 'Inline CSV'
 			: sourceMode === 'inline-file'
 				? inlineFileSourceSummary
-				: resolvedFilePath
+				: sourceMode === 'remote-file'
+					? resolvedRemoteFileUrl
+					: resolvedFilePath
 	);
 	const inlineFileStatusLabel = $derived(
 		(
@@ -460,7 +488,9 @@
 									Direct ingestion appends data to the selected Kustainer table.
 									{#if selectedDatabase === 'NetDefaultDB'}
 										<span class="mt-1 block text-amber-700 dark:text-amber-300">
-											Data in NetDefaultDB is stored inside the Kustainer container and will be lost if the container is destroyed. It is highly recommended to create a new database at a mounted volume for persistent data.
+											Data in NetDefaultDB is stored inside the Kustainer container and will be lost
+											if the container is destroyed. It is highly recommended to create a new
+											database at a mounted volume for persistent data.
 										</span>
 									{/if}
 								</p>
@@ -519,6 +549,9 @@
 									>
 									<Tabs.Trigger value="file" disabled={isRunning}
 										><FolderOpenIcon /> Mounted file</Tabs.Trigger
+									>
+									<Tabs.Trigger value="remote-file" disabled={isRunning}
+										><CloudDownloadIcon /> Remote file</Tabs.Trigger
 									>
 								</Tabs.List>
 
@@ -740,6 +773,54 @@
 									<p class="text-muted-foreground text-xs">
 										The file must already exist below <code>{ingestion.containerRoot}</code> inside the
 										container.
+									</p>
+								</Tabs.Content>
+
+								<Tabs.Content value="remote-file" class="space-y-3">
+									<div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem]">
+										<div>
+											<label class="text-sm font-medium" for="remote-file-url">File URL</label>
+											<Input
+												id="remote-file-url"
+												type="url"
+												bind:value={remoteFileUrl}
+												disabled={isRunning}
+												class="mt-1 font-mono"
+												placeholder="https://example.com/import.csv"
+												autocomplete="url"
+											/>
+										</div>
+										<div>
+											<label class="text-sm font-medium" for="remote-file-format">Format</label>
+											<Select.Root type="single" bind:value={remoteFileFormat} disabled={isRunning}>
+												<Select.Trigger id="remote-file-format" class="mt-1 w-full">
+													<Select.Value />
+												</Select.Trigger>
+												<Select.Content>
+													<Select.Item value="parquet" label="Parquet" />
+													<Select.Item value="csv" label="CSV" />
+												</Select.Content>
+											</Select.Root>
+										</div>
+									</div>
+									{#if remoteFileFormat === 'csv'}
+										<label class="flex w-fit items-center gap-2 text-sm">
+											<input
+												type="checkbox"
+												bind:checked={remoteFileSkipFirstLine}
+												disabled={isRunning}
+												class="border-input accent-primary size-4 rounded border"
+											/>
+											Skip first line
+										</label>
+									{/if}
+									<div class="bg-muted rounded-md p-3 text-xs">
+										<p class="text-muted-foreground">Remote source</p>
+										<code class="mt-1 block break-all">{resolvedRemoteFileUrl || 'https://…'}</code>
+									</div>
+									<p class="text-muted-foreground text-xs">
+										Import a CSV or Parquet file from a public HTTP(S) URL, or use a signed URL when
+										the source requires temporary read access.
 									</p>
 								</Tabs.Content>
 							</Tabs.Root>

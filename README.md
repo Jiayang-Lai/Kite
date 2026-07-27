@@ -39,7 +39,7 @@ With Kite, you can:
 - Run queries and inspect their results.
 - Save queries and revisit recent work in browser storage.
 - Execute management commands and manage database tables.
-- Ingest inline CSV, browser-selected CSV, and files mounted into a local Kustainer instance.
+- Ingest inline CSV, browser-selected CSV, mounted files, and remote HTTP(S) files.
 
 Kite is built with SvelteKit, TypeScript, Tailwind CSS, Monaco Editor, and the Azure Kusto SDK.
 

@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
 	buildInlineIngestionCommand,
 	buildMountedFileIngestionCommand,
+	buildRemoteFileIngestionCommand,
 	getInlineFilePayloadBudget,
 	quoteKustoEntity,
+	resolveRemoteFileUrl,
 	resolveMountedFilePath
 } from './ingestion';
 
@@ -50,6 +52,49 @@ describe('Kusto ingestion commands', () => {
 	it('normalizes Windows separators in relative paths', () => {
 		expect(resolveMountedFilePath('/kustodata/raw', 'folder\\data.csv')).toBe(
 			'/kustodata/raw/folder/data.csv'
+		);
+	});
+
+	it('builds a remote CSV pull-ingestion command with an obfuscated source URL', () => {
+		expect(
+			buildRemoteFileIngestionCommand({
+				table: 'Imported events',
+				url: "https://storage.example/events.csv?sig=reader's-token",
+				format: 'csv',
+				ignoreFirstRecord: true
+			})
+		).toBe(
+			".ingest into table ['Imported events'](h'https://storage.example/events.csv?sig=reader''s-token') with (format=\"csv\", ignoreFirstRecord=true)"
+		);
+	});
+
+	it('does not add the CSV header option to Parquet ingestion', () => {
+		expect(
+			buildRemoteFileIngestionCommand({
+				table: 'Events',
+				url: 'https://storage.example/events.parquet',
+				format: 'parquet',
+				ignoreFirstRecord: true
+			})
+		).toBe(
+			'.ingest into table Events(h\'https://storage.example/events.parquet\') with (format="parquet")'
+		);
+	});
+
+	it.each([
+		'file:///tmp/data.csv',
+		'ftp://files.example/data.csv',
+		'https://files.example/data.csv#rows',
+		'https://files.example/data.csv\n.show tables',
+		'https://files.example\\data.csv'
+	])('rejects unsupported remote URLs: %s', (url) => {
+		expect(() => resolveRemoteFileUrl(url)).toThrow();
+	});
+
+	it('preserves a signed remote URL exactly', () => {
+		const url = '  https://storage.example/data.parquet?sig=a%2Fb%2Bc&sp=r  ';
+		expect(resolveRemoteFileUrl(url)).toBe(
+			'https://storage.example/data.parquet?sig=a%2Fb%2Bc&sp=r'
 		);
 	});
 

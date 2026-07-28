@@ -29,4 +29,15 @@ describe('getDatabaseCapabilities', () => {
 			rename: 'display-name'
 		});
 	});
+
+	it('supports DuckDB database creation and deletion without claiming rename support', () => {
+		expect(
+			getDatabaseCapabilities({
+				id: 'emulated',
+				name: 'Emulated',
+				url: 'emulated://kite',
+				kind: 'emulated'
+			})
+		).toEqual({ create: true, drop: true, rename: false });
+	});
 });

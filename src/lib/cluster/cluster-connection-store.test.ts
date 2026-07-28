@@ -63,6 +63,56 @@ describe('cluster connection store', () => {
 		expect(cluster.url).toBe(`mock://kite/${cluster.id}`);
 	});
 
+	it('adds an isolated browser-emulated connection without a remote URL', () => {
+		const store = createClusterConnectionStore();
+
+		const cluster = store.add({
+			name: '  Local DuckDB  ',
+			kind: 'emulated',
+			description: '  Runs in this tab  ',
+			storageMode: 'opfs'
+		});
+
+		expect(cluster).toMatchObject({
+			name: 'Local DuckDB',
+			description: 'Runs in this tab',
+			kind: 'emulated',
+			emulatedStorage: {
+				mode: 'opfs',
+				storageId: cluster.id,
+				formatVersion: 1
+			}
+		});
+		expect(cluster.url).toBe(`emulated://kite/${cluster.id}`);
+	});
+
+	it('defaults custom emulated connections to ephemeral memory', () => {
+		const store = createClusterConnectionStore();
+		const cluster = store.add({
+			name: 'Temporary DuckDB',
+			kind: 'emulated'
+		});
+
+		expect(cluster.emulatedStorage).toEqual({ mode: 'memory' });
+	});
+
+	it('does not change an emulated cluster storage mode after creation', () => {
+		const store = createClusterConnectionStore();
+		const cluster = store.add({
+			name: 'Persistent DuckDB',
+			kind: 'emulated',
+			storageMode: 'opfs'
+		});
+
+		expect(() =>
+			store.update(cluster.id, {
+				name: cluster.name,
+				kind: 'emulated',
+				storageMode: 'memory'
+			})
+		).toThrow('storage cannot be changed');
+	});
+
 	it('keeps custom mock schemas independent', () => {
 		const store = createClusterConnectionStore();
 		const sharedDraftSchema = {

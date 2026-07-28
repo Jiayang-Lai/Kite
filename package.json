@@ -64,6 +64,7 @@
 		"wrangler": "^4.113.0"
 	},
 	"dependencies": {
+		"@duckdb/duckdb-wasm": "1.32.0",
 		"@kusto/language-service-next": "^12.4.0",
 		"@kusto/monaco-kusto": "^15.0.0",
 		"azure-kusto-data": "^7.2.0",

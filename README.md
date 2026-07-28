@@ -21,27 +21,28 @@ A local-first [Kusto](https://learn.microsoft.com/kusto/) application for explor
 > Kite is evolving rapidly. Always maintain a separate backup of your Kustainer data and saved queries, especially before updating or reconfiguring the application. Do not rely on Kite or its local storage as the only copy of important data.
 
 > [!IMPORTANT]
-> Connection support is currently limited to two modes:
+> Kite currently supports three connection modes:
 >
 > - **Mock** provides schema browsing and editor language features, but cannot execute queries.
+> - **Emulated** translates KQL to SQL and executes it with DuckDB-WASM entirely in the browser.
 > - **Remote** can execute queries, but currently supports only a Kustainer instance running on the local machine. Hosted Azure Data Explorer and other remote Kusto clusters are not yet supported.
 
 ## About
 
-Kite makes the Kusto workflow available entirely on your own machine. Pair the browser-based workspace with a local Kustainer instance to query data, explore schemas, administer databases, and ingest files without provisioning Azure Data Explorer or sending your data to a cloud service. The hosted Kite site is optional—the application and Kusto backend can both run locally.
+Kite makes the Kusto workflow available entirely on your own machine. Use the browser-only emulated cluster, or pair the workspace with a local Kustainer instance, to query data, explore schemas, administer databases, and ingest files without provisioning Azure Data Explorer or sending your data to a cloud service. The hosted Kite site is optional.
 
-Kite brings KQL authoring, schema exploration, and cluster administration into one interface. It includes a Monaco-powered query editor with Kusto language support and a built-in mock catalog, so you can explore the interface even before starting a local backend.
+Kite brings KQL authoring, schema exploration, and cluster administration into one interface. It includes a Monaco-powered query editor with Kusto language support, a built-in mock catalog, and an in-browser DuckDB backend powered by the [KQL-to-SQL translator](https://github.com/Jiayang-Lai/kql-to-sql).
 
 With Kite, you can:
 
 - Browse clusters, databases, tables, functions, and schemas.
 - Write and format KQL with completion, validation, hover help, and inline documentation.
-- Run queries and inspect their results.
+- Run KQL against Kusto or translate it to DuckDB SQL and execute it in the browser.
 - Save queries and revisit recent work in browser storage.
-- Execute management commands and manage database tables.
-- Ingest inline CSV, browser-selected CSV, mounted files, and remote HTTP(S) files.
+- Execute Kusto management commands or use structured browser-local database and table administration.
+- Ingest inline CSV, browser-selected CSV/Parquet, mounted files, and remote HTTP(S) files where supported.
 
-Kite is built with SvelteKit, TypeScript, Tailwind CSS, Monaco Editor, and the Azure Kusto SDK.
+Kite is built with SvelteKit, TypeScript, Tailwind CSS, Monaco Editor, DuckDB-WASM, and the Azure Kusto SDK.
 
 ## Getting started
 
@@ -50,6 +51,7 @@ Kite is built with SvelteKit, TypeScript, Tailwind CSS, Monaco Editor, and the A
 - [Node.js](https://nodejs.org/) 22 or later
 - npm
 - Optional: a local Kustainer instance for executing queries
+- Optional: the .NET 10 SDK and `wasm-tools` workload when rebuilding the KQL translator
 
 ### Run locally
 
@@ -70,6 +72,53 @@ npm run dev
 Open the URL shown in the terminal, usually <http://localhost:5173>.
 
 Kite opens with its built-in **Mock cluster** selected. The mock catalog supports schema browsing and editor language features, but it does not execute queries.
+
+### Use the browser-emulated cluster
+
+Select **Emulated cluster** from the cluster selector to run KQL without a Kusto server. Kite:
+
+1. Loads the translator from `/kql-wasm/_framework`.
+2. Translates submitted KQL to the DuckDB SQL dialect.
+3. Executes the SQL in an isolated DuckDB-WASM worker.
+4. Displays the result through the same result drawer used for Kusto queries.
+
+Use **Admin → Databases & tables** to create databases and tables or update table schemas. Use
+**Admin → Data ingestion** to append inline CSV, a local CSV/Parquet file, or a remote CSV/Parquet
+file. Kusto dot commands are intentionally unavailable for emulated clusters.
+
+The built-in emulated cluster and custom clusters created with **Ephemeral memory** keep databases
+in WASM memory and clear them when the tab releases the cluster. When adding a custom emulated
+cluster, choose **Persistent browser storage** to store its DuckDB cluster file in OPFS so databases,
+tables, and ingested rows survive reloads. Persistent data is private to the current site and browser
+profile; removing that connection deletes its local files. Persistent logical databases are isolated
+as DuckDB schemas inside one cluster file.
+
+Each active custom emulated connection owns a separate DuckDB worker and memory allocation.
+Persistence does not remove DuckDB's runtime memory requirements.
+
+See [Browser-emulated cluster](docs/emulated-cluster.md) for the capability matrix, ingestion
+behavior, memory model, and troubleshooting notes.
+
+### Build the KQL translator WASM
+
+The translator build is not part of `npm run build`, and `static/kql-wasm` is intentionally ignored
+by Git. A local checkout or deployment pipeline must place the published bridge there before Kite
+starts.
+
+With `kql-to-sql` and `Kite` checked out as sibling directories:
+
+```bash
+git clone --recurse-submodules https://github.com/Jiayang-Lai/kql-to-sql.git
+cd kql-to-sql
+dotnet workload install wasm-tools
+dotnet publish src/KqlWasmBridge/KqlWasmBridge.csproj -c Release -o build-wasm
+
+mkdir -p ../Kite/static/kql-wasm
+cp -R build-wasm/wwwroot/_framework ../Kite/static/kql-wasm/
+```
+
+Confirm that `static/kql-wasm/_framework/dotnet.js` exists in the Kite checkout. Adjust the copy
+destination if the repositories are not siblings.
 
 ### Connect to local Kusto
 

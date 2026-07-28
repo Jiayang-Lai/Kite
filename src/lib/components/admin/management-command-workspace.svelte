@@ -32,6 +32,7 @@
 		clusterUrl: string;
 		clusterName: string;
 		isMockCluster?: boolean;
+		isEmulatedCluster?: boolean;
 		onrefreshschema?: () => Promise<void> | void;
 	};
 
@@ -41,6 +42,7 @@
 		clusterUrl,
 		clusterName,
 		isMockCluster = false,
+		isEmulatedCluster = false,
 		onrefreshschema
 	}: ManagementCommandWorkspaceProps = $props();
 
@@ -51,11 +53,15 @@
 		{ label: 'Show ingestion failures', command: '.show ingestion failures' },
 		{ label: 'Show operations', command: '.show operations' },
 		{ label: 'Show queries', command: '.show queries' },
-		{ label: 'Create database', command: '.create database yourDbName persist (\n  @"/kustodata/dbs/yourDbName/md",\n  @"/kustodata/dbs/yourDbName/data"\n)' },
+		{
+			label: 'Create database',
+			command:
+				'.create database yourDbName persist (\n  @"/kustodata/dbs/yourDbName/md",\n  @"/kustodata/dbs/yourDbName/data"\n)'
+		},
 		{
 			label: 'Attach database',
 			command: '.attach database yourDbName from @"/kustodata/dbs/yourDbName/md"'
-		},
+		}
 	];
 
 	let commandText = $state('.show tables');
@@ -73,7 +79,9 @@
 
 	const databaseNames = $derived(Object.values(databases ?? {}).map((database) => database.name));
 	const canRun = $derived(
-		Boolean(commandText.trim() && selectedDatabase && !isMockCluster && !isRunning)
+		Boolean(
+			commandText.trim() && selectedDatabase && !isMockCluster && !isEmulatedCluster && !isRunning
+		)
 	);
 	const changesClusterState = $derived(
 		isManagementCommand(commandText) && !isReadOnlyManagementCommand(commandText)
@@ -92,7 +100,7 @@
 
 	function requestRun() {
 		const command = commandText.trim();
-		if (!command || !selectedDatabase || isMockCluster || isRunning) return;
+		if (!command || !selectedDatabase || isMockCluster || isEmulatedCluster || isRunning) return;
 		if (!isManagementCommand(command)) {
 			commandError = 'Management commands must start with a period, for example .show tables.';
 			return;
@@ -161,15 +169,20 @@
 </script>
 
 <section class="relative flex min-h-0 flex-1 flex-col gap-2">
-	{#if isMockCluster}
+	{#if isMockCluster || isEmulatedCluster}
 		<Card.Root class="min-h-0 flex-1">
 			<Card.Content class="grid h-full place-items-center p-6 text-center">
 				<div class="max-w-md">
 					<ServerIcon class="text-muted-foreground mx-auto mb-3 size-7" />
-					<h2 class="font-semibold">Management commands need a connected cluster</h2>
+					<h2 class="font-semibold">
+						{isEmulatedCluster
+							? 'Management commands are not supported for emulated clusters'
+							: 'Management commands need a connected cluster'}
+					</h2>
 					<p class="text-muted-foreground mt-2 text-sm leading-6">
-						The Mock cluster supplies local schema data only. Select a remote Kusto connection to
-						run administrative commands.
+						{isEmulatedCluster
+							? 'Use the Databases & tables page for supported DuckDB-backed schema operations, or select a remote Kusto connection to run administrative commands.'
+							: 'The Mock cluster supplies local schema data only. Select a remote Kusto connection to run administrative commands.'}
 					</p>
 					<code class="bg-muted mt-4 inline-block rounded-md px-3 py-2 text-sm">.show tables</code>
 				</div>

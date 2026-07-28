@@ -1,11 +1,14 @@
 import type { CancellableExecution, QueryExecution, QueryResult } from '$lib/types/query-result';
 import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
+import type { EmulatedStorage } from '$lib/emulated/storage';
 import { Client as KustoClient, ClientRequestProperties } from 'azure-kusto-data';
 
 /** Browser-visible endpoint for Kite's default Kusto connection. */
 export const DEFAULT_KUSTO_CLUSTER_URL = 'http://localhost:8080';
 /** Stable synthetic endpoint used to identify Kite's in-memory schema catalog. */
 export const MOCK_KUSTO_CLUSTER_URL = 'mock://kite';
+/** Stable synthetic endpoint used to identify Kite's in-browser DuckDB backend. */
+export const EMULATED_KUSTO_CLUSTER_URL = 'emulated://kite';
 
 export type KustoIngestionConfiguration = {
 	/** Ingestion support exposed by this connection. */
@@ -27,12 +30,14 @@ export type KustoClusterConnection = {
 	description?: string;
 	/** Browser-accessible Kusto cluster endpoint. */
 	url: string;
-	/** Whether the connection executes remotely or only supplies local schema metadata. */
-	kind: 'remote' | 'mock';
+	/** Whether the connection is remote, metadata-only, or executes through browser WASM. */
+	kind: 'remote' | 'mock' | 'emulated';
 	/** Browser-local schema metadata owned by a custom mock connection. */
 	mockSchema?: KustoDatabaseSchema;
 	/** Optimistic concurrency token incremented after each browser-local schema mutation. */
 	mockSchemaRevision?: number;
+	/** Persistence configuration owned by an in-browser emulated connection. */
+	emulatedStorage?: EmulatedStorage;
 	/** Optional ingestion behavior available for this connection. */
 	ingestion?: KustoIngestionConfiguration;
 };
@@ -52,6 +57,14 @@ const DEFAULT_KUSTO_CLUSTERS: KustoClusterConnection[] = [
 		description: 'In-memory schema catalog for demo',
 		url: MOCK_KUSTO_CLUSTER_URL,
 		kind: 'mock'
+	},
+	{
+		id: '23ed073f-f4fd-4b83-a4d1-893d8f36ae29',
+		name: 'Emulated cluster',
+		description: 'KQL translated and executed in this browser tab',
+		url: EMULATED_KUSTO_CLUSTER_URL,
+		kind: 'emulated',
+		emulatedStorage: { mode: 'memory' }
 	},
 	{
 		id: '36a61d62-3326-45ef-8f99-7c86affd1cb1',

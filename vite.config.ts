@@ -24,7 +24,9 @@ export default defineConfig({
 		// A browser has no filesystem; Bridge.js only needs this import to resolve.
 		nodePolyfills({
 			exclude: ['module'],
-			overrides: { fs: 'node-stdlib-browser/mock/empty' }
+			overrides: {
+				fs: 'node-stdlib-browser/mock/empty'
+			}
 		})
 	],
 	test: {
@@ -55,9 +57,9 @@ export default defineConfig({
 			}
 		]
 	},
-  server: {
-    watch: {
-      ignored: ['**/README.md', 'docs/**'],
-    },
-  }
+	server: {
+		watch: {
+			ignored: ['**/README.md', 'docs/**']
+		}
+	}
 });

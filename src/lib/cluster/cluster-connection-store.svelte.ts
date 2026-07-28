@@ -7,10 +7,18 @@ import {
 	normalizeMockSchema
 } from '$lib/cluster/mock-cluster-schema';
 import {
+	EMULATED_KUSTO_CLUSTER_URL,
 	getKustoClusters,
 	MOCK_KUSTO_CLUSTER_URL,
 	type KustoClusterConnection
 } from '$lib/kusto/query-client';
+import {
+	createEmulatedStorage,
+	normalizeEmulatedStorage,
+	registerEmulatedStorage,
+	unregisterEmulatedStorage,
+	type EmulatedStorageMode
+} from '$lib/emulated/storage';
 import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 
 const CLUSTER_CONNECTION_STORE = Symbol('cluster-connection-store');
@@ -30,6 +38,11 @@ export type NewClusterConnection =
 			kind: 'mock';
 			url?: never;
 			mockSchema: KustoDatabaseSchema;
+	  })
+	| (ClusterConnectionDraft & {
+			kind: 'emulated';
+			url?: never;
+			storageMode?: EmulatedStorageMode;
 	  });
 
 export type ClusterConnectionStore = {
@@ -75,7 +88,7 @@ function parseStoredCluster(value: unknown): KustoClusterConnection | undefined 
 	if (
 		typeof cluster.id !== 'string' ||
 		typeof cluster.name !== 'string' ||
-		(cluster.kind !== 'remote' && cluster.kind !== 'mock')
+		(cluster.kind !== 'remote' && cluster.kind !== 'mock' && cluster.kind !== 'emulated')
 	) {
 		return undefined;
 	}
@@ -102,6 +115,16 @@ function parseStoredCluster(value: unknown): KustoClusterConnection | undefined 
 						: 0
 			};
 		}
+		if (cluster.kind === 'emulated') {
+			return {
+				id: cluster.id,
+				name,
+				description,
+				url: createEmulatedClusterUrl(cluster.id),
+				kind: 'emulated',
+				emulatedStorage: normalizeEmulatedStorage(cluster.emulatedStorage, cluster.id)
+			};
+		}
 		return {
 			id: cluster.id,
 			name,
@@ -125,12 +148,26 @@ function createMockClusterUrl(clusterId: string) {
 	return `${MOCK_KUSTO_CLUSTER_URL}/${encodeURIComponent(clusterId)}`;
 }
 
+function createEmulatedClusterUrl(clusterId: string) {
+	return `${EMULATED_KUSTO_CLUSTER_URL}/${encodeURIComponent(clusterId)}`;
+}
+
 /** Creates the browser-local catalog used by every cluster switcher in the app. */
 export function createClusterConnectionStore(): ClusterConnectionStore {
 	const builtInClusters = getKustoClusters();
 	const builtInIds = new Set(builtInClusters.map((cluster) => cluster.id));
 	let clusters = $state<KustoClusterConnection[]>(builtInClusters);
 	let hydrated = false;
+
+	function registerClusterStorage(nextClusters: KustoClusterConnection[]) {
+		for (const cluster of nextClusters) {
+			if (cluster.kind === 'emulated') {
+				registerEmulatedStorage(cluster.id, cluster.emulatedStorage);
+			}
+		}
+	}
+
+	registerClusterStorage(builtInClusters);
 
 	function persist(nextClusters: KustoClusterConnection[]) {
 		if (!browser) return;
@@ -161,6 +198,16 @@ export function createClusterConnectionStore(): ClusterConnectionStore {
 				kind: 'mock' as const,
 				mockSchema: normalizeMockSchema(draft.mockSchema),
 				mockSchemaRevision
+			};
+		}
+		if (draft.kind === 'emulated') {
+			return {
+				id,
+				name,
+				description: draft.description?.trim() || undefined,
+				url: createEmulatedClusterUrl(id),
+				kind: 'emulated' as const,
+				emulatedStorage: createEmulatedStorage(draft.storageMode ?? 'memory', id)
 			};
 		}
 
@@ -206,6 +253,7 @@ export function createClusterConnectionStore(): ClusterConnectionStore {
 				storedClusters.push(cluster);
 			}
 			clusters = [...hydratedBuiltIns, ...storedClusters];
+			registerClusterStorage(clusters);
 		} catch {
 			// Keep the built-in catalog available when browser storage is unreadable.
 		}
@@ -216,6 +264,9 @@ export function createClusterConnectionStore(): ClusterConnectionStore {
 		const nextClusters = [...clusters, cluster];
 		persist(nextClusters);
 		clusters = nextClusters;
+		if (cluster.kind === 'emulated') {
+			registerEmulatedStorage(cluster.id, cluster.emulatedStorage);
+		}
 		return cluster;
 	}
 
@@ -226,16 +277,36 @@ export function createClusterConnectionStore(): ClusterConnectionStore {
 		}
 
 		const existingCluster = clusters.find((cluster) => cluster.id === clusterId)!;
+		if (
+			existingCluster.kind === 'emulated' &&
+			draft.kind === 'emulated' &&
+			(draft.storageMode ?? existingCluster.emulatedStorage?.mode ?? 'memory') !==
+				(existingCluster.emulatedStorage?.mode ?? 'memory')
+		) {
+			throw new Error('Emulated cluster storage cannot be changed after the cluster is created.');
+		}
 		const mockSchemaRevision =
 			draft.kind === 'mock'
 				? existingCluster.kind === 'mock'
 					? (existingCluster.mockSchemaRevision ?? 0) + 1
 					: 0
 				: 0;
-		const cluster = prepareCluster(draft, clusterId, mockSchemaRevision);
+		const cluster =
+			draft.kind === 'emulated' && existingCluster.kind === 'emulated'
+				? {
+						...prepareCluster(draft, clusterId, mockSchemaRevision),
+						emulatedStorage:
+							existingCluster.emulatedStorage ?? createEmulatedStorage('memory', clusterId)
+					}
+				: prepareCluster(draft, clusterId, mockSchemaRevision);
 		const nextClusters = clusters.map((item) => (item.id === clusterId ? cluster : item));
 		persist(nextClusters);
 		clusters = nextClusters;
+		if (existingCluster.kind === 'emulated' && cluster.kind !== 'emulated') {
+			unregisterEmulatedStorage(clusterId);
+		} else if (cluster.kind === 'emulated') {
+			registerEmulatedStorage(clusterId, cluster.emulatedStorage);
+		}
 		return cluster;
 	}
 
@@ -273,6 +344,7 @@ export function createClusterConnectionStore(): ClusterConnectionStore {
 		const nextClusters = clusters.filter((cluster) => cluster.id !== clusterId);
 		persist(nextClusters);
 		clusters = nextClusters;
+		unregisterEmulatedStorage(clusterId);
 	}
 
 	return {

@@ -7,7 +7,7 @@
 		open?: boolean;
 		databaseName: string;
 		tableName: string;
-		clusterKind: 'mock' | 'remote';
+		clusterKind: 'mock' | 'emulated' | 'remote';
 		onsubmit?: () => Promise<void> | void;
 	};
 
@@ -59,7 +59,9 @@
 			<Dialog.Description id="table-drop-description">
 				{clusterKind === 'mock'
 					? `Remove ${databaseName}.${tableName} from this browser-local schema.`
-					: `Permanently delete ${databaseName}.${tableName} and all data stored in it.`}
+					: clusterKind === 'emulated'
+						? `Permanently remove ${databaseName}.${tableName} and its browser DuckDB data.`
+						: `Permanently delete ${databaseName}.${tableName} and all data stored in it.`}
 			</Dialog.Description>
 		</Dialog.Header>
 

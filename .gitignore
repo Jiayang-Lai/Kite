@@ -334,3 +334,6 @@ id_ed25519*
 # Optional: ignore plan files saved before destroying Terraform configuration
 # Uncomment the line below if you want to ignore planout files.
 # planout
+
+# Ignore the WASM build of KQL-to-SQL
+static/kql-wasm/

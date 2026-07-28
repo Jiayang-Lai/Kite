@@ -31,6 +31,13 @@
 		applyMockRenameDatabase,
 		applyMockTableMutation
 	} from '$lib/cluster/mock-schema-management';
+	import {
+		createEmulatedDatabase,
+		createEmulatedTable,
+		dropEmulatedDatabase,
+		dropEmulatedTable,
+		mutateEmulatedTable
+	} from '$lib/emulated/schema-management';
 	import type {
 		ExplorerExpansionChange,
 		ExplorerExpansionState
@@ -68,6 +75,7 @@
 		clusterUrl: string;
 		clusterName: string;
 		isMockCluster?: boolean;
+		isEmulatedCluster?: boolean;
 		isLoading?: boolean;
 		onopenquery?: (databaseName: string) => void;
 		onrefreshschema?: (clusterId: string) => Promise<void> | void;
@@ -83,6 +91,7 @@
 		clusterUrl,
 		clusterName,
 		isMockCluster = false,
+		isEmulatedCluster = false,
 		isLoading = false,
 		onopenquery,
 		onrefreshschema,
@@ -321,6 +330,10 @@
 				);
 				editorMockSchemaRevision = updatedCluster.mockSchemaRevision ?? editorMockSchemaRevision;
 				commandCompleted = true;
+			} else if (isEmulatedCluster) {
+				await dropEmulatedTable(targetClusterId, targetDatabase, targetTable, originalSnapshot);
+				if (requestId !== mutationRequestId) return;
+				commandCompleted = true;
 			} else {
 				const preflight = startKustoReadOnlyManagementCommandBatch(
 					targetDatabase,
@@ -429,6 +442,28 @@
 							: `Database ${targetDatabase} deleted.`;
 				return;
 			}
+			if (targetCluster.kind === 'emulated') {
+				if (action === 'rename') {
+					throw new Error('DuckDB does not support renaming an attached database.');
+				}
+				if (action === 'create') {
+					await createEmulatedDatabase(targetClusterId, requestedName);
+				} else {
+					await dropEmulatedDatabase(targetClusterId, targetDatabase);
+				}
+				if (requestId !== mutationRequestId) return;
+				await onrefreshschema?.(targetClusterId);
+				if (requestId !== mutationRequestId) return;
+				selectedDatabase =
+					action === 'create'
+						? requestedName
+						: (Object.keys(databases ?? {}).find((name) => name !== targetDatabase) ?? '');
+				mutationSuccess =
+					action === 'create'
+						? `Database ${requestedName} created.`
+						: `Database ${targetDatabase} deleted.`;
+				return;
+			}
 
 			await onrefreshschema?.(targetClusterId);
 			await tick();
@@ -482,6 +517,10 @@
 				editorMockSchemaRevision =
 					clusterConnectionStore.clusters.find((cluster) => cluster.id === targetClusterId)
 						?.mockSchemaRevision ?? 0;
+				return;
+			}
+			if (isEmulatedCluster) {
+				editorSnapshot = loadedSnapshot;
 				return;
 			}
 
@@ -552,6 +591,22 @@
 						applyMockTableMutation(schema, targetDatabase, targetTable, originalSnapshot, plan)
 				);
 				editorMockSchemaRevision = updatedCluster.mockSchemaRevision ?? editorMockSchemaRevision;
+				commandCompleted = true;
+				await onrefreshschema?.(targetClusterId);
+				if (requestId !== mutationRequestId) return;
+				mutationSuccess = `${targetDatabase}.${targetTable}: ${plan.summary}.`;
+				succeeded = true;
+				return;
+			}
+			if (isEmulatedCluster) {
+				await mutateEmulatedTable(
+					targetClusterId,
+					targetDatabase,
+					targetTable,
+					originalSnapshot,
+					plan
+				);
+				if (requestId !== mutationRequestId) return;
 				commandCompleted = true;
 				await onrefreshschema?.(targetClusterId);
 				if (requestId !== mutationRequestId) return;
@@ -637,6 +692,10 @@
 					(schema) => applyMockCreateTable(schema, targetDatabase, plan)
 				);
 				editorMockSchemaRevision = updatedCluster.mockSchemaRevision ?? editorMockSchemaRevision;
+				commandCompleted = true;
+			} else if (isEmulatedCluster) {
+				await createEmulatedTable(targetClusterId, targetDatabase, plan);
+				if (requestId !== mutationRequestId) return;
 				commandCompleted = true;
 			} else {
 				await onrefreshschema?.(targetClusterId);
@@ -864,9 +923,11 @@
 
 	<div class="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
 		{#if activeDatabase}
-			{#if isMockCluster}
+			{#if isMockCluster || isEmulatedCluster}
 				<p class="text-muted-foreground rounded-lg border bg-muted/20 px-3 py-2 text-xs">
-					Mock changes update this browser-local schema only; no backend data is created.
+					{isEmulatedCluster
+						? 'Changes execute against this connection’s browser DuckDB database.'
+						: 'Mock changes update this browser-local schema only; no backend data is created.'}
 				</p>
 			{/if}
 			{#if mutationSuccess}
@@ -919,7 +980,7 @@
 	action={databaseDialogAction}
 	databaseName={databaseDialogTarget}
 	initialName={databaseDialogInitialName}
-	clusterKind={isMockCluster ? 'mock' : 'remote'}
+	clusterKind={isMockCluster ? 'mock' : isEmulatedCluster ? 'emulated' : 'remote'}
 	renameMode={databaseCapabilities.rename || 'canonical'}
 	onsubmit={mutateDatabase}
 />
@@ -928,7 +989,7 @@
 	bind:open={tableDropOpen}
 	databaseName={tableDropDatabaseName}
 	tableName={tableDropTableName}
-	clusterKind={isMockCluster ? 'mock' : 'remote'}
+	clusterKind={isMockCluster ? 'mock' : isEmulatedCluster ? 'emulated' : 'remote'}
 	onsubmit={removeTable}
 />
 

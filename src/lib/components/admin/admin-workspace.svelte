@@ -26,6 +26,9 @@
 	} from '$lib/cluster/cluster-connection-store.svelte';
 	import { getMockClusterSchema, usesBuiltInMockCatalog } from '$lib/cluster/mock-cluster-schema';
 	import { MOCK_RECENT_QUERIES, MOCK_SAVED_QUERIES } from '$lib/data/mock-queries';
+	import { deletePersistentDuckDbStorage, disposeDuckDb } from '$lib/duckdb/query-client';
+	import { loadEmulatedSchema } from '$lib/emulated/emulated-cluster';
+	import { registerEmulatedStorage } from '$lib/emulated/storage';
 	import { loadBackendSchema } from '$lib/kusto/backend-schema';
 	import { getKustoErrorMessage } from '$lib/kusto/query-client';
 	import { getRecentQueryStore } from '$lib/query/recent-query-store.svelte';
@@ -74,6 +77,7 @@
 			?.url ?? ''
 	);
 	const isMockCluster = $derived(activeCluster?.kind === 'mock');
+	const isEmulatedCluster = $derived(activeCluster?.kind === 'emulated');
 	const hasBuiltInMockSamples = $derived(usesBuiltInMockCatalog(activeCluster));
 	const activeClusterName = $derived(activeCluster?.name ?? 'current cluster');
 	const failedClusterName = $derived(
@@ -113,7 +117,7 @@
 			},
 			ingestion: {
 				title: 'Data ingestion',
-				description: 'Append inline CSV or mounted files to a Kusto table.'
+				description: 'Append CSV or Parquet data to a table.'
 			}
 		}[view]
 	);
@@ -159,10 +163,15 @@
 		isClusterSwitching = Boolean(clusterSession.databaseSchema);
 		connectionError = '';
 		try {
+			if (cluster.kind === 'emulated') {
+				registerEmulatedStorage(cluster.id, cluster.emulatedStorage);
+			}
 			const schema =
 				cluster.kind === 'mock'
 					? getMockClusterSchema(cluster)
-					: await loadBackendSchema(cluster.url);
+					: cluster.kind === 'emulated'
+						? await loadEmulatedSchema(cluster.id)
+						: await loadBackendSchema(cluster.url);
 			if (requestId !== schemaRequestId || clusterId !== selectedClusterId) return false;
 			const firstDatabase = Object.values(schema)[0];
 			const shouldRestoreSelection = clusterId === clusterSession.activeClusterId;
@@ -217,9 +226,16 @@
 		if (clusterId === selectedClusterId) void connectCluster(clusterId);
 	}
 
-	function removeCluster(clusterId: string) {
+	async function removeCluster(clusterId: string) {
 		const wasSelected =
 			clusterId === selectedClusterId || clusterId === clusterSession.activeClusterId;
+		const removedCluster = clusters.find((cluster) => cluster.id === clusterId);
+		if (removedCluster?.kind === 'emulated') {
+			await disposeDuckDb(clusterId);
+			if (removedCluster.emulatedStorage?.mode === 'opfs') {
+				await deletePersistentDuckDbStorage(removedCluster.emulatedStorage.storageId);
+			}
+		}
 		clusterConnectionStore.remove(clusterId);
 		if (wasSelected) switchCluster(clusters[0].id);
 	}
@@ -328,6 +344,7 @@
 			clusterUrl={activeClusterUrl}
 			clusterName={activeClusterName}
 			{isMockCluster}
+			{isEmulatedCluster}
 			isLoading={connectionStatus === 'loading'}
 			onrefreshschema={async (clusterId) => {
 				if (!(await connectCluster(clusterId))) {
@@ -347,6 +364,7 @@
 			clusterUrl={activeClusterUrl}
 			clusterName={activeClusterName}
 			{isMockCluster}
+			{isEmulatedCluster}
 			onrefreshschema={async () => {
 				await connectCluster(clusterSession.activeClusterId);
 			}}
@@ -357,10 +375,12 @@
 				databases={databaseSchema}
 				bind:selectedDatabase
 				bind:selectedTable
+				clusterId={clusterSession.activeClusterId}
 				clusterUrl={activeClusterUrl}
 				clusterName={activeClusterName}
 				ingestion={activeCluster?.ingestion}
 				{isMockCluster}
+				{isEmulatedCluster}
 				isLoading={connectionStatus === 'loading'}
 			/>
 		{/key}

@@ -27,6 +27,9 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Resizable from '$lib/components/ui/resizable';
 	import { Spinner } from '$lib/components/ui/spinner';
+	import { deletePersistentDuckDbStorage, disposeDuckDb } from '$lib/duckdb/query-client';
+	import { loadEmulatedSchema, startEmulatedQuery } from '$lib/emulated/emulated-cluster';
+	import { registerEmulatedStorage } from '$lib/emulated/storage';
 	import { getClusterSession } from '$lib/cluster/cluster-session.svelte';
 	import {
 		getPersistedActiveClusterId,
@@ -93,6 +96,7 @@
 	const hasCluster = $derived(Boolean(databaseSchema));
 	const activeCluster = $derived(clusters.find((cluster) => cluster.id === activeClusterId));
 	const isMockCluster = $derived(activeCluster?.kind === 'mock');
+	const isEmulatedCluster = $derived(activeCluster?.kind === 'emulated');
 	const hasBuiltInMockSamples = $derived(usesBuiltInMockCatalog(activeCluster));
 	let explorerExpansion = $state(clusterSession.getExplorerExpansion(initialCluster.id));
 	const isQueryable = $derived(hasCluster && !isMockCluster);
@@ -169,10 +173,15 @@
 		connectionError = '';
 
 		try {
+			if (requestedCluster.kind === 'emulated') {
+				registerEmulatedStorage(requestedCluster.id, requestedCluster.emulatedStorage);
+			}
 			const schema =
 				requestedCluster.kind === 'mock'
 					? getMockClusterSchema(requestedCluster)
-					: await loadBackendSchema(requestedClusterUrl);
+					: requestedCluster.kind === 'emulated'
+						? await loadEmulatedSchema(requestedClusterId)
+						: await loadBackendSchema(requestedClusterUrl);
 			if (requestId !== schemaRequestId || requestedClusterId !== selectedClusterId) return;
 
 			const firstDatabase = Object.values(schema)[0];
@@ -244,8 +253,15 @@
 		void refreshSchema();
 	}
 
-	function removeCluster(clusterId: string) {
+	async function removeCluster(clusterId: string) {
 		const wasSelected = clusterId === selectedClusterId || clusterId === activeClusterId;
+		const removedCluster = clusters.find((cluster) => cluster.id === clusterId);
+		if (removedCluster?.kind === 'emulated') {
+			await disposeDuckDb(clusterId);
+			if (removedCluster.emulatedStorage?.mode === 'opfs') {
+				await deletePersistentDuckDbStorage(removedCluster.emulatedStorage.storageId);
+			}
+		}
 		clusterConnectionStore.remove(clusterId);
 		if (wasSelected) switchCluster(clusters[0].id);
 	}
@@ -346,7 +362,9 @@
 		queryError = '';
 		resultsCollapsed = false;
 		isQueryRunning = true;
-		activeExecution = startKustoQuery(selectedDatabase, query, activeClusterUrl);
+		activeExecution = isEmulatedCluster
+			? startEmulatedQuery(activeClusterId, selectedDatabase, query)
+			: startKustoQuery(selectedDatabase, query, activeClusterUrl);
 		recentQueryStore.record({
 			clusterId: activeClusterId,
 			database: selectedDatabase,

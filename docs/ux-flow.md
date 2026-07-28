@@ -76,8 +76,8 @@ saved and recent queries also restore their KQL in the editor.
 
 Saved queries are stored in browser local storage and scoped to the selected connection's stable ID.
 The Query toolbar provides a Save action that asks for a name, then persists the current editor text
-and database context. The mock cluster also supplies fixed Saved and Recent query fixtures; remote
-connections show only user-saved queries until query history is available.
+and database context. The mock cluster also supplies fixed Saved and Recent query fixtures; other
+connections show only user-saved queries and their browser-local query history.
 
 Recent queries are also stored in browser local storage. Every submitted runnable query is added to
 the history, duplicate executions move to the top, and the collection retains only its latest three
@@ -101,15 +101,20 @@ also loads the active cluster schema so Explorer content is available.
 
 ## Database and table management
 
-`/admin/databases` browses the active cluster schema and provides structured updates for existing
-tables on remote connections. **New table** creates an empty table in the selected database with a
-validated name, ordered initial columns, and optional description and folder. The dialog previews
-the single `.create table` command and requires typing `CREATE TableName`. Immediately before
-execution, Kite refreshes the database schema and blocks creation if that name is now occupied.
+`/admin/databases` browses the active cluster schema and provides structured database and table
+updates. **New table** creates an empty table in the selected database with a validated name,
+ordered initial columns, and optional description and folder. The dialog previews the equivalent
+management operation and requires typing `CREATE TableName`. Immediately before execution, Kite
+refreshes the database schema and blocks creation if that name is now occupied.
 
-The table editor can update a table description and append columns.
-The editor shows the generated management command and requires typing `RUN` before execution. The
-Mock cluster remains schema-only.
+The execution backend depends on the active connection:
+
+- Remote connections send generated Kusto management commands.
+- Mock connections update their browser-local schema metadata.
+- Emulated connections execute DuckDB DDL against their isolated WASM session.
+
+The table editor can update a table description and append columns. The editor shows the generated
+management operation and requires typing `RUN` before execution.
 
 Each existing column also has an admin action menu. Rename opens a focused dialog, previews the
 `.rename column` command, warns that stored functions, ingestion mappings, policies, dashboards, and
@@ -133,24 +138,27 @@ verified column to appear exactly once, with its original name and type, and inc
 order-dependent ingestion or use mapping objects before reordering. The user must type
 `REORDER TableName` before the command can run.
 
-Table updates run through the Kusto management endpoint and rely on Kusto to enforce Table Admin
-permissions. The selected cluster cannot be changed while an update is running. After a successful
-command, Kite reloads the backend schema instead of applying an optimistic local update, keeping the
-Admin browser, Explorer, Monaco completion, and ingestion table selection synchronized.
+Remote table updates run through the Kusto management endpoint and rely on Kusto to enforce Table
+Admin permissions. Emulated updates use transactions where DuckDB supports them; mock updates use
+an optimistic browser-local schema revision. The selected cluster cannot be changed while an update
+is running. After a successful operation, Kite reloads the backend schema instead of applying an
+optimistic UI-only update, keeping the Admin browser, Explorer, Monaco completion, and ingestion
+table selection synchronized.
 
-Opening any structured table or column editor performs a read-only preflight that captures the table
-ID, ordered JSON schema, CSL schema, folder, docstring, and row count. Immediately before an update,
-Kite repeats the preflight and compares it with that original snapshot. A recreated table or any
-concurrent schema or metadata change blocks execution, refreshes the shared schema, and requires the
-user to reopen the editor. The comparison narrows the concurrency window but isn't a server-side
-transaction; Kusto does not make the preflight and subsequent management command atomic.
+Opening any structured table or column editor captures a schema snapshot. Remote connections enrich
+that snapshot with the Kusto table ID, CSL/JSON schema, metadata, and row count. Immediately before
+an update, Kite repeats the relevant preflight and compares it with the original snapshot. A
+recreated table or concurrent schema/metadata change blocks execution, refreshes the shared schema,
+and requires the user to reopen the editor. On remote Kusto, the comparison narrows the concurrency
+window but is not a server-side transaction.
 
 ## Management commands
 
 `/admin/commands` executes database-scoped Kusto management commands against the active remote
 cluster. The page uses the selected Admin database and sends commands only through the Kusto
 management endpoint; command text must begin with `.`. The Mock cluster remains schema-only and
-does not execute commands.
+does not execute commands. Emulated clusters expose structured DuckDB-backed administration through
+**Databases & tables**, but intentionally do not execute Kusto dot commands.
 
 Read-only `.show` and `.explain` commands execute immediately. All other commands are treated as
 potentially state-changing and require the user to review the target cluster/database, command
@@ -159,12 +167,15 @@ caller’s permissions.
 
 ## Data ingestion
 
-`/admin/ingestion` performs direct ingestion into an existing table for connections that explicitly
-declare Kustainer ingestion support. The built-in `Local Kusto` connection uses `/kustodata/raw` as
-its container-visible staging root. The Mock cluster remains schema-only and shows an unavailable
-state.
+`/admin/ingestion` appends data to an existing table. The Mock cluster remains schema-only and shows
+an unavailable state. Remote Kustainer and browser-emulated DuckDB connections share the target
+selection, review, confirmation, and result-drawer experience, but use different execution
+backends.
 
-The page has four source modes:
+### Local Kustainer
+
+The built-in `Local Kusto` connection declares `/kustodata/raw` as its container-visible staging
+root and exposes four source modes:
 
 - **Inline CSV** sends small, manually entered rows with `.ingest inline into table`. The text after
   `<|` is preserved exactly and follows the selected table's column order.
@@ -178,13 +189,38 @@ The page has four source modes:
   temporary read access. CSV is selected by default and can optionally skip its first line. The
   command uses a Kusto obfuscated string literal to keep credentials out of service traces.
 
-All modes show the ordered target schema and require a review of the cluster, database, table,
-source, and append behavior followed by typing `RUN`. Commands execute synchronously through the
-management endpoint and return their extent result directly. Inline-file progress reports confirmed
-chunks and rows, stops after the first failure, and can retry from the uncertain chunk using its
-stable ingestion tag. Stopping the client request only stops waiting; it does not promise to roll
-back an operation already accepted by Kusto. Previously completed chunks remain ingested.
+Commands execute synchronously through the Kusto management endpoint and return their extent result
+directly. Inline-file progress reports confirmed chunks and rows, stops after the first failure, and
+can retry from the uncertain chunk using its stable ingestion tag. Stopping the client request only
+stops waiting; it does not promise to roll back an operation already accepted by Kusto. Previously
+completed chunks remain ingested.
 
-This workflow does not copy browser files into Kustainer's mounted filesystem, discover named
-ingestion mappings, create or modify tables, retry failed requests automatically, or model
-queued/streaming ingestion. Those capabilities are outside the local Kustainer flow.
+### Browser-emulated DuckDB
+
+Emulated clusters expose three source modes:
+
+- **Inline CSV** registers the entered text as a temporary DuckDB virtual file.
+- **Local file** accepts CSV and Parquet. CSV is scanned to report its record and column shape.
+  DuckDB reads the browser `File` through its FileReader protocol instead of copying the entire
+  source into a JavaScript buffer.
+- **Remote file** registers an HTTP(S) CSV or Parquet URL. Signed query parameters are masked in the
+  review and result UI. The origin must support browser CORS and HTTP range requests.
+
+Mounted-container files are hidden for emulated connections. Local files are limited to 512 MiB,
+although the resulting in-memory table can be larger than the compressed or encoded source.
+
+The emulated adapter rechecks the target, registers a random virtual filename, and runs a positional
+`INSERT INTO … SELECT * FROM read_csv/read_parquet` inside a transaction on a dedicated DuckDB
+connection. Failure or cancellation rolls back the active append. The adapter removes the virtual
+file and closes the connection afterward. The result drawer reports inserted rows, target, source,
+and DuckDB query elapsed time.
+
+When adding a custom emulated connection, the user chooses **Ephemeral memory** or **Persistent
+browser storage**. Persistent connections store a private manifest and logical-database schemas in
+one OPFS DuckDB file, checkpoint committed schema and ingestion changes, and reopen that file after
+a reload. An exclusive browser lock prevents two tabs from writing the same connection. Removing a
+persistent connection also removes its local database and WAL files.
+
+All ingestion modes show the ordered target schema and require a review of the cluster, database,
+table, source, and append behavior followed by typing `RUN`. Neither backend discovers named
+ingestion mappings, creates the target table, or provides durable ingestion job history.

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
+	import CpuIcon from '@lucide/svelte/icons/cpu';
 	import FlaskConicalIcon from '@lucide/svelte/icons/flask-conical';
 	import LockIcon from '@lucide/svelte/icons/lock';
 	import PlusIcon from '@lucide/svelte/icons/plus';
@@ -23,7 +24,7 @@
 		onclusterchange?: (clusterId: string) => void;
 		onclusteradd?: (cluster: NewClusterConnection) => void;
 		onclusteredit?: (clusterId: string, cluster: NewClusterConnection) => void;
-		onclusterremove?: (clusterId: string) => void;
+		onclusterremove?: (clusterId: string) => Promise<void> | void;
 	};
 
 	let {
@@ -86,6 +87,8 @@
 						>
 							{#if selectedCluster?.kind === 'mock'}
 								<FlaskConicalIcon class="size-4" />
+							{:else if selectedCluster?.kind === 'emulated'}
+								<CpuIcon class="size-4" />
 							{:else}
 								<ServerIcon class="size-4" />
 							{/if}
@@ -96,9 +99,11 @@
 								title={selectedCluster?.name ?? selectedClusterId}
 								>{selectedCluster?.name ?? selectedClusterId}</span
 							>
-							{#if selectedCluster?.description}
-								<span class="truncate text-xs" title={selectedCluster.description}
-									>{selectedCluster.description}</span
+							{#if selectedCluster?.description || selectedCluster?.emulatedStorage?.mode === 'opfs'}
+								<span
+									class="truncate text-xs"
+									title={selectedCluster.description ?? 'Persistent browser data'}
+									>{selectedCluster.description ?? 'Persistent browser data'}</span
 								>
 							{/if}
 						</div>
@@ -131,6 +136,8 @@
 						>
 							{#if cluster.kind === 'mock'}
 								<FlaskConicalIcon class="size-4" />
+							{:else if cluster.kind === 'emulated'}
+								<CpuIcon class="size-4" />
 							{:else}
 								<ServerIcon class="size-4" />
 							{/if}
@@ -142,6 +149,8 @@
 							</div>
 							{#if cluster.id === selectedClusterId}
 								<span class="text-muted-foreground text-xs">Current</span>
+							{:else if cluster.emulatedStorage?.mode === 'opfs'}
+								<span class="text-muted-foreground text-xs">Persistent</span>
 							{/if}
 						</DropdownMenu.Item>
 					{/each}

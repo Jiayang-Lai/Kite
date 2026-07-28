@@ -333,7 +333,12 @@
 	</AppHeader>
 
 	{#if view === 'overview'}
-		<AdminHero clusterName={activeClusterName} {databaseCount} {tableCount} />
+		<AdminHero
+			clusterName={activeClusterName}
+			{databaseCount}
+			{tableCount}
+			emulatedStorage={activeCluster?.emulatedStorage}
+		/>
 	{:else if view === 'databases'}
 		<DatabaseManagement
 			databases={databaseSchema}
@@ -379,6 +384,7 @@
 				clusterUrl={activeClusterUrl}
 				clusterName={activeClusterName}
 				ingestion={activeCluster?.ingestion}
+				emulatedStorage={activeCluster?.emulatedStorage}
 				{isMockCluster}
 				{isEmulatedCluster}
 				isLoading={connectionStatus === 'loading'}

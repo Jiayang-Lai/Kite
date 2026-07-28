@@ -21,6 +21,7 @@
 	const removesStoredData = $derived(
 		cluster?.kind === 'emulated' && cluster.emulatedStorage?.mode === 'opfs'
 	);
+	const removesEmulatedCluster = $derived(cluster?.kind === 'emulated');
 
 	$effect(() => {
 		if (!open) error = '';
@@ -49,6 +50,8 @@
 				{#if removesStoredData}
 					This permanently removes the connection and all DuckDB databases stored for it in this
 					browser.
+				{:else if removesEmulatedCluster}
+					This removes the connection and releases its in-memory DuckDB databases and ingested data.
 				{:else}
 					This removes the connection from this browser. It does not change or delete the Kusto
 					cluster.
@@ -72,7 +75,7 @@
 		<Dialog.Footer class="border-t p-4">
 			<Button variant="outline" onclick={() => (open = false)} disabled={removing}>Cancel</Button>
 			<Button variant="destructive" onclick={removeCluster} disabled={removing}>
-				{removing ? 'Removing…' : removesStoredData ? 'Remove cluster' : 'Remove connection'}
+				{removing ? 'Removing…' : removesEmulatedCluster ? 'Remove cluster' : 'Remove connection'}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

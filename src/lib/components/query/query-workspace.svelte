@@ -497,6 +497,7 @@
 			clusterName={activeClusterName}
 			databaseCount={connectionStatistics.databaseCount}
 			tableCount={connectionStatistics.tableCount}
+			emulatedStorage={activeCluster?.emulatedStorage}
 		/>
 	{:else if view === 'saved-queries'}
 		<SavedQueriesPage queries={savedQueries} onopen={openQuery} delete={deleteSavedQuery} />
@@ -663,6 +664,7 @@
 			status={connectionStatus}
 			{...connectionStatistics}
 			{isQueryable}
+			emulatedStorage={activeCluster?.emulatedStorage}
 			onretry={failedClusterId ? retryFailedCluster : undefined}
 		/>
 	{/if}

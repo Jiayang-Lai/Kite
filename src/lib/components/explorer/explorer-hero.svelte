@@ -4,16 +4,19 @@
 	import FileCode2Icon from '@lucide/svelte/icons/file-code-2';
 	import SearchIcon from '@lucide/svelte/icons/search';
 
+	import EmulatedStorageBadge from '$lib/components/cluster/emulated-storage-badge.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Card from '$lib/components/ui/card';
+	import type { EmulatedStorage } from '$lib/emulated/storage';
 
 	type ExplorerHeroProps = {
 		clusterName: string;
 		databaseCount: number;
 		tableCount: number;
+		emulatedStorage?: EmulatedStorage;
 	};
 
-	let { clusterName, databaseCount, tableCount }: ExplorerHeroProps = $props();
+	let { clusterName, databaseCount, tableCount, emulatedStorage }: ExplorerHeroProps = $props();
 </script>
 
 <section class="min-h-0 flex-1 overflow-auto">
@@ -27,14 +30,17 @@
 				Explore <span class="text-primary">{clusterName}</span> and turn data into answers.
 			</h1>
 			<p class="text-muted-foreground mt-3 text-base leading-7">
-				Browse connected cluster schema, compose KQL queries, and return to the queries you
-				saved for later.
+				Browse connected cluster schema, compose KQL queries, and return to the queries you saved
+				for later.
 			</p>
 			<div class="text-muted-foreground mt-5 flex flex-wrap items-center gap-2 text-sm">
 				<Badge variant="outline"
 					>{databaseCount} {databaseCount === 1 ? 'database' : 'databases'}</Badge
 				>
 				<Badge variant="outline">{tableCount} {tableCount === 1 ? 'table' : 'tables'}</Badge>
+				{#if emulatedStorage}
+					<EmulatedStorageBadge storage={emulatedStorage} />
+				{/if}
 			</div>
 		</div>
 

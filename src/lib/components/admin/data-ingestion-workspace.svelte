@@ -12,6 +12,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import { onDestroy } from 'svelte';
 
+	import EmulatedStorageBadge from '$lib/components/cluster/emulated-storage-badge.svelte';
 	import QueryResults from '$lib/components/query/query-results.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -28,6 +29,7 @@
 		startEmulatedIngestion,
 		type EmulatedIngestionFormat
 	} from '$lib/emulated/data-ingestion';
+	import type { EmulatedStorage } from '$lib/emulated/storage';
 	import {
 		buildInlineIngestionCommand,
 		buildMountedFileIngestionCommand,
@@ -65,6 +67,7 @@
 		clusterUrl: string;
 		clusterName: string;
 		ingestion?: KustoIngestionConfiguration;
+		emulatedStorage?: EmulatedStorage;
 		isMockCluster?: boolean;
 		isEmulatedCluster?: boolean;
 		isLoading?: boolean;
@@ -78,10 +81,14 @@
 		clusterUrl,
 		clusterName,
 		ingestion,
+		emulatedStorage,
 		isMockCluster = false,
 		isEmulatedCluster = false,
 		isLoading = false
 	}: DataIngestionWorkspaceProps = $props();
+	const isPersistentEmulatedCluster = $derived(
+		isEmulatedCluster && emulatedStorage?.mode === 'opfs'
+	);
 
 	const INLINE_DATA_MAX_LENGTH = 100_000;
 	const EMULATED_MAX_FILE_BYTES = 512 * 1024 * 1024;
@@ -622,8 +629,14 @@
 									Direct ingestion appends data to the selected
 									{isEmulatedCluster ? 'browser DuckDB' : 'Kustainer'} table.
 									{#if isEmulatedCluster}
-										<span class="mt-1 block text-amber-700 dark:text-amber-300">
-											Emulated data is held in WASM memory and is cleared by a full page reload.
+										<span
+											class={isPersistentEmulatedCluster
+												? 'mt-1 block text-primary'
+												: 'mt-1 block text-amber-700 dark:text-amber-300'}
+										>
+											{isPersistentEmulatedCluster
+												? 'Emulated data is stored privately by this site and restored after a full page reload.'
+												: 'Emulated data is held in WASM memory and is cleared by a full page reload.'}
 										</span>
 									{:else if selectedDatabase === 'NetDefaultDB'}
 										<span class="mt-1 block text-amber-700 dark:text-amber-300">
@@ -634,9 +647,11 @@
 									{/if}
 								</p>
 							</div>
-							<Badge variant="outline"
-								>{isEmulatedCluster ? 'Browser DuckDB' : 'Local emulator'}</Badge
-							>
+							{#if isEmulatedCluster}
+								<EmulatedStorageBadge storage={emulatedStorage} />
+							{:else}
+								<Badge variant="outline">Local emulator</Badge>
+							{/if}
 						</div>
 					</div>
 					<div

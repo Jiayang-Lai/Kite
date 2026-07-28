@@ -2,6 +2,7 @@
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 
+	import EmulatedStorageBadge from '$lib/components/cluster/emulated-storage-badge.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import type { KustoClusterConnection } from '$lib/kusto/query-client';
@@ -43,6 +44,12 @@
 					<div class="min-w-0 flex-1">
 						<div class="flex items-center gap-2">
 							<p class="truncate text-sm font-medium" title={cluster.name}>{cluster.name}</p>
+							{#if cluster.kind === 'emulated'}
+								<EmulatedStorageBadge
+									storage={cluster.emulatedStorage}
+									class="h-4 px-1.5 text-[10px]"
+								/>
+							{/if}
 							{#if cluster.id === selectedClusterId}
 								<span class="text-muted-foreground shrink-0 text-xs">Current</span>
 							{/if}

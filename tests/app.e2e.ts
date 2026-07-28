@@ -15,6 +15,18 @@ test('serves the production build and opens the query explorer', async ({ page }
 	await expect(page.getByRole('heading', { name: 'Kite KQL Editor' })).toBeVisible();
 });
 
+test('places the cluster switcher below its trigger on smaller displays', async ({ page }) => {
+	await page.setViewportSize({ width: 600, height: 800 });
+	await page.goto('/explorer/query');
+
+	await page.getByRole('button', { name: 'Toggle cluster explorer' }).click();
+	await page.getByRole('button', { name: /Mock cluster/ }).click();
+	await expect(page.locator('[data-slot="dropdown-menu-content"]')).toHaveAttribute(
+		'data-side',
+		'bottom'
+	);
+});
+
 test('translates KQL to DuckDB SQL and executes it in the browser', async ({ page }) => {
 	const wasmLoader = await page.request.get('/kql-wasm/_framework/dotnet.js');
 	test.skip(!wasmLoader.ok(), 'The local KQL WASM build is not present.');
@@ -44,7 +56,13 @@ test('runs KQL through the emulated cluster and disables Kusto commands', async 
 	await page.goto('/explorer/query');
 
 	await page.getByRole('button', { name: /Mock cluster/ }).click();
-	await page.getByRole('menuitem').filter({ hasText: 'Emulated cluster' }).click();
+	const emulatedClusterItem = page.getByRole('menuitem').filter({ hasText: 'Emulated cluster' });
+	await emulatedClusterItem.hover();
+	await expect(emulatedClusterItem).toHaveAttribute('data-state', 'instant-open');
+	const clusterTooltip = page.getByRole('tooltip');
+	await expect(clusterTooltip).toContainText('Emulated cluster');
+	await expect(clusterTooltip).toContainText('KQL translated and executed in this browser tab');
+	await emulatedClusterItem.click();
 	await expect(page.getByText('memory', { exact: true }).first()).toBeVisible({
 		timeout: 30_000
 	});
@@ -102,7 +120,8 @@ test('creates DuckDB databases and tables from emulated cluster administration',
 	await expect(page.getByText('Count', { exact: true }).first()).toBeVisible();
 
 	await page.getByRole('link', { name: 'Data ingestion' }).click();
-	await expect(page.getByText('Browser DuckDB', { exact: true })).toBeVisible();
+	await expect(page.locator('[data-emulated-storage="ephemeral"]')).toBeVisible();
+	await expect(page.getByText('Ephemeral', { exact: true })).toBeVisible();
 	await page.locator('#ingestion-database').click();
 	await page.getByRole('option', { name: 'Analytics' }).click();
 	await page.locator('#ingestion-table').click();
@@ -162,6 +181,9 @@ test('reopens a persistent custom emulated cluster after a full reload', async (
 	await page.getByRole('option', { name: 'Persistent browser storage' }).click();
 	await clusterDialog.getByRole('button', { name: 'Add and connect' }).click();
 
+	await expect(
+		page.getByRole('button', { name: /Persistent DuckDB Emulated · Persistent/ })
+	).toBeVisible();
 	await expect(page.getByText('memory', { exact: true }).first()).toBeVisible({
 		timeout: 30_000
 	});
@@ -178,9 +200,9 @@ test('reopens a persistent custom emulated cluster after a full reload', async (
 
 	await page.reload();
 
-	await expect(page.getByRole('button', { name: /Persistent DuckDB/ })).toBeVisible({
-		timeout: 30_000
-	});
+	await expect(
+		page.getByRole('button', { name: /Persistent DuckDB Emulated · Persistent/ })
+	).toBeVisible({ timeout: 30_000 });
 	await expect(page.getByRole('button', { name: 'PersistentEvents 1 column' })).toBeVisible({
 		timeout: 30_000
 	});

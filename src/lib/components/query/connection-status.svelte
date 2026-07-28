@@ -2,7 +2,9 @@
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
 	import CircleXIcon from '@lucide/svelte/icons/circle-x';
 
+	import EmulatedStorageBadge from '$lib/components/cluster/emulated-storage-badge.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import type { EmulatedStorage } from '$lib/emulated/storage';
 
 	type ConnectionStatusProps = {
 		status: 'loading' | 'ready' | 'error';
@@ -10,6 +12,7 @@
 		tableCount: number;
 		functionCount: number;
 		isQueryable: boolean;
+		emulatedStorage?: EmulatedStorage;
 		onretry?: () => void;
 	};
 
@@ -19,6 +22,7 @@
 		tableCount,
 		functionCount,
 		isQueryable,
+		emulatedStorage,
 		onretry
 	}: ConnectionStatusProps = $props();
 
@@ -45,6 +49,9 @@
 		<span class="truncate">{statusText}</span>
 	</div>
 	<div class="text-muted-foreground ml-auto flex items-center gap-3">
+		{#if emulatedStorage}
+			<EmulatedStorageBadge storage={emulatedStorage} class="hidden sm:inline-flex" />
+		{/if}
 		<div class="flex items-center gap-1.5">
 			{#if isQueryable}
 				<CircleCheckIcon

@@ -75,13 +75,9 @@
 	}
 
 	function clusterTypeSummary(cluster?: KustoClusterConnection) {
-		if (cluster?.kind === 'mock') return 'Mock';
-		if (cluster?.kind === 'emulated') {
-			return cluster.emulatedStorage?.mode === 'opfs'
-				? 'Emulated · Persistent'
-				: 'Emulated · Ephemeral';
-		}
-		return 'Remote';
+		if (cluster?.kind === 'mock') return 'Mock schema';
+		if (cluster?.kind === 'emulated') return 'Emulated cluster';
+		return 'Remote Kusto';
 	}
 </script>
 
@@ -93,6 +89,7 @@
 					<Sidebar.MenuButton
 						{...props}
 						size="lg"
+						class="h-14"
 						tooltipContent={locked ? 'Cluster selection is locked' : 'Switch cluster'}
 						disabled={disabled || locked}
 						aria-disabled={disabled || locked}
@@ -108,20 +105,26 @@
 								<ServerIcon class="size-4" />
 							{/if}
 						</div>
-						<div class="grid min-w-0 flex-1 text-left text-sm leading-tight">
-							<span
-								class="truncate font-semibold"
-								title={selectedCluster?.name ?? selectedClusterId}
-								>{selectedCluster?.name ?? selectedClusterId}</span
-							>
-							<span
-								class="truncate text-xs"
-								title={`${clusterTypeSummary(selectedCluster)}${selectedCluster?.description ? ` · ${selectedCluster.description}` : ''}`}
-							>
-								{clusterTypeSummary(selectedCluster)}
-								{#if selectedCluster?.description}
-									<span class="text-muted-foreground/70"> · {selectedCluster.description}</span>
+						<div class="grid min-w-0 flex-1 gap-0.5 text-left text-sm leading-tight">
+							<div class="flex min-w-0 items-center gap-1.5">
+								<span
+									class="min-w-0 flex-1 truncate font-semibold"
+									title={selectedCluster?.name ?? selectedClusterId}
+								>
+									{selectedCluster?.name ?? selectedClusterId}
+								</span>
+								{#if selectedCluster?.kind === 'emulated'}
+									<EmulatedStorageBadge
+										storage={selectedCluster.emulatedStorage}
+										class="h-4 px-1.5 text-[10px] [&>svg]:hidden"
+									/>
 								{/if}
+							</div>
+							<span
+								class="text-muted-foreground truncate text-xs"
+								title={selectedCluster?.description ?? clusterTypeSummary(selectedCluster)}
+							>
+								{selectedCluster?.description ?? clusterTypeSummary(selectedCluster)}
 							</span>
 						</div>
 						{#if locked}

@@ -120,8 +120,9 @@ test('creates DuckDB databases and tables from emulated cluster administration',
 	await expect(page.getByText('Count', { exact: true }).first()).toBeVisible();
 
 	await page.getByRole('link', { name: 'Data ingestion' }).click();
-	await expect(page.locator('[data-emulated-storage="ephemeral"]')).toBeVisible();
-	await expect(page.getByText('Ephemeral', { exact: true })).toBeVisible();
+	const ingestionWorkspace = page.getByRole('main');
+	await expect(ingestionWorkspace.locator('[data-emulated-storage="ephemeral"]')).toBeVisible();
+	await expect(ingestionWorkspace.getByText('Ephemeral', { exact: true })).toBeVisible();
 	await page.locator('#ingestion-database').click();
 	await page.getByRole('option', { name: 'Analytics' }).click();
 	await page.locator('#ingestion-table').click();
@@ -181,9 +182,7 @@ test('reopens a persistent custom emulated cluster after a full reload', async (
 	await page.getByRole('option', { name: 'Persistent browser storage' }).click();
 	await clusterDialog.getByRole('button', { name: 'Add and connect' }).click();
 
-	await expect(
-		page.getByRole('button', { name: /Persistent DuckDB Emulated · Persistent/ })
-	).toBeVisible();
+	await expect(page.getByRole('button', { name: /Persistent DuckDB Persistent/ })).toBeVisible();
 	await expect(page.getByText('memory', { exact: true }).first()).toBeVisible({
 		timeout: 30_000
 	});
@@ -200,9 +199,9 @@ test('reopens a persistent custom emulated cluster after a full reload', async (
 
 	await page.reload();
 
-	await expect(
-		page.getByRole('button', { name: /Persistent DuckDB Emulated · Persistent/ })
-	).toBeVisible({ timeout: 30_000 });
+	await expect(page.getByRole('button', { name: /Persistent DuckDB Persistent/ })).toBeVisible({
+		timeout: 30_000
+	});
 	await expect(page.getByRole('button', { name: 'PersistentEvents 1 column' })).toBeVisible({
 		timeout: 30_000
 	});

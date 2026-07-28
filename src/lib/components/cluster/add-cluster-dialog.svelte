@@ -176,8 +176,8 @@
 						</Select.Root>
 						<p class="text-muted-foreground text-xs">
 							{storageMode === 'opfs'
-								? `Stores DuckDB files in this site’s private browser storage so data survives reloads.${cluster ? ' Storage mode is fixed after creation.' : ''}`
-								: `Keeps databases and ingested data in WASM memory until a full page reload releases the cluster.${cluster ? ' Storage mode is fixed after creation.' : ''}`}
+								? `Stores DuckDB files in this site’s private browser storage so data survives cluster switches and reloads.${cluster ? ' Storage mode is fixed after creation.' : ''}`
+								: `Keeps databases and ingested data in WASM memory. Switching clusters, leaving the workspace, or reloading clears it.${cluster ? ' Storage mode is fixed after creation.' : ''}`}
 						</p>
 					</div>
 				{/if}

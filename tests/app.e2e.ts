@@ -1,4 +1,12 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+function countDuckDbWorkers(page: Page) {
+	return page.workers().filter((worker) => worker.url().includes('duckdb-browser-')).length;
+}
+
+async function expectDuckDbWorkerCount(page: Page, count: number) {
+	await expect.poll(() => countDuckDbWorkers(page)).toBe(count);
+}
 
 test('serves the production build and opens the query explorer', async ({ page }) => {
 	await page.goto('/');
@@ -77,6 +85,52 @@ test('runs KQL through the emulated cluster and disables Kusto commands', async 
 			name: 'Management commands are not supported for emulated clusters'
 		})
 	).toBeVisible({ timeout: 30_000 });
+});
+
+test('releases inactive DuckDB workers and keeps at most one emulated session', async ({
+	page
+}) => {
+	test.setTimeout(60_000);
+	await page.goto('/explorer/query');
+
+	await page.getByRole('button', { name: /Mock cluster/ }).click();
+	await page.getByRole('menuitem').filter({ hasText: 'Emulated cluster' }).click();
+	await expect(page.getByText('memory', { exact: true }).first()).toBeVisible({
+		timeout: 30_000
+	});
+	await expectDuckDbWorkerCount(page, 1);
+
+	await page.getByRole('button', { name: /Emulated cluster/ }).click();
+	await page.getByRole('menuitem').filter({ hasText: 'Mock cluster' }).click();
+	await expect(page.getByRole('button', { name: /Mock cluster/ })).toBeVisible();
+	await expectDuckDbWorkerCount(page, 0);
+
+	await page.getByRole('button', { name: /Mock cluster/ }).click();
+	await page.getByRole('menuitem').filter({ hasText: 'Emulated cluster' }).click();
+	await expectDuckDbWorkerCount(page, 1);
+
+	await page.getByRole('button', { name: /Emulated cluster/ }).click();
+	await page.getByRole('menuitem', { name: 'Add cluster' }).click();
+	const clusterDialog = page.getByRole('dialog', { name: 'Add cluster' });
+	await clusterDialog.getByLabel('Name').fill('Second emulated cluster');
+	await clusterDialog.locator('#new-cluster-kind').click();
+	await page.getByRole('option', { name: 'Emulated' }).click();
+	await clusterDialog.getByRole('button', { name: 'Add and connect' }).click();
+
+	await expect(page.getByRole('button', { name: /Second emulated cluster Ephemeral/ })).toBeVisible(
+		{
+			timeout: 30_000
+		}
+	);
+	await expectDuckDbWorkerCount(page, 1);
+
+	await page.getByRole('link', { name: 'Kite', exact: true }).click();
+	await expect(
+		page.getByRole('heading', {
+			name: 'Explore data and operate your local Kusto clusters.'
+		})
+	).toBeVisible();
+	await expectDuckDbWorkerCount(page, 0);
 });
 
 test('creates DuckDB databases and tables from emulated cluster administration', async ({
@@ -196,6 +250,17 @@ test('reopens a persistent custom emulated cluster after a full reload', async (
 		.fill('CREATE PersistentEvents');
 	await tableDialog.getByRole('button', { name: 'Create table' }).click();
 	await expect(page.getByText('PersistentEvents', { exact: true }).first()).toBeVisible();
+
+	await page.getByRole('button', { name: /Persistent DuckDB Persistent/ }).click();
+	await page.getByRole('menuitem').filter({ hasText: 'Mock cluster' }).click();
+	await expectDuckDbWorkerCount(page, 0);
+
+	await page.getByRole('button', { name: /Mock cluster/ }).click();
+	await page.getByRole('menuitem').filter({ hasText: 'Persistent DuckDB' }).click();
+	await expect(page.getByRole('button', { name: 'PersistentEvents 1 column' })).toBeVisible({
+		timeout: 30_000
+	});
+	await expectDuckDbWorkerCount(page, 1);
 
 	await page.reload();
 

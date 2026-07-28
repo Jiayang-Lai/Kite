@@ -206,6 +206,13 @@
 									{#if cluster.description}
 										<span class="text-background/80">{cluster.description}</span>
 									{/if}
+									{#if cluster.kind === 'emulated'}
+										<span class="text-background/80">
+											{cluster.emulatedStorage?.mode === 'opfs'
+												? 'Persistent data survives cluster switches; only the active cluster keeps a DuckDB worker.'
+												: 'Ephemeral data is cleared when you switch clusters or leave the workspace.'}
+										</span>
+									{/if}
 								</div>
 							</Tooltip.Content>
 						</Tooltip.Root>

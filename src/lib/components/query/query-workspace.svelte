@@ -27,10 +27,10 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Resizable from '$lib/components/ui/resizable';
 	import { Spinner } from '$lib/components/ui/spinner';
-	import { deletePersistentDuckDbStorage, disposeDuckDb } from '$lib/duckdb/query-client';
-	import { loadEmulatedSchema, startEmulatedQuery } from '$lib/emulated/emulated-cluster';
-	import { registerEmulatedStorage } from '$lib/emulated/storage';
+	import { deletePersistentDuckDbStorage } from '$lib/duckdb/query-client';
+	import { startEmulatedQuery } from '$lib/emulated/emulated-cluster';
 	import { getClusterSession } from '$lib/cluster/cluster-session.svelte';
+	import { connectClusterRuntime, releaseClusterRuntime } from '$lib/cluster/cluster-runtime';
 	import {
 		getPersistedActiveClusterId,
 		persistActiveClusterId
@@ -39,9 +39,8 @@
 		getClusterConnectionStore,
 		type NewClusterConnection
 	} from '$lib/cluster/cluster-connection-store.svelte';
-	import { getMockClusterSchema, usesBuiltInMockCatalog } from '$lib/cluster/mock-cluster-schema';
+	import { usesBuiltInMockCatalog } from '$lib/cluster/mock-cluster-schema';
 	import { MOCK_RECENT_QUERIES, MOCK_SAVED_QUERIES } from '$lib/data/mock-queries';
-	import { loadBackendSchema } from '$lib/kusto/backend-schema';
 	import { getKustoErrorMessage, startKustoQuery } from '$lib/kusto/query-client';
 	import { getRecentQueryStore } from '$lib/query/recent-query-store.svelte';
 	import { getSavedQueryStore } from '$lib/query/saved-query-store.svelte';
@@ -173,15 +172,7 @@
 		connectionError = '';
 
 		try {
-			if (requestedCluster.kind === 'emulated') {
-				registerEmulatedStorage(requestedCluster.id, requestedCluster.emulatedStorage);
-			}
-			const schema =
-				requestedCluster.kind === 'mock'
-					? getMockClusterSchema(requestedCluster)
-					: requestedCluster.kind === 'emulated'
-						? await loadEmulatedSchema(requestedClusterId)
-						: await loadBackendSchema(requestedClusterUrl);
+			const schema = await connectClusterRuntime(requestedCluster);
 			if (requestId !== schemaRequestId || requestedClusterId !== selectedClusterId) return;
 
 			const firstDatabase = Object.values(schema)[0];
@@ -257,7 +248,7 @@
 		const wasSelected = clusterId === selectedClusterId || clusterId === activeClusterId;
 		const removedCluster = clusters.find((cluster) => cluster.id === clusterId);
 		if (removedCluster?.kind === 'emulated') {
-			await disposeDuckDb(clusterId);
+			await releaseClusterRuntime(clusterId);
 			if (removedCluster.emulatedStorage?.mode === 'opfs') {
 				await deletePersistentDuckDbStorage(removedCluster.emulatedStorage.storageId);
 			}

@@ -16,7 +16,7 @@
 	const description = $derived(
 		persistent
 			? 'Stored in private browser storage and restored after reloads'
-			: 'Held in memory and cleared after a full page reload'
+			: 'Held in memory and cleared when you switch clusters, leave the workspace, or reload'
 	);
 </script>
 

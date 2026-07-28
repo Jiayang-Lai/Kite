@@ -87,14 +87,15 @@ Use **Admin → Databases & tables** to create databases and tables or update ta
 file. Kusto dot commands are intentionally unavailable for emulated clusters.
 
 The built-in emulated cluster and custom clusters created with **Ephemeral memory** keep databases
-in WASM memory and clear them when the tab releases the cluster. When adding a custom emulated
-cluster, choose **Persistent browser storage** to store its DuckDB cluster file in OPFS so databases,
-tables, and ingested rows survive reloads. Persistent data is private to the current site and browser
-profile; removing that connection deletes its local files. Persistent logical databases are isolated
-as DuckDB schemas inside one cluster file.
+in WASM memory. Switching clusters, leaving the workspace, or reloading releases the worker and
+clears that ephemeral data. When adding a custom emulated cluster, choose **Persistent browser
+storage** to store its DuckDB cluster file in OPFS so databases, tables, and ingested rows survive
+cluster switches and reloads. Persistent data is private to the current site and browser profile;
+removing that connection deletes its local files. Persistent logical databases are isolated as
+DuckDB schemas inside one cluster file.
 
-Each active custom emulated connection owns a separate DuckDB worker and memory allocation.
-Persistence does not remove DuckDB's runtime memory requirements.
+Only the selected emulated connection owns a DuckDB worker and memory allocation. Persistence does
+not remove the selected cluster's runtime memory requirements.
 
 See [Browser-emulated cluster](docs/emulated-cluster.md) for the capability matrix, ingestion
 behavior, memory model, and troubleshooting notes.

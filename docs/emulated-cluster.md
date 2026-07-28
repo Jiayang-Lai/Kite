@@ -131,13 +131,16 @@ ingestion appends the data again; there is no durable ingest-by history.
 
 Every active database uses DuckDB-WASM memory for execution and caching:
 
-- Client-side navigation between Explorer and Admin preserves either storage mode.
-- Ephemeral data is cleared by a hard reload, tab close, browser crash, or worker termination.
+- Client-side navigation between Explorer and Admin preserves the selected connection and either
+  storage mode.
+- Switching clusters or leaving the application workspace terminates the previous DuckDB worker.
+- Ephemeral data is cleared by a cluster switch, workspace exit, hard reload, tab close, browser
+  crash, or worker termination.
 - Persistent OPFS data is reopened after a reload or a new tab session.
 - Local file handles avoid a full JavaScript-side copy, but imported table data still consumes WASM
   memory.
 - Inline CSV temporarily exists both as editor text and as a registered DuckDB text file.
-- Multiple custom emulated connections allocate separate workers and should be created sparingly.
+- At most one emulated connection owns a live DuckDB worker.
 
 Use a remote Kustainer connection when shared/server-managed durability, Kusto management commands,
 ingestion policies, or production-scale workloads are required.
@@ -170,9 +173,9 @@ ingestion policies, or production-scale workloads are required.
   allows only one active DuckDB-WASM writer for an OPFS cluster.
 - **Remote ingestion fails:** verify CORS headers and byte-range support on the source. Test with an
   unsigned public URL before diagnosing signed credentials.
-- **Memory remains high:** remove unused custom emulated connections or reload the tab to terminate
-  all DuckDB workers. Large imported tables can consume substantially more memory than their source
-  files.
+- **Memory remains high:** switch to a non-emulated cluster or leave the application workspace to
+  terminate DuckDB. The selected emulated cluster and large imported tables can consume
+  substantially more memory than their source files.
 
 ## Developer map
 

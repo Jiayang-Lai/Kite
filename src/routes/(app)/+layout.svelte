@@ -7,6 +7,7 @@
 		createClusterConnectionStore,
 		setClusterConnectionStore
 	} from '$lib/cluster/cluster-connection-store.svelte';
+	import { releaseAllClusterRuntimes } from '$lib/cluster/cluster-runtime';
 	import { createClusterSession, setClusterSession } from '$lib/cluster/cluster-session.svelte';
 	import { SIDEBAR_COOKIE_NAME } from '$lib/components/ui/sidebar/constants.js';
 	import { getKustoClusters } from '$lib/kusto/query-client';
@@ -43,6 +44,10 @@
 		clusterConnectionStore.hydrate();
 		recentQueryStore.hydrate();
 		savedQueryStore.hydrate();
+
+		return () => {
+			void releaseAllClusterRuntimes();
+		};
 	});
 </script>
 

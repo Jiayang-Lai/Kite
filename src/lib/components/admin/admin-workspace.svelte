@@ -24,12 +24,10 @@
 		getClusterConnectionStore,
 		type NewClusterConnection
 	} from '$lib/cluster/cluster-connection-store.svelte';
-	import { getMockClusterSchema, usesBuiltInMockCatalog } from '$lib/cluster/mock-cluster-schema';
+	import { connectClusterRuntime, releaseClusterRuntime } from '$lib/cluster/cluster-runtime';
+	import { usesBuiltInMockCatalog } from '$lib/cluster/mock-cluster-schema';
 	import { MOCK_RECENT_QUERIES, MOCK_SAVED_QUERIES } from '$lib/data/mock-queries';
-	import { deletePersistentDuckDbStorage, disposeDuckDb } from '$lib/duckdb/query-client';
-	import { loadEmulatedSchema } from '$lib/emulated/emulated-cluster';
-	import { registerEmulatedStorage } from '$lib/emulated/storage';
-	import { loadBackendSchema } from '$lib/kusto/backend-schema';
+	import { deletePersistentDuckDbStorage } from '$lib/duckdb/query-client';
 	import { getKustoErrorMessage } from '$lib/kusto/query-client';
 	import { getRecentQueryStore } from '$lib/query/recent-query-store.svelte';
 	import { getSavedQueryStore } from '$lib/query/saved-query-store.svelte';
@@ -163,15 +161,7 @@
 		isClusterSwitching = Boolean(clusterSession.databaseSchema);
 		connectionError = '';
 		try {
-			if (cluster.kind === 'emulated') {
-				registerEmulatedStorage(cluster.id, cluster.emulatedStorage);
-			}
-			const schema =
-				cluster.kind === 'mock'
-					? getMockClusterSchema(cluster)
-					: cluster.kind === 'emulated'
-						? await loadEmulatedSchema(cluster.id)
-						: await loadBackendSchema(cluster.url);
+			const schema = await connectClusterRuntime(cluster);
 			if (requestId !== schemaRequestId || clusterId !== selectedClusterId) return false;
 			const firstDatabase = Object.values(schema)[0];
 			const shouldRestoreSelection = clusterId === clusterSession.activeClusterId;
@@ -231,7 +221,7 @@
 			clusterId === selectedClusterId || clusterId === clusterSession.activeClusterId;
 		const removedCluster = clusters.find((cluster) => cluster.id === clusterId);
 		if (removedCluster?.kind === 'emulated') {
-			await disposeDuckDb(clusterId);
+			await releaseClusterRuntime(clusterId);
 			if (removedCluster.emulatedStorage?.mode === 'opfs') {
 				await deletePersistentDuckDbStorage(removedCluster.emulatedStorage.storageId);
 			}

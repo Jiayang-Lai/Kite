@@ -615,7 +615,7 @@ export async function getDuckDbCatalog(
 	return Array.from(databases.values(), ({ database }) => database);
 }
 
-/** Releases DuckDB's connection, WASM memory, and worker when the lab route is left. */
+/** Releases one DuckDB connection, its WASM memory, and its worker. */
 export async function disposeDuckDb(sessionId = DEFAULT_SESSION_ID): Promise<void> {
 	const activeSession = sessionPromises.get(sessionId);
 	sessionPromises.delete(sessionId);
@@ -644,6 +644,19 @@ export async function disposeDuckDb(sessionId = DEFAULT_SESSION_ID): Promise<voi
 	} finally {
 		await session?.lockLease?.release().catch(() => undefined);
 	}
+}
+
+/** Releases every initialized DuckDB session except the session that is becoming active. */
+export async function disposeInactiveDuckDbSessions(activeSessionId?: string): Promise<void> {
+	const inactiveSessionIds = Array.from(sessionPromises.keys()).filter(
+		(sessionId) => sessionId !== activeSessionId
+	);
+	await Promise.all(inactiveSessionIds.map((sessionId) => disposeDuckDb(sessionId)));
+}
+
+/** Releases every initialized DuckDB session owned by this browser page. */
+export async function disposeAllDuckDbSessions(): Promise<void> {
+	await disposeInactiveDuckDbSessions();
 }
 
 /**

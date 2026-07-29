@@ -29,6 +29,10 @@ Built-in and custom emulated connections therefore do not share databases or row
 connection is ephemeral. A custom connection can be created with either ephemeral memory or
 persistent browser storage.
 
+Kite hosts the DuckDB worker scripts, but downloads DuckDB's version-pinned WASM runtime from
+jsDelivr. The runtime files exceed Cloudflare Pages' 25 MiB per-file deployment limit, so an
+emulated cluster requires access to that CDN in addition to Kite's origin.
+
 ## Translator assets
 
 Kite expects the translator at:

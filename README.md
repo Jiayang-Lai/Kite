@@ -33,6 +33,10 @@ Kite makes the Kusto workflow available entirely on your own machine. Use the br
 
 Kite brings KQL authoring, schema exploration, and cluster administration into one interface. It includes a Monaco-powered query editor with Kusto language support, a built-in mock catalog, and an in-browser DuckDB backend powered by the [KQL-to-SQL translator](https://github.com/Jiayang-Lai/kql-to-sql).
 
+The browser-emulated cluster downloads its version-pinned DuckDB-WASM runtime from jsDelivr because
+the runtime binaries exceed Cloudflare Pages' per-file size limit. Kite continues to host the
+DuckDB workers and the KQL translator itself.
+
 With Kite, you can:
 
 - Browse clusters, databases, tables, functions, and schemas.

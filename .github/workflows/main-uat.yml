@@ -70,6 +70,11 @@ jobs:
           test -f .svelte-kit/output/server/index.js
           test -f .svelte-kit/tsconfig.json
           test -f .svelte-kit/cloudflare/kql-wasm/_framework/dotnet.js
+          oversized_file="$(find .svelte-kit/cloudflare -type f -size +25M -print -quit)"
+          test -z "$oversized_file" || {
+            echo "Cloudflare Pages limit exceeded (25 MiB): $oversized_file" >&2
+            exit 1
+          }
 
       - name: Upload the release artifact
         id: artifact

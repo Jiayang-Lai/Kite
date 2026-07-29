@@ -154,11 +154,11 @@ test('releases inactive DuckDB workers and keeps at most one emulated session', 
 	await page.getByRole('option', { name: 'Emulated' }).click();
 	await clusterDialog.getByRole('button', { name: 'Add and connect' }).click();
 
-	await expect(page.getByRole('button', { name: /Second emulated cluster Ephemeral/ })).toBeVisible(
-		{
-			timeout: 30_000
-		}
-	);
+	await expect(
+		page.getByRole('button', { name: /Second emulated cluster Persistent/ })
+	).toBeVisible({
+		timeout: 30_000
+	});
 	await expectDuckDbWorkerCount(page, 1);
 
 	await page.getByRole('link', { name: 'Kite', exact: true }).click();
@@ -289,8 +289,15 @@ test('reopens a persistent custom emulated cluster after a full reload', async (
 	await clusterDialog.getByLabel('Name').fill('Persistent DuckDB');
 	await clusterDialog.locator('#new-cluster-kind').click();
 	await page.getByRole('option', { name: 'Emulated' }).click();
+	await expect(clusterDialog.locator('#new-cluster-storage')).toHaveText(
+		'Persistent browser storage'
+	);
 	await clusterDialog.locator('#new-cluster-storage').click();
-	await page.getByRole('option', { name: 'Persistent browser storage' }).click();
+	await expect(page.getByRole('option', { name: 'Persistent browser storage' })).toHaveAttribute(
+		'aria-selected',
+		'true'
+	);
+	await page.keyboard.press('Escape');
 	await clusterDialog.getByRole('button', { name: 'Add and connect' }).click();
 
 	await expect(page.getByRole('button', { name: /Persistent DuckDB Persistent/ })).toBeVisible();

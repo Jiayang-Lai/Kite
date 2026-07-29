@@ -207,7 +207,7 @@ export function createClusterConnectionStore(): ClusterConnectionStore {
 				description: draft.description?.trim() || undefined,
 				url: createEmulatedClusterUrl(id),
 				kind: 'emulated' as const,
-				emulatedStorage: createEmulatedStorage(draft.storageMode ?? 'memory', id)
+				emulatedStorage: createEmulatedStorage(draft.storageMode ?? 'opfs', id)
 			};
 		}
 

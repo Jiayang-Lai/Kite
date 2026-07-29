@@ -21,7 +21,7 @@
 	let url = $state('');
 	let mockSchemaText = $state('');
 	let description = $state('');
-	let storageMode = $state<EmulatedStorageMode>('memory');
+	let storageMode = $state<EmulatedStorageMode>('opfs');
 	let error = $state('');
 	let initializedTarget = '';
 
@@ -46,7 +46,7 @@
 		);
 		description = cluster?.description ?? '';
 		storageMode =
-			cluster?.kind === 'emulated' ? (cluster.emulatedStorage?.mode ?? 'memory') : 'memory';
+			cluster?.kind === 'emulated' ? (cluster.emulatedStorage?.mode ?? 'memory') : 'opfs';
 		error = '';
 	});
 
@@ -167,7 +167,9 @@
 						<label class="text-sm font-medium" for="new-cluster-storage">Data storage</label>
 						<Select.Root type="single" bind:value={storageMode} disabled={Boolean(cluster)}>
 							<Select.Trigger id="new-cluster-storage" class="w-full">
-								<Select.Value />
+								<span data-slot="select-value" class="min-w-0 truncate">
+									{storageMode === 'opfs' ? 'Persistent browser storage' : 'Ephemeral memory'}
+								</span>
 							</Select.Trigger>
 							<Select.Content>
 								<Select.Item value="memory" label="Ephemeral memory" />

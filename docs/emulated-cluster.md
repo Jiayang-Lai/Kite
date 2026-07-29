@@ -68,7 +68,7 @@ translator artifact before running the Kite production build.
 | Kusto management commands           | Not supported                                        |
 | Stored Kusto functions/policies     | Not supported                                        |
 | Data ingestion                      | Inline, local file, and remote file append           |
-| Persistence across full reloads     | Opt-in for custom connections through browser OPFS   |
+| Persistence across full reloads     | Default for custom connections through browser OPFS  |
 
 The logical default `memory` database cannot be removed. Ephemeral connections create additional
 databases with `ATTACH ':memory:'`. Persistent connections isolate logical databases as schemas
@@ -76,8 +76,8 @@ inside one OPFS DuckDB file and keep their names in a private manifest.
 
 ## Persistent browser storage
 
-Choose **Persistent browser storage** when adding a custom emulated cluster. Kite opens the
-cluster's DuckDB catalog with a stable OPFS filename derived from its connection ID. On startup it:
+Custom emulated clusters default to **Persistent browser storage**. Kite opens the cluster's DuckDB
+catalog with a stable OPFS filename derived from its connection ID. On startup it:
 
 1. Acquires an exclusive browser lock for the connection.
 2. Opens the cluster file in read/write mode.

@@ -86,14 +86,18 @@ describe('cluster connection store', () => {
 		expect(cluster.url).toBe(`emulated://kite/${cluster.id}`);
 	});
 
-	it('defaults custom emulated connections to ephemeral memory', () => {
+	it('defaults custom emulated connections to persistent browser storage', () => {
 		const store = createClusterConnectionStore();
 		const cluster = store.add({
-			name: 'Temporary DuckDB',
+			name: 'Persistent DuckDB',
 			kind: 'emulated'
 		});
 
-		expect(cluster.emulatedStorage).toEqual({ mode: 'memory' });
+		expect(cluster.emulatedStorage).toEqual({
+			mode: 'opfs',
+			storageId: cluster.id,
+			formatVersion: 1
+		});
 	});
 
 	it('does not change an emulated cluster storage mode after creation', () => {

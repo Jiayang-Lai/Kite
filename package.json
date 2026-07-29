@@ -9,9 +9,11 @@
 	},
 	"scripts": {
 		"generate:kusto-docs": "node scripts/generate-kusto-documentation-index.mjs",
+		"build:kql-wasm": "node scripts/build-kql-wasm.mjs",
+		"verify:kql-wasm": "node scripts/verify-kql-wasm.mjs",
 		"profile:kusto-memory": "npm run build && node scripts/profile-kusto-memory.mjs",
 		"dev": "vite dev",
-		"prebuild": "npm run generate:kusto-docs",
+		"prebuild": "npm run generate:kusto-docs && npm run verify:kql-wasm",
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync",

@@ -58,7 +58,7 @@ test('places the cluster switcher below its trigger on smaller displays', async 
 
 test('translates KQL to DuckDB SQL and executes it in the browser', async ({ page }) => {
 	const wasmLoader = await page.request.get('/kql-wasm/_framework/dotnet.js');
-	test.skip(!wasmLoader.ok(), 'The local KQL WASM build is not present.');
+	expect(wasmLoader.ok()).toBe(true);
 	await page.goto('/labs/kql-to-sql');
 
 	await expect(page).toHaveTitle('KQL to SQL WASM validation');
@@ -81,7 +81,7 @@ test('translates KQL to DuckDB SQL and executes it in the browser', async ({ pag
 
 test('runs KQL through the emulated cluster and disables Kusto commands', async ({ page }) => {
 	const wasmLoader = await page.request.get('/kql-wasm/_framework/dotnet.js');
-	test.skip(!wasmLoader.ok(), 'The local KQL WASM build is not present.');
+	expect(wasmLoader.ok()).toBe(true);
 	await page.goto('/explorer/query');
 
 	await page.getByRole('button', { name: /Mock cluster/ }).click();

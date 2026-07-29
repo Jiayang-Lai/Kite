@@ -74,25 +74,24 @@ must pass before a pull request can be merged.
 
 ### KQL translator WebAssembly artifact
 
-The browser-emulated cluster depends on the .NET WebAssembly bridge from
-[`Jiayang-Lai/kql-to-sql`](https://github.com/Jiayang-Lai/kql-to-sql). Kite expects its published
-framework at `static/kql-wasm/_framework`, but that directory is ignored by Git and `npm run build`
-does not generate it.
+The browser-emulated cluster depends on the .NET WebAssembly bridge from the source-pinned
+[`Jiayang-Lai/kql-to-sql`](https://github.com/Jiayang-Lai/kql-to-sql) Git submodule. Kite publishes
+the resulting framework at `static/kql-wasm/_framework`; generated files remain ignored by Git.
 
-Before building a deployable Kite artifact, CI must either publish a pinned translator revision or
-download a retained, checksummed translator artifact. The source publish flow is:
+PR and Main UAT workflows initialize the submodule recursively, install the workload declared by
+its `global.json`, and build the bridge before validating Kite. The local equivalent is:
 
 ```bash
-dotnet workload install wasm-tools
-dotnet publish src/KqlWasmBridge/KqlWasmBridge.csproj -c Release -o build-wasm
-mkdir -p /path/to/Kite/static/kql-wasm
-cp -R build-wasm/wwwroot/_framework /path/to/Kite/static/kql-wasm/
+git submodule update --init --recursive
+dotnet workload restore vendor/kql-to-sql/src/KqlWasmBridge/KqlWasmBridge.csproj
+npm run build:kql-wasm
 ```
 
-The pipeline must fail before the Kite build if
-`static/kql-wasm/_framework/dotnet.js` is absent. The retained deployment artifact should record
-the translator commit and checksum alongside the Kite commit so promotion never combines an
-unreviewed translator build with an otherwise frozen Kite release.
+The build creates `static/kql-wasm/manifest.json` with the translator commit and a SHA-256 checksum
+of the framework. `npm run build` verifies the manifest before creating the Cloudflare bundle, and
+the workflow verifies that the final bundle contains `kql-wasm/_framework/dotnet.js`. Release
+candidate and production deployments promote that retained bundle without rebuilding it, so they
+cannot combine an unreviewed translator revision with a frozen Kite release.
 
 ## Preview environments
 

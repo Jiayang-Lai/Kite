@@ -102,24 +102,18 @@ behavior, memory model, and troubleshooting notes.
 
 ### Build the KQL translator WASM
 
-The translator build is not part of `npm run build`, and `static/kql-wasm` is intentionally ignored
-by Git. A local checkout or deployment pipeline must place the published bridge there before Kite
-starts.
-
-With `kql-to-sql` and `Kite` checked out as sibling directories:
+The translator source is pinned as a Git submodule and its generated output remains ignored by Git.
+Initialize the submodule and build the bridge before running a production build:
 
 ```bash
-git clone --recurse-submodules https://github.com/Jiayang-Lai/kql-to-sql.git
-cd kql-to-sql
-dotnet workload install wasm-tools
-dotnet publish src/KqlWasmBridge/KqlWasmBridge.csproj -c Release -o build-wasm
-
-mkdir -p ../Kite/static/kql-wasm
-cp -R build-wasm/wwwroot/_framework ../Kite/static/kql-wasm/
+git submodule update --init --recursive
+dotnet workload restore vendor/kql-to-sql/src/KqlWasmBridge/KqlWasmBridge.csproj
+npm run build:kql-wasm
 ```
 
-Confirm that `static/kql-wasm/_framework/dotnet.js` exists in the Kite checkout. Adjust the copy
-destination if the repositories are not siblings.
+`npm run build` verifies that `static/kql-wasm/_framework/dotnet.js` and its provenance manifest
+are present before producing a deployable application. `npm run dev` remains available for Mock and
+remote clusters without this optional local artifact.
 
 ### Connect to local Kusto
 

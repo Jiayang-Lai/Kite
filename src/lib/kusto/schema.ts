@@ -3,8 +3,9 @@ import type { Database, EngineSchema } from '@kusto/monaco-kusto';
 
 /**
  * Converts Kite's compact database description into the metadata shape accepted by
- * Monaco-Kusto's worker. The worker receives the complete cluster catalog for
- * cross-database completion, plus the selected database as its active context.
+ * Monaco-Kusto's worker. The worker receives full metadata for the selected
+ * database and name-only table stubs for other databases. This avoids turning an
+ * entire cluster catalog into both V1 and V2 Bridge.NET symbol graphs at once.
  */
 /**
  * Returns the requested database, falling back to the first configured database.
@@ -43,13 +44,37 @@ export function createKustoSchema(
 		majorVersion: database.majorVersion ?? 1,
 		minorVersion: database.minorVersion ?? 0
 	});
+	const toCatalogStub = (database: KustoDatabase): Database => ({
+		name: database.name,
+		alternateName: database.alternateName,
+		// Keep table names for cross-database discovery, but omit their columns.
+		tables: database.tables.map((table) => ({
+			name: table.name,
+			entityType: table.entityType,
+			columns: []
+		})),
+		// A Monaco-Kusto function requires its body to be semantically useful. Do
+		// not send misleading empty bodies for inactive databases; switching to one
+		// sends its full function metadata below.
+		functions: [],
+		graphs: [],
+		entityGroups: [],
+		majorVersion: database.majorVersion ?? 1,
+		minorVersion: database.minorVersion ?? 0
+	});
+
+	// Reuse the active metadata instance for both fields. Structured clone retains
+	// object identity, avoiding a second copy of the active database in transit.
+	const activeMetadata = toDatabaseMetadata(activeDatabase);
 
 	return {
 		clusterType: 'Engine',
 		cluster: {
 			connectionString: clusterUrl,
-			databases: Object.values(schema).map(toDatabaseMetadata)
+			databases: Object.values(schema).map((database) =>
+				database === activeDatabase ? activeMetadata : toCatalogStub(database)
+			)
 		},
-		database: toDatabaseMetadata(activeDatabase)
+		database: activeMetadata
 	};
 }

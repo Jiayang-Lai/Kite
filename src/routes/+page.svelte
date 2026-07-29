@@ -75,7 +75,11 @@
 								Current cluster
 							</div>
 							<Badge variant="outline">
-								{activeCluster.kind === 'mock' ? 'Mock catalog' : 'Configured connection'}
+								{activeCluster.kind === 'mock'
+									? 'Mock catalog'
+									: activeCluster.kind === 'emulated'
+										? 'Browser emulation'
+										: 'Configured connection'}
 							</Badge>
 						</div>
 						<div class="min-w-0">

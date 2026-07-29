@@ -9,8 +9,11 @@
 	},
 	"scripts": {
 		"generate:kusto-docs": "node scripts/generate-kusto-documentation-index.mjs",
+		"build:kql-wasm": "node scripts/build-kql-wasm.mjs",
+		"verify:kql-wasm": "node scripts/verify-kql-wasm.mjs",
+		"profile:kusto-memory": "npm run build && node scripts/profile-kusto-memory.mjs",
 		"dev": "vite dev",
-		"prebuild": "npm run generate:kusto-docs",
+		"prebuild": "npm run generate:kusto-docs && npm run verify:kql-wasm",
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync",
@@ -64,6 +67,7 @@
 		"wrangler": "^4.113.0"
 	},
 	"dependencies": {
+		"@duckdb/duckdb-wasm": "1.32.0",
 		"@kusto/language-service-next": "^12.4.0",
 		"@kusto/monaco-kusto": "^15.0.0",
 		"azure-kusto-data": "^7.2.0",

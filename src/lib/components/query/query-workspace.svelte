@@ -4,6 +4,7 @@
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import ServerIcon from '@lucide/svelte/icons/server';
+	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import { mode } from 'mode-watcher';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
@@ -27,7 +28,10 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Resizable from '$lib/components/ui/resizable';
 	import { Spinner } from '$lib/components/ui/spinner';
+	import { deletePersistentDuckDbStorage } from '$lib/duckdb/storage';
+	import { startEmulatedQuery } from '$lib/emulated/emulated-cluster';
 	import { getClusterSession } from '$lib/cluster/cluster-session.svelte';
+	import { connectClusterRuntime, releaseClusterRuntime } from '$lib/cluster/cluster-runtime';
 	import {
 		getPersistedActiveClusterId,
 		persistActiveClusterId
@@ -36,10 +40,10 @@
 		getClusterConnectionStore,
 		type NewClusterConnection
 	} from '$lib/cluster/cluster-connection-store.svelte';
-	import { getMockClusterSchema, usesBuiltInMockCatalog } from '$lib/cluster/mock-cluster-schema';
+	import { usesBuiltInMockCatalog } from '$lib/cluster/mock-cluster-schema';
 	import { MOCK_RECENT_QUERIES, MOCK_SAVED_QUERIES } from '$lib/data/mock-queries';
-	import { loadBackendSchema } from '$lib/kusto/backend-schema';
 	import { getKustoErrorMessage, startKustoQuery } from '$lib/kusto/query-client';
+	import { disposeKqlTranslator } from '$lib/kql/wasm-translator';
 	import { getRecentQueryStore } from '$lib/query/recent-query-store.svelte';
 	import { getSavedQueryStore } from '$lib/query/saved-query-store.svelte';
 	import type { KustoDatabase, KustoDatabaseSchema } from '$lib/types/kusto-schema';
@@ -93,6 +97,7 @@
 	const hasCluster = $derived(Boolean(databaseSchema));
 	const activeCluster = $derived(clusters.find((cluster) => cluster.id === activeClusterId));
 	const isMockCluster = $derived(activeCluster?.kind === 'mock');
+	const isEmulatedCluster = $derived(activeCluster?.kind === 'emulated');
 	const hasBuiltInMockSamples = $derived(usesBuiltInMockCatalog(activeCluster));
 	let explorerExpansion = $state(clusterSession.getExplorerExpansion(initialCluster.id));
 	const isQueryable = $derived(hasCluster && !isMockCluster);
@@ -143,6 +148,10 @@
 		explorerExpansion = clusterSession.getExplorerExpansion(activeClusterId);
 	});
 
+	$effect(() => {
+		if (!isEmulatedCluster) disposeKqlTranslator();
+	});
+
 	function quoteEntity(name: string) {
 		return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? name : `['${name.replaceAll("'", "''")}']`;
 	}
@@ -169,10 +178,7 @@
 		connectionError = '';
 
 		try {
-			const schema =
-				requestedCluster.kind === 'mock'
-					? getMockClusterSchema(requestedCluster)
-					: await loadBackendSchema(requestedClusterUrl);
+			const schema = await connectClusterRuntime(requestedCluster);
 			if (requestId !== schemaRequestId || requestedClusterId !== selectedClusterId) return;
 
 			const firstDatabase = Object.values(schema)[0];
@@ -244,8 +250,15 @@
 		void refreshSchema();
 	}
 
-	function removeCluster(clusterId: string) {
+	async function removeCluster(clusterId: string) {
 		const wasSelected = clusterId === selectedClusterId || clusterId === activeClusterId;
+		const removedCluster = clusters.find((cluster) => cluster.id === clusterId);
+		if (removedCluster?.kind === 'emulated') {
+			await releaseClusterRuntime(clusterId);
+			if (removedCluster.emulatedStorage?.mode === 'opfs') {
+				await deletePersistentDuckDbStorage(removedCluster.emulatedStorage.storageId);
+			}
+		}
 		clusterConnectionStore.remove(clusterId);
 		if (wasSelected) switchCluster(clusters[0].id);
 	}
@@ -346,7 +359,9 @@
 		queryError = '';
 		resultsCollapsed = false;
 		isQueryRunning = true;
-		activeExecution = startKustoQuery(selectedDatabase, query, activeClusterUrl);
+		activeExecution = isEmulatedCluster
+			? startEmulatedQuery(activeClusterId, selectedDatabase, query)
+			: startKustoQuery(selectedDatabase, query, activeClusterUrl);
 		recentQueryStore.record({
 			clusterId: activeClusterId,
 			database: selectedDatabase,
@@ -398,6 +413,7 @@
 			schemaRequestId += 1;
 			queryRequestId += 1;
 			activeExecution?.cancel();
+			disposeKqlTranslator();
 		};
 	});
 </script>
@@ -479,10 +495,31 @@
 			clusterName={activeClusterName}
 			databaseCount={connectionStatistics.databaseCount}
 			tableCount={connectionStatistics.tableCount}
+			emulatedStorage={activeCluster?.emulatedStorage}
 		/>
 	{:else if view === 'saved-queries'}
 		<SavedQueriesPage queries={savedQueries} onopen={openQuery} delete={deleteSavedQuery} />
-	{:else}<Resizable.PaneGroup
+	{:else}
+		{#if isEmulatedCluster}
+			<div
+				class="border-warning/40 bg-warning/10 text-warning flex shrink-0 items-start gap-2 rounded-lg border px-3 py-2 text-xs"
+				role="alert"
+			>
+				<TriangleAlertIcon class="size-4 shrink-0" />
+				<p>
+					Results from the emulated cluster may differ from Kusto. Translation is limited to the
+					operators and functions supported by
+					<a
+						href="https://github.com/Jiayang-Lai/kql-to-sql"
+						target="_blank"
+						rel="noreferrer"
+						class="font-medium underline underline-offset-2 hover:text-warning/80">kql-to-sql</a
+					>.
+				</p>
+			</div>
+		{/if}
+
+		<Resizable.PaneGroup
 			direction="horizontal"
 			autoSaveId="kite-cluster-layout"
 			class="min-h-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-xs"
@@ -645,6 +682,7 @@
 			status={connectionStatus}
 			{...connectionStatistics}
 			{isQueryable}
+			emulatedStorage={activeCluster?.emulatedStorage}
 			onretry={failedClusterId ? retryFailedCluster : undefined}
 		/>
 	{/if}

@@ -6,6 +6,7 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import type { NewClusterConnection } from '$lib/cluster/cluster-connection-store.svelte';
 	import { createStarterMockSchema, normalizeMockSchema } from '$lib/cluster/mock-cluster-schema';
+	import type { EmulatedStorageMode } from '$lib/emulated/storage';
 	import type { KustoClusterConnection } from '$lib/kusto/query-client';
 
 	type AddClusterDialogProps = {
@@ -20,6 +21,7 @@
 	let url = $state('');
 	let mockSchemaText = $state('');
 	let description = $state('');
+	let storageMode = $state<EmulatedStorageMode>('opfs');
 	let error = $state('');
 	let initializedTarget = '';
 
@@ -43,6 +45,8 @@
 			2
 		);
 		description = cluster?.description ?? '';
+		storageMode =
+			cluster?.kind === 'emulated' ? (cluster.emulatedStorage?.mode ?? 'memory') : 'opfs';
 		error = '';
 	});
 
@@ -59,7 +63,9 @@
 							description,
 							mockSchema: normalizeMockSchema(JSON.parse(mockSchemaText) as unknown)
 						}
-					: { name, kind, url, description };
+					: kind === 'emulated'
+						? { name, kind, description, storageMode }
+						: { name, kind, url, description };
 			onsubmit?.(draft);
 			open = false;
 		} catch (cause) {
@@ -94,7 +100,7 @@
 					<Input
 						id="new-cluster-name"
 						bind:value={name}
-						placeholder="Production analytics"
+						placeholder="New Cluster"
 						autocomplete="off"
 						required
 						maxlength={100}
@@ -103,19 +109,24 @@
 
 				<div class="grid gap-1.5">
 					<label class="text-sm font-medium" for="new-cluster-kind">Kind</label>
-					<Select.Root type="single" bind:value={kind}>
+					<Select.Root type="single" bind:value={kind} disabled={Boolean(cluster)}>
 						<Select.Trigger id="new-cluster-kind" class="w-full">
 							<Select.Value />
 						</Select.Trigger>
 						<Select.Content>
 							<Select.Item value="remote" label="Remote" />
+							<Select.Item value="emulated" label="Emulated" />
 							<Select.Item value="mock" label="Mock" />
 						</Select.Content>
 					</Select.Root>
 					<p class="text-muted-foreground text-xs">
-						{kind === 'mock'
-							? 'Use Kite’s in-memory schema catalog for testing and development.'
-							: 'Connect to a browser-accessible Kusto endpoint.'}
+						{cluster
+							? 'A saved connection cannot change backend kind.'
+							: kind === 'mock'
+								? "Use Kite's in-memory schema catalog for testing and development."
+								: kind === 'emulated'
+									? '(Memory Heavy) Translate KQL and execute it with an isolated DuckDB-Wasm backend in this browser.'
+									: 'Connect to a browser-accessible Kusto endpoint.'}
 					</p>
 				</div>
 
@@ -135,7 +146,7 @@
 							Use the browser-accessible HTTP or HTTPS endpoint.
 						</p>
 					</div>
-				{:else}
+				{:else if kind === 'mock'}
 					<div class="grid gap-1.5">
 						<label class="text-sm font-medium" for="new-cluster-mock-schema">Schema JSON</label>
 						<Textarea
@@ -149,6 +160,26 @@
 						/>
 						<p id="new-cluster-mock-schema-help" class="text-muted-foreground text-xs">
 							Define at least one database. Each database needs a matching name and a tables array.
+						</p>
+					</div>
+				{:else if kind === 'emulated'}
+					<div class="grid gap-1.5">
+						<label class="text-sm font-medium" for="new-cluster-storage">Data storage</label>
+						<Select.Root type="single" bind:value={storageMode} disabled={Boolean(cluster)}>
+							<Select.Trigger id="new-cluster-storage" class="w-full">
+								<span data-slot="select-value" class="min-w-0 truncate">
+									{storageMode === 'opfs' ? 'Persistent browser storage' : 'Ephemeral memory'}
+								</span>
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="memory" label="Ephemeral memory" />
+								<Select.Item value="opfs" label="Persistent browser storage" />
+							</Select.Content>
+						</Select.Root>
+						<p class="text-muted-foreground text-xs">
+							{storageMode === 'opfs'
+								? `Stores DuckDB files in this site’s private browser storage so data survives cluster switches and reloads.${cluster ? ' Storage mode is fixed after creation.' : ''}`
+								: `Keeps databases and ingested data in WASM memory. Switching clusters, leaving the workspace, or reloading clears it.${cluster ? ' Storage mode is fixed after creation.' : ''}`}
 						</p>
 					</div>
 				{/if}

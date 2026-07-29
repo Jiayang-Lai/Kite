@@ -72,6 +72,27 @@ CI validates a proposed change without deploying it to UAT or production. Pull r
 The exact checks and commands will be defined with the workflow implementation. Required checks
 must pass before a pull request can be merged.
 
+### KQL translator WebAssembly artifact
+
+The browser-emulated cluster depends on the .NET WebAssembly bridge from the source-pinned
+[`Jiayang-Lai/kql-to-sql`](https://github.com/Jiayang-Lai/kql-to-sql) Git submodule. Kite publishes
+the resulting framework at `static/kql-wasm/_framework`; generated files remain ignored by Git.
+
+PR and Main UAT workflows initialize the submodule recursively, install the workload declared by
+its `global.json`, and build the bridge before validating Kite. The local equivalent is:
+
+```bash
+git submodule update --init --recursive
+dotnet workload restore vendor/kql-to-sql/src/KqlWasmBridge/KqlWasmBridge.csproj
+npm run build:kql-wasm
+```
+
+The build creates `static/kql-wasm/manifest.json` with the translator commit and a SHA-256 checksum
+of the framework. `npm run build` verifies the manifest before creating the Cloudflare bundle, and
+the workflow verifies that the final bundle contains `kql-wasm/_framework/dotnet.js`. Release
+candidate and production deployments promote that retained bundle without rebuilding it, so they
+cannot combine an unreviewed translator revision with a frozen Kite release.
+
 ## Preview environments
 
 Where practical, each pull request receives an isolated preview deployment of its current revision.

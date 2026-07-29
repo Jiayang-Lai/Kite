@@ -13,7 +13,7 @@
 		action: DatabaseMutationAction;
 		databaseName?: string;
 		initialName?: string;
-		clusterKind: 'mock' | 'remote';
+		clusterKind: 'mock' | 'emulated' | 'remote';
 		renameMode?: 'canonical' | 'display-name';
 		onsubmit?: (request: DatabaseMutationRequest) => Promise<void> | void;
 	};
@@ -82,12 +82,16 @@
 				{action === 'drop'
 					? clusterKind === 'mock'
 						? `Permanently remove ${databaseName} and all of its schema metadata from this browser.`
-						: `Remote database deletion is not available for the local backend.`
+						: clusterKind === 'emulated'
+							? `Permanently remove ${databaseName} and all of its browser DuckDB data.`
+							: `Remote database deletion is not available for the local backend.`
 					: clusterKind === 'mock'
 						? 'This changes schema metadata in this browser only.'
-						: renameMode === 'display-name' && action === 'rename'
-							? 'This changes the friendly display name, not the canonical database identifier.'
-							: 'Remote database creation is not available for the local backend.'}
+						: clusterKind === 'emulated'
+							? 'This creates an attached DuckDB database for the current browser connection.'
+							: renameMode === 'display-name' && action === 'rename'
+								? 'This changes the friendly display name, not the canonical database identifier.'
+								: 'Remote database creation is not available for the local backend.'}
 			</Dialog.Description>
 		</Dialog.Header>
 

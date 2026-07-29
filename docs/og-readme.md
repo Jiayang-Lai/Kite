@@ -1,11 +1,31 @@
 ## Kusto backend
 
 The editor opens on its built-in **Mock cluster**, so every visitor can explore the schema and
-editor language features without a backend. `Local Kusto` (`http://localhost:8080`) remains
-available in the cluster selector and is the connection used for query execution.
+editor language features without a backend. **Emulated cluster** executes translated KQL through
+DuckDB-WASM in the browser. `Local Kusto` (`http://localhost:8080`) remains available for query
+execution against a local Kustainer.
 
 The built-in **Mock cluster** is always available in the selector. It uses the local mock database
 catalog for schema browsing and editor language features; query execution is disabled for it.
+
+### Browser-emulated DuckDB
+
+The built-in `Emulated cluster` loads the .NET KQL-to-SQL bridge from
+`/kql-wasm/_framework/dotnet.js`, requests the DuckDB dialect, and executes the translated SQL in an
+isolated DuckDB-WASM worker. Its live catalog supplies databases, tables, and columns to Explorer
+and Monaco.
+
+Structured Admin dialogs create and drop attached databases, create and alter tables, and update
+table comments. Custom emulated connections can use ephemeral memory or persistent browser OPFS;
+the built-in connection remains ephemeral. Kusto dot commands are unavailable because the emulated
+connection does not expose a Kusto management endpoint.
+
+The ingestion page accepts inline CSV, browser-selected CSV/Parquet, and remote HTTP(S)
+CSV/Parquet. Appends run in DuckDB transactions and temporary registered files are removed after
+execution. Persistent custom connections checkpoint committed changes and reopen their OPFS file
+after reload; their logical databases are schemas within one cluster file. Ephemeral connections
+clear their data when the tab releases them. See
+[`docs/emulated-cluster.md`](emulated-cluster.md) for setup and limitations.
 
 The endpoint must allow the app origin through CORS. On startup, Kite discovers databases and
 their schemas with read-only management commands. Queries entered in Monaco are sent only to the
@@ -92,7 +112,8 @@ This writes `src/lib/generated/kusto-documentation-index.ts` and the Markdown fi
         - [x] Reorder every existing column with an explicit before/after diff
         - [x] Directly change column types with irreversible-data-loss confirmation
         - [ ] Better UI
-      - [x] Allows user to ingest pasted or chunked browser CSV and mounted Parquet or CSV files
+      - [x] Allows Kustainer ingestion from pasted/chunked CSV and mounted or remote files
+      - [x] Allows emulated DuckDB ingestion from inline, browser-selected, or remote CSV/Parquet
       - [x] Allows user to view cluster, database and table
 
 Myself:

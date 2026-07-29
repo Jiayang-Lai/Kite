@@ -5,16 +5,19 @@
 	import SquareTerminalIcon from '@lucide/svelte/icons/square-terminal';
 	import UploadIcon from '@lucide/svelte/icons/upload';
 
+	import EmulatedStorageBadge from '$lib/components/cluster/emulated-storage-badge.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Card from '$lib/components/ui/card';
+	import type { EmulatedStorage } from '$lib/emulated/storage';
 
 	type AdminHeroProps = {
 		clusterName: string;
 		databaseCount: number;
 		tableCount: number;
+		emulatedStorage?: EmulatedStorage;
 	};
 
-	let { clusterName, databaseCount, tableCount }: AdminHeroProps = $props();
+	let { clusterName, databaseCount, tableCount, emulatedStorage }: AdminHeroProps = $props();
 </script>
 
 <section class="min-h-0 flex-1 overflow-auto">
@@ -36,6 +39,9 @@
 					>{databaseCount} {databaseCount === 1 ? 'database' : 'databases'}</Badge
 				>
 				<Badge variant="outline">{tableCount} {tableCount === 1 ? 'table' : 'tables'}</Badge>
+				{#if emulatedStorage}
+					<EmulatedStorageBadge storage={emulatedStorage} />
+				{/if}
 			</div>
 		</div>
 

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
+	import CpuIcon from '@lucide/svelte/icons/cpu';
 	import FlaskConicalIcon from '@lucide/svelte/icons/flask-conical';
 	import LockIcon from '@lucide/svelte/icons/lock';
 	import PlusIcon from '@lucide/svelte/icons/plus';
@@ -7,12 +8,16 @@
 	import Settings2Icon from '@lucide/svelte/icons/settings-2';
 
 	import AddClusterDialog from '$lib/components/cluster/add-cluster-dialog.svelte';
+	import EmulatedStorageBadge from '$lib/components/cluster/emulated-storage-badge.svelte';
 	import ManageClustersDialog from '$lib/components/cluster/manage-clusters-dialog.svelte';
 	import RemoveClusterDialog from '$lib/components/cluster/remove-cluster-dialog.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Sidebar from '$lib/components/ui/sidebar';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 	import type { NewClusterConnection } from '$lib/cluster/cluster-connection-store.svelte';
 	import type { KustoClusterConnection } from '$lib/kusto/query-client';
+
+	const sidebar = Sidebar.useSidebar();
 
 	type ClusterConnectionSelectorProps = {
 		clusters: KustoClusterConnection[];
@@ -23,7 +28,7 @@
 		onclusterchange?: (clusterId: string) => void;
 		onclusteradd?: (cluster: NewClusterConnection) => void;
 		onclusteredit?: (clusterId: string, cluster: NewClusterConnection) => void;
-		onclusterremove?: (clusterId: string) => void;
+		onclusterremove?: (clusterId: string) => Promise<void> | void;
 	};
 
 	let {
@@ -43,6 +48,7 @@
 	let removeClusterOpen = $state(false);
 	let editingCluster = $state<KustoClusterConnection>();
 	let removingCluster = $state<KustoClusterConnection>();
+	let tooltipClusterId = $state<string>();
 	const selectedCluster = $derived(clusters.find((cluster) => cluster.id === selectedClusterId));
 
 	function openAddCluster() {
@@ -67,6 +73,12 @@
 			onclusteradd?.(draft);
 		}
 	}
+
+	function clusterTypeSummary(cluster?: KustoClusterConnection) {
+		if (cluster?.kind === 'mock') return 'Mock schema';
+		if (cluster?.kind === 'emulated') return 'Emulated cluster';
+		return 'Remote Kusto';
+	}
 </script>
 
 <Sidebar.Menu>
@@ -77,6 +89,7 @@
 					<Sidebar.MenuButton
 						{...props}
 						size="lg"
+						class="h-14"
 						tooltipContent={locked ? 'Cluster selection is locked' : 'Switch cluster'}
 						disabled={disabled || locked}
 						aria-disabled={disabled || locked}
@@ -86,21 +99,33 @@
 						>
 							{#if selectedCluster?.kind === 'mock'}
 								<FlaskConicalIcon class="size-4" />
+							{:else if selectedCluster?.kind === 'emulated'}
+								<CpuIcon class="size-4" />
 							{:else}
 								<ServerIcon class="size-4" />
 							{/if}
 						</div>
-						<div class="grid min-w-0 flex-1 text-left text-sm leading-tight">
-							<span
-								class="truncate font-semibold"
-								title={selectedCluster?.name ?? selectedClusterId}
-								>{selectedCluster?.name ?? selectedClusterId}</span
-							>
-							{#if selectedCluster?.description}
-								<span class="truncate text-xs" title={selectedCluster.description}
-									>{selectedCluster.description}</span
+						<div class="grid min-w-0 flex-1 gap-0.5 text-left text-sm leading-tight">
+							<div class="flex min-w-0 items-center gap-1.5">
+								<span
+									class="min-w-0 flex-1 truncate font-semibold"
+									title={selectedCluster?.name ?? selectedClusterId}
 								>
-							{/if}
+									{selectedCluster?.name ?? selectedClusterId}
+								</span>
+								{#if selectedCluster?.kind === 'emulated'}
+									<EmulatedStorageBadge
+										storage={selectedCluster.emulatedStorage}
+										class="h-4 px-1.5 text-[10px] [&>svg]:hidden"
+									/>
+								{/if}
+							</div>
+							<span
+								class="text-muted-foreground truncate text-xs"
+								title={selectedCluster?.description ?? clusterTypeSummary(selectedCluster)}
+							>
+								{selectedCluster?.description ?? clusterTypeSummary(selectedCluster)}
+							</span>
 						</div>
 						{#if locked}
 							<LockIcon
@@ -115,35 +140,82 @@
 			</DropdownMenu.Trigger>
 
 			<DropdownMenu.Content
-				side="right"
+				side={sidebar.isMobile ? 'bottom' : 'right'}
 				align="start"
 				sideOffset={4}
-				class="bg-popover text-popover-foreground min-w-56 rounded-md border p-1 shadow-md"
+				class="bg-popover text-popover-foreground w-96 max-w-[calc(100vw-4rem)] rounded-md border p-1 shadow-md"
 			>
 				<DropdownMenu.Group>
 					<DropdownMenu.GroupHeading class="text-muted-foreground px-2 py-1.5 text-xs font-medium">
 						Clusters
 					</DropdownMenu.GroupHeading>
 					{#each clusters as cluster (cluster.id)}
-						<DropdownMenu.Item
-							class="data-highlighted:bg-accent data-highlighted:text-accent-foreground flex cursor-default items-center gap-2 rounded-sm px-2 py-2 text-sm outline-none"
-							onSelect={() => !disabled && !locked && onclusterchange?.(cluster.id)}
-						>
-							{#if cluster.kind === 'mock'}
-								<FlaskConicalIcon class="size-4" />
-							{:else}
-								<ServerIcon class="size-4" />
-							{/if}
-							<div class="grid min-w-0 flex-1 gap-0.5">
-								<span class="truncate">{cluster.name}</span>
-								{#if cluster.description}
-									<span class="text-muted-foreground truncate text-xs">{cluster.description}</span>
-								{/if}
-							</div>
-							{#if cluster.id === selectedClusterId}
-								<span class="text-muted-foreground text-xs">Current</span>
-							{/if}
-						</DropdownMenu.Item>
+						<Tooltip.Root open={tooltipClusterId === cluster.id}>
+							<Tooltip.Trigger>
+								{#snippet child({ props })}
+									<DropdownMenu.Item
+										{...props}
+										class="data-highlighted:bg-accent data-highlighted:text-accent-foreground flex cursor-default items-center gap-2 rounded-sm px-2 py-2 text-sm outline-none"
+										onpointerenter={() => (tooltipClusterId = cluster.id)}
+										onpointerleave={() => (tooltipClusterId = undefined)}
+										onfocus={() => (tooltipClusterId = cluster.id)}
+										onblur={() => (tooltipClusterId = undefined)}
+										onSelect={() => {
+											tooltipClusterId = undefined;
+											if (!disabled && !locked) onclusterchange?.(cluster.id);
+										}}
+									>
+										{#if cluster.kind === 'mock'}
+											<FlaskConicalIcon class="size-4" />
+										{:else if cluster.kind === 'emulated'}
+											<CpuIcon class="size-4" />
+										{:else}
+											<ServerIcon class="size-4" />
+										{/if}
+										<div class="grid min-w-0 flex-1 gap-0.5">
+											<span class="truncate">{cluster.name}</span>
+											{#if cluster.description}
+												<span class="text-muted-foreground truncate text-xs">
+													{cluster.description}
+												</span>
+											{/if}
+										</div>
+										<div class="flex shrink-0 items-center gap-1.5">
+											{#if cluster.kind === 'emulated'}
+												<EmulatedStorageBadge
+													storage={cluster.emulatedStorage}
+													class="h-4 px-1.5 text-[10px]"
+												/>
+											{/if}
+											{#if cluster.id === selectedClusterId}
+												<span class="text-muted-foreground text-xs">Current</span>
+											{/if}
+										</div>
+									</DropdownMenu.Item>
+								{/snippet}
+							</Tooltip.Trigger>
+							<Tooltip.Content
+								role="tooltip"
+								side="right"
+								align="start"
+								sideOffset={8}
+								class="max-w-sm"
+							>
+								<div class="grid gap-0.5">
+									<span class="font-medium">{cluster.name}</span>
+									{#if cluster.description}
+										<span class="text-background/80">{cluster.description}</span>
+									{/if}
+									{#if cluster.kind === 'emulated'}
+										<span class="text-background/80">
+											{cluster.emulatedStorage?.mode === 'opfs'
+												? 'Persistent data survives cluster switches; only the active cluster keeps a DuckDB worker.'
+												: 'Ephemeral data is cleared when you switch clusters or leave the workspace.'}
+										</span>
+									{/if}
+								</div>
+							</Tooltip.Content>
+						</Tooltip.Root>
 					{/each}
 				</DropdownMenu.Group>
 				<DropdownMenu.Separator />

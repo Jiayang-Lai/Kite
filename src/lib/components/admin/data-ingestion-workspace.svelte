@@ -12,6 +12,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import { onDestroy } from 'svelte';
 
+	import EmulatedStorageBadge from '$lib/components/cluster/emulated-storage-badge.svelte';
 	import QueryResults from '$lib/components/query/query-results.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -22,6 +23,13 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import {
+		describeEmulatedRemoteUrl,
+		resolveEmulatedRemoteUrl,
+		startEmulatedIngestion,
+		type EmulatedIngestionFormat
+	} from '$lib/emulated/data-ingestion';
+	import type { EmulatedStorage } from '$lib/emulated/storage';
 	import {
 		buildInlineIngestionCommand,
 		buildMountedFileIngestionCommand,
@@ -55,10 +63,13 @@
 		databases?: KustoDatabaseSchema;
 		selectedDatabase: string;
 		selectedTable?: string;
+		clusterId: string;
 		clusterUrl: string;
 		clusterName: string;
 		ingestion?: KustoIngestionConfiguration;
+		emulatedStorage?: EmulatedStorage;
 		isMockCluster?: boolean;
+		isEmulatedCluster?: boolean;
 		isLoading?: boolean;
 	};
 
@@ -66,14 +77,22 @@
 		databases,
 		selectedDatabase = $bindable(),
 		selectedTable = $bindable(),
+		clusterId,
 		clusterUrl,
 		clusterName,
 		ingestion,
+		emulatedStorage,
 		isMockCluster = false,
+		isEmulatedCluster = false,
 		isLoading = false
 	}: DataIngestionWorkspaceProps = $props();
+	const isPersistentEmulatedCluster = $derived(
+		isEmulatedCluster && emulatedStorage?.mode === 'opfs'
+	);
 
 	const INLINE_DATA_MAX_LENGTH = 100_000;
+	const EMULATED_MAX_FILE_BYTES = 512 * 1024 * 1024;
+	const EMULATED_SCAN_CHUNK_BYTES = 16 * 1024 * 1024;
 	let sourceMode = $state<SourceMode>('inline');
 	let inlineData = $state('');
 	let selectedFiles = $state.raw<FileList>();
@@ -115,6 +134,12 @@
 	const activeTable = $derived(
 		selectedTable ? tableEntries.find((table) => table.name === selectedTable) : undefined
 	);
+	const localFileFormat = $derived.by((): EmulatedIngestionFormat | undefined => {
+		const name = inlineFile?.name.toLowerCase();
+		if (name?.endsWith('.csv')) return 'csv';
+		if (name?.endsWith('.parquet')) return 'parquet';
+		return undefined;
+	});
 	const resolvedFilePath = $derived.by(() => {
 		if (!ingestion || !relativePath.trim()) return '';
 		try {
@@ -126,13 +151,37 @@
 	const resolvedRemoteFileUrl = $derived.by(() => {
 		if (!remoteFileUrl.trim()) return '';
 		try {
-			return resolveRemoteFileUrl(remoteFileUrl);
+			return isEmulatedCluster
+				? describeEmulatedRemoteUrl(remoteFileUrl)
+				: resolveRemoteFileUrl(remoteFileUrl);
 		} catch {
 			return '';
 		}
 	});
 	const preparedCommand = $derived.by(() => {
 		try {
+			if (isEmulatedCluster) {
+				if (sourceMode === 'inline') {
+					if (!inlineData.trim()) throw new Error('Enter at least one CSV row to ingest.');
+					return { command: 'DuckDB append from inline CSV rows', error: '' };
+				}
+				if (sourceMode === 'inline-file') {
+					if (!inlineFile) throw new Error('Select a local CSV or Parquet file.');
+					if (!localFileFormat) throw new Error('Select a file ending in .csv or .parquet.');
+					return {
+						command: `DuckDB append from local ${localFileFormat.toUpperCase()} file`,
+						error: ''
+					};
+				}
+				if (sourceMode === 'remote-file') {
+					resolveEmulatedRemoteUrl(remoteFileUrl);
+					return {
+						command: `DuckDB append from remote ${remoteFileFormat.toUpperCase()} file`,
+						error: ''
+					};
+				}
+				throw new Error('Mounted-container files are available for Kustainer connections only.');
+			}
 			if (!ingestion) throw new Error('Data ingestion is not configured for this connection.');
 			const table = selectedTable ?? '';
 			if (sourceMode === 'inline-file') return { command: '', error: '' };
@@ -162,12 +211,17 @@
 	});
 	const canIngest = $derived(
 		Boolean(
-			ingestion &&
+			(ingestion || isEmulatedCluster) &&
 			selectedDatabase &&
 			selectedTable &&
 			!isRunning &&
 			(sourceMode === 'inline-file'
-				? inlineFilePlan && ['ready', 'partial', 'cancelled', 'failed'].includes(inlineFileState)
+				? isEmulatedCluster
+					? inlineFile &&
+						localFileFormat &&
+						(localFileFormat === 'parquet' || inlineFilePlan) &&
+						['ready', 'cancelled', 'failed'].includes(inlineFileState)
+					: inlineFilePlan && ['ready', 'partial', 'cancelled', 'failed'].includes(inlineFileState)
 				: preparedCommand.command)
 		)
 	);
@@ -186,9 +240,13 @@
 			: 0
 	);
 	const inlineFileSourceSummary = $derived(
-		inlineFile && inlineFilePlan
-			? `${inlineFile.name} · ${inlineFilePlan.totalRecords.toLocaleString()} rows · ${inlineFilePlan.chunks.length} chunks`
-			: (inlineFile?.name ?? 'Inline CSV file')
+		inlineFile
+			? inlineFilePlan
+				? `${inlineFile.name} · ${inlineFilePlan.totalRecords.toLocaleString()} rows${isEmulatedCluster ? '' : ` · ${inlineFilePlan.chunks.length} chunks`}`
+				: `${inlineFile.name} · ${formatBytes(inlineFile.size)}`
+			: isEmulatedCluster
+				? 'Local file'
+				: 'Inline CSV file'
 	);
 	const confirmationSource = $derived(
 		sourceMode === 'inline'
@@ -218,10 +276,22 @@
 	});
 
 	$effect(() => {
+		if (isEmulatedCluster && sourceMode === 'file') sourceMode = 'inline';
+	});
+
+	$effect(() => {
 		const file = inlineFile;
 		const table = selectedTable;
 		const planKey = `${inlineFileVersion}\0${table ?? ''}\0${inlineFileHasHeader}`;
-		if (!file || !table || !ingestion || planKey === plannedInlineFileKey || isRunning) return;
+		if (
+			!file ||
+			!table ||
+			(!ingestion && !isEmulatedCluster) ||
+			planKey === plannedInlineFileKey ||
+			isRunning
+		) {
+			return;
+		}
 		plannedInlineFileKey = planKey;
 		void scanInlineFile(file, table);
 	});
@@ -256,15 +326,37 @@
 		completedFileRecords = 0;
 		extentIds = [];
 		try {
-			if (!file.name.toLowerCase().endsWith('.csv')) {
-				throw new Error('Inline file ingestion currently accepts uncompressed .csv files only.');
+			const format = file.name.toLowerCase().endsWith('.csv')
+				? 'csv'
+				: file.name.toLowerCase().endsWith('.parquet')
+					? 'parquet'
+					: undefined;
+			if (!format || (!isEmulatedCluster && format !== 'csv')) {
+				throw new Error(
+					isEmulatedCluster
+						? 'Local ingestion accepts .csv or .parquet files.'
+						: 'Inline file ingestion currently accepts uncompressed .csv files only.'
+				);
+			}
+			if (!file.size) throw new Error('The selected file is empty.');
+			if (isEmulatedCluster && file.size > EMULATED_MAX_FILE_BYTES) {
+				throw new Error(
+					`The selected file is ${formatBytes(file.size)}; browser ingestion is limited to ${formatBytes(EMULATED_MAX_FILE_BYTES)}.`
+				);
+			}
+			if (format === 'parquet') {
+				inlineFileState = 'ready';
+				inlineFileScanProgress = 100;
+				return;
 			}
 			const maxPayloadBytes = getInlineFilePayloadBudget(
 				table,
-				ingestion?.maxInlineCommandBytes ?? 0
+				isEmulatedCluster ? EMULATED_SCAN_CHUNK_BYTES : (ingestion?.maxInlineCommandBytes ?? 0)
 			);
 			const plan = await planInlineCsvFile(file, {
-				maxFileBytes: ingestion?.maxInlineFileBytes ?? 0,
+				maxFileBytes: isEmulatedCluster
+					? EMULATED_MAX_FILE_BYTES
+					: (ingestion?.maxInlineFileBytes ?? 0),
 				maxPayloadBytes,
 				hasHeader: inlineFileHasHeader,
 				signal: scanController.signal,
@@ -301,13 +393,50 @@
 		}
 	});
 
+	function startCurrentEmulatedIngestion() {
+		const table = selectedTable;
+		if (!table) throw new Error('Select a target table.');
+
+		if (sourceMode === 'inline') {
+			return startEmulatedIngestion({
+				clusterId,
+				database: selectedDatabase,
+				table,
+				format: 'csv',
+				source: { kind: 'inline', data: inlineData }
+			});
+		}
+		if (sourceMode === 'inline-file') {
+			if (!inlineFile || !localFileFormat) throw new Error('Select a local CSV or Parquet file.');
+			return startEmulatedIngestion({
+				clusterId,
+				database: selectedDatabase,
+				table,
+				format: localFileFormat,
+				hasHeader: localFileFormat === 'csv' && inlineFileHasHeader,
+				source: { kind: 'file', file: inlineFile }
+			});
+		}
+		if (sourceMode === 'remote-file') {
+			return startEmulatedIngestion({
+				clusterId,
+				database: selectedDatabase,
+				table,
+				format: remoteFileFormat,
+				hasHeader: remoteFileFormat === 'csv' && remoteFileSkipFirstLine,
+				source: { kind: 'remote', url: remoteFileUrl }
+			});
+		}
+		throw new Error('Mounted-container files are not available to browser DuckDB.');
+	}
+
 	function requestIngestion() {
 		if (!canIngest) {
 			ingestionError = preparedCommand.error;
 			return;
 		}
 		pendingCommand =
-			sourceMode === 'inline-file'
+			sourceMode === 'inline-file' && !isEmulatedCluster
 				? `${inlineFilePlan?.chunks.length ?? 0} sequential .ingest inline commands with per-chunk ingest-by tags`
 				: preparedCommand.command;
 		confirmationText = '';
@@ -317,7 +446,7 @@
 	function confirmIngestion() {
 		if (confirmationText !== 'RUN' || !pendingCommand) return;
 		showConfirmation = false;
-		if (sourceMode === 'inline-file') void runInlineFileIngestion();
+		if (sourceMode === 'inline-file' && !isEmulatedCluster) void runInlineFileIngestion();
 		else void runIngestion(pendingCommand);
 	}
 
@@ -326,17 +455,29 @@
 		ingestionError = '';
 		result = undefined;
 		isRunning = true;
+		if (isEmulatedCluster && sourceMode === 'inline-file') inlineFileState = 'running';
 		try {
-			activeExecution = startKustoManagementCommand(selectedDatabase, command, clusterUrl);
+			activeExecution = isEmulatedCluster
+				? startCurrentEmulatedIngestion()
+				: startKustoManagementCommand(selectedDatabase, command, clusterUrl);
 			const completedResult = await activeExecution.promise;
-			if (nextRequestId === requestId) result = completedResult;
+			if (nextRequestId === requestId) {
+				result = completedResult;
+				if (isEmulatedCluster && sourceMode === 'inline-file') inlineFileState = 'succeeded';
+			}
 		} catch (error) {
 			if (nextRequestId === requestId) {
 				const message = getKustoErrorMessage(error);
 				ingestionError =
 					message === 'Command cancelled.'
-						? 'Stopped waiting for ingestion. The Kusto operation may still complete.'
+						? isEmulatedCluster
+							? 'Ingestion cancelled. DuckDB rolled back the active append.'
+							: 'Stopped waiting for ingestion. The Kusto operation may still complete.'
 						: message;
+				if (isEmulatedCluster && sourceMode === 'inline-file') {
+					inlineFileError = ingestionError;
+					inlineFileState = message === 'Command cancelled.' ? 'cancelled' : 'failed';
+				}
 			}
 		} finally {
 			if (nextRequestId === requestId) {
@@ -448,7 +589,7 @@
 </script>
 
 <section class="relative flex min-h-0 flex-1 flex-col">
-	{#if isMockCluster || !ingestion}
+	{#if isMockCluster || (!isEmulatedCluster && !ingestion)}
 		<Card.Root class="min-h-0 flex-1 bg-background shadow-xs">
 			<Card.Content class="grid h-full place-items-center p-6 text-center">
 				<div class="max-w-lg">
@@ -485,8 +626,19 @@
 							<div>
 								<h2 class="font-semibold">Ingest into an existing table</h2>
 								<p class="text-muted-foreground mt-1 text-sm">
-									Direct ingestion appends data to the selected Kustainer table.
-									{#if selectedDatabase === 'NetDefaultDB'}
+									Direct ingestion appends data to the selected
+									{isEmulatedCluster ? 'browser DuckDB' : 'Kustainer'} table.
+									{#if isEmulatedCluster}
+										<span
+											class={isPersistentEmulatedCluster
+												? 'mt-1 block text-primary'
+												: 'mt-1 block text-amber-700 dark:text-amber-300'}
+										>
+											{isPersistentEmulatedCluster
+												? 'Emulated data is stored privately by this site and restored after a full page reload.'
+												: 'Emulated data is held in WASM memory and is cleared by a full page reload.'}
+										</span>
+									{:else if selectedDatabase === 'NetDefaultDB'}
 										<span class="mt-1 block text-amber-700 dark:text-amber-300">
 											Data in NetDefaultDB is stored inside the Kustainer container and will be lost
 											if the container is destroyed. It is highly recommended to create a new
@@ -495,7 +647,11 @@
 									{/if}
 								</p>
 							</div>
-							<Badge variant="outline">Local emulator</Badge>
+							{#if isEmulatedCluster}
+								<EmulatedStorageBadge storage={emulatedStorage} />
+							{:else}
+								<Badge variant="outline">Local emulator</Badge>
+							{/if}
 						</div>
 					</div>
 					<div
@@ -545,11 +701,13 @@
 										><FileTextIcon /> Inline CSV</Tabs.Trigger
 									>
 									<Tabs.Trigger value="inline-file" disabled={isRunning}
-										><FileUpIcon /> Inline file</Tabs.Trigger
+										><FileUpIcon /> {isEmulatedCluster ? 'Local file' : 'Inline file'}</Tabs.Trigger
 									>
-									<Tabs.Trigger value="file" disabled={isRunning}
-										><FolderOpenIcon /> Mounted file</Tabs.Trigger
-									>
+									{#if !isEmulatedCluster}
+										<Tabs.Trigger value="file" disabled={isRunning}
+											><FolderOpenIcon /> Mounted file</Tabs.Trigger
+										>
+									{/if}
 									<Tabs.Trigger value="remote-file" disabled={isRunning}
 										><CloudDownloadIcon /> Remote file</Tabs.Trigger
 									>
@@ -578,11 +736,15 @@
 
 								<Tabs.Content value="inline-file" class="space-y-3">
 									<div>
-										<label class="text-sm font-medium" for="inline-file-input">CSV file</label>
+										<label class="text-sm font-medium" for="inline-file-input">
+											{isEmulatedCluster ? 'CSV or Parquet file' : 'CSV file'}
+										</label>
 										<Input
 											id="inline-file-input"
 											type="file"
-											accept=".csv,text/csv"
+											accept={isEmulatedCluster
+												? '.csv,.parquet,text/csv,application/vnd.apache.parquet'
+												: '.csv,text/csv'}
 											bind:files={selectedFiles}
 											onchange={selectInlineFile}
 											disabled={isRunning}
@@ -590,15 +752,17 @@
 										/>
 									</div>
 
-									<label class="flex w-fit items-center gap-2 text-sm">
-										<input
-											type="checkbox"
-											bind:checked={inlineFileHasHeader}
-											disabled={isRunning}
-											class="border-input accent-primary size-4 rounded border"
-										/>
-										First row contains column names
-									</label>
+									{#if !isEmulatedCluster || localFileFormat !== 'parquet'}
+										<label class="flex w-fit items-center gap-2 text-sm">
+											<input
+												type="checkbox"
+												bind:checked={inlineFileHasHeader}
+												disabled={isRunning}
+												class="border-input accent-primary size-4 rounded border"
+											/>
+											First row contains column names
+										</label>
+									{/if}
 
 									{#if inlineFileState === 'scanning'}
 										<div class="space-y-2 rounded-md border p-3" aria-live="polite">
@@ -615,13 +779,14 @@
 												></div>
 											</div>
 										</div>
-									{:else if inlineFilePlan && inlineFile}
+									{:else if inlineFile && (inlineFilePlan || (isEmulatedCluster && localFileFormat === 'parquet'))}
 										<div class="space-y-3 rounded-md border p-3">
 											<div class="flex flex-wrap items-center justify-between gap-2">
 												<div class="min-w-0">
 													<p class="truncate text-sm font-medium">{inlineFile.name}</p>
 													<p class="text-muted-foreground text-xs">
-														{formatBytes(inlineFile.size)} · UTF-8 CSV
+														{formatBytes(inlineFile.size)} ·
+														{localFileFormat === 'parquet' ? 'Parquet' : 'UTF-8 CSV'}
 													</p>
 												</div>
 												<Badge
@@ -634,33 +799,37 @@
 													{inlineFileStatusLabel}
 												</Badge>
 											</div>
-											<dl class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-												<div class="bg-muted rounded-md p-2">
-													<dt class="text-muted-foreground">Rows</dt>
-													<dd class="mt-1 font-medium tabular-nums">
-														{inlineFilePlan.totalRecords.toLocaleString()}
-													</dd>
-												</div>
-												<div class="bg-muted rounded-md p-2">
-													<dt class="text-muted-foreground">Columns</dt>
-													<dd class="mt-1 font-medium tabular-nums">
-														{inlineFilePlan.columnCount}
-													</dd>
-												</div>
-												<div class="bg-muted rounded-md p-2">
-													<dt class="text-muted-foreground">Chunks</dt>
-													<dd class="mt-1 font-medium tabular-nums">
-														{inlineFilePlan.chunks.length}
-													</dd>
-												</div>
-												<div class="bg-muted rounded-md p-2">
-													<dt class="text-muted-foreground">Data</dt>
-													<dd class="mt-1 font-medium tabular-nums">
-														{formatBytes(inlineFilePlan.dataBytes)}
-													</dd>
-												</div>
-											</dl>
-											{#if inlineFilePlan.header}
+											{#if inlineFilePlan}
+												<dl class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+													<div class="bg-muted rounded-md p-2">
+														<dt class="text-muted-foreground">Rows</dt>
+														<dd class="mt-1 font-medium tabular-nums">
+															{inlineFilePlan.totalRecords.toLocaleString()}
+														</dd>
+													</div>
+													<div class="bg-muted rounded-md p-2">
+														<dt class="text-muted-foreground">Columns</dt>
+														<dd class="mt-1 font-medium tabular-nums">
+															{inlineFilePlan.columnCount}
+														</dd>
+													</div>
+													<div class="bg-muted rounded-md p-2">
+														<dt class="text-muted-foreground">
+															{isEmulatedCluster ? 'Format' : 'Chunks'}
+														</dt>
+														<dd class="mt-1 font-medium tabular-nums">
+															{isEmulatedCluster ? 'CSV' : inlineFilePlan.chunks.length}
+														</dd>
+													</div>
+													<div class="bg-muted rounded-md p-2">
+														<dt class="text-muted-foreground">Data</dt>
+														<dd class="mt-1 font-medium tabular-nums">
+															{formatBytes(inlineFilePlan.dataBytes)}
+														</dd>
+													</div>
+												</dl>
+											{/if}
+											{#if inlineFilePlan?.header}
 												<p
 													class="text-muted-foreground truncate text-xs"
 													title={inlineFilePlan.header}
@@ -668,7 +837,7 @@
 													Header: <code>{inlineFilePlan.header}</code>
 												</p>
 											{/if}
-											{#if activeTable && inlineFilePlan.columnCount !== activeTable.columns.length}
+											{#if activeTable && inlineFilePlan && inlineFilePlan.columnCount !== activeTable.columns.length}
 												<p
 													class="flex gap-2 text-xs text-amber-700 dark:text-amber-300"
 													role="alert"
@@ -677,7 +846,7 @@
 													columns; {activeTable.name} has {activeTable.columns.length}.
 												</p>
 											{/if}
-											{#if inlineFilePlan.inconsistentRecordCount}
+											{#if inlineFilePlan?.inconsistentRecordCount}
 												<p
 													class="flex gap-2 text-xs text-amber-700 dark:text-amber-300"
 													role="alert"
@@ -688,7 +857,7 @@
 												</p>
 											{/if}
 
-											{#if inlineFileState === 'running' || completedFileChunks > 0}
+											{#if !isEmulatedCluster && inlineFilePlan && (inlineFileState === 'running' || completedFileChunks > 0)}
 												<div class="space-y-2 border-t pt-3" aria-live="polite">
 													<div class="flex items-center justify-between gap-3 text-xs">
 														<span>
@@ -731,50 +900,57 @@
 										</div>
 									{:else}
 										<p class="text-muted-foreground text-xs">
-											The file stays in the browser and is sent sequentially as record-safe inline
-											commands. Limit: {formatBytes(ingestion.maxInlineFileBytes)}.
+											{#if isEmulatedCluster}
+												DuckDB reads the selected file directly in this browser tab. Limit:
+												{formatBytes(EMULATED_MAX_FILE_BYTES)}.
+											{:else if ingestion}
+												The file stays in the browser and is sent sequentially as record-safe inline
+												commands. Limit: {formatBytes(ingestion.maxInlineFileBytes)}.
+											{/if}
 										</p>
 									{/if}
 								</Tabs.Content>
 
-								<Tabs.Content value="file" class="space-y-3">
-									<div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem]">
-										<div>
-											<label class="text-sm font-medium" for="mounted-file-path"
-												>Relative file path</label
+								{#if !isEmulatedCluster && ingestion}
+									<Tabs.Content value="file" class="space-y-3">
+										<div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem]">
+											<div>
+												<label class="text-sm font-medium" for="mounted-file-path"
+													>Relative file path</label
+												>
+												<Input
+													id="mounted-file-path"
+													bind:value={relativePath}
+													disabled={isRunning}
+													class="mt-1 font-mono"
+													placeholder="import.parquet"
+												/>
+											</div>
+											<div>
+												<label class="text-sm font-medium" for="mounted-file-format">Format</label>
+												<Select.Root type="single" bind:value={fileFormat} disabled={isRunning}>
+													<Select.Trigger id="mounted-file-format" class="mt-1 w-full">
+														<Select.Value />
+													</Select.Trigger>
+													<Select.Content>
+														<Select.Item value="parquet" label="Parquet" />
+														<Select.Item value="csv" label="CSV" />
+													</Select.Content>
+												</Select.Root>
+											</div>
+										</div>
+										<div class="bg-muted rounded-md p-3 text-xs">
+											<p class="text-muted-foreground">Kustainer source path</p>
+											<code class="mt-1 block break-all"
+												>{resolvedFilePath || `${ingestion.containerRoot}/…`}</code
 											>
-											<Input
-												id="mounted-file-path"
-												bind:value={relativePath}
-												disabled={isRunning}
-												class="mt-1 font-mono"
-												placeholder="import.parquet"
-											/>
 										</div>
-										<div>
-											<label class="text-sm font-medium" for="mounted-file-format">Format</label>
-											<Select.Root type="single" bind:value={fileFormat} disabled={isRunning}>
-												<Select.Trigger id="mounted-file-format" class="mt-1 w-full">
-													<Select.Value />
-												</Select.Trigger>
-												<Select.Content>
-													<Select.Item value="parquet" label="Parquet" />
-													<Select.Item value="csv" label="CSV" />
-												</Select.Content>
-											</Select.Root>
-										</div>
-									</div>
-									<div class="bg-muted rounded-md p-3 text-xs">
-										<p class="text-muted-foreground">Kustainer source path</p>
-										<code class="mt-1 block break-all"
-											>{resolvedFilePath || `${ingestion.containerRoot}/…`}</code
-										>
-									</div>
-									<p class="text-muted-foreground text-xs">
-										The file must already exist below <code>{ingestion.containerRoot}</code> inside the
-										container.
-									</p>
-								</Tabs.Content>
+										<p class="text-muted-foreground text-xs">
+											The file must already exist below <code>{ingestion.containerRoot}</code> inside
+											the container.
+										</p>
+									</Tabs.Content>
+								{/if}
 
 								<Tabs.Content value="remote-file" class="space-y-3">
 									<div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem]">
@@ -821,6 +997,9 @@
 									<p class="text-muted-foreground text-xs">
 										Import a CSV or Parquet file from a public HTTP(S) URL, or use a signed URL when
 										the source requires temporary read access.
+										{#if isEmulatedCluster}
+											The server must allow browser CORS and range requests.
+										{/if}
 									</p>
 								</Tabs.Content>
 							</Tabs.Root>

@@ -18,6 +18,18 @@ for (let attempt = 1; attempt <= options.attempts; attempt++) {
 			throw new Error('The response does not contain the expected Kite page title.');
 		}
 
+		const translatorResponse = await fetch(new URL('/kql-wasm/_framework/dotnet.js', target), {
+			headers: { 'user-agent': 'Kite deployment smoke test' },
+			redirect: 'follow',
+			signal: AbortSignal.timeout(options.timeout)
+		});
+		const contentType = translatorResponse.headers.get('content-type') ?? '';
+		if (!translatorResponse.ok || !/javascript|ecmascript/i.test(contentType)) {
+			throw new Error(
+				`KQL translator loader is unavailable or incorrectly served (${translatorResponse.status} ${contentType}).`
+			);
+		}
+
 		console.log(`Smoke test passed for ${target.href} on attempt ${attempt}.`);
 		process.exit(0);
 	} catch (error) {

@@ -23,6 +23,18 @@ jobs:
     steps:
       - name: Check out main
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d # v5.0.0
+        with:
+          global-json-file: vendor/kql-to-sql/global.json
+
+      - name: Restore the WebAssembly workload
+        working-directory: vendor/kql-to-sql
+        run: dotnet workload restore src/KqlWasmBridge/KqlWasmBridge.csproj
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -39,6 +51,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build the KQL translator WebAssembly
+        run: npm run build:kql-wasm
+
       - name: Install the Playwright browser
         run: npm run test:e2e:install
 
@@ -54,6 +69,12 @@ jobs:
           test -f .svelte-kit/cloudflare-tmp/manifest.js
           test -f .svelte-kit/output/server/index.js
           test -f .svelte-kit/tsconfig.json
+          test -f .svelte-kit/cloudflare/kql-wasm/_framework/dotnet.js
+          oversized_file="$(find .svelte-kit/cloudflare -type f -size +25M -print -quit)"
+          test -z "$oversized_file" || {
+            echo "Cloudflare Pages limit exceeded (25 MiB): $oversized_file" >&2
+            exit 1
+          }
 
       - name: Upload the release artifact
         id: artifact

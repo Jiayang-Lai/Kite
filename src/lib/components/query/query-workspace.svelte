@@ -624,16 +624,6 @@
 								/>
 							</Resizable.Pane>
 						</Resizable.PaneGroup>
-
-						{#if connectionStatus === 'error' && connectionError}
-							<ConnectionFailureDialog
-								{failedClusterName}
-								{activeClusterName}
-								error={connectionError}
-								oncontinue={dismissConnectionFailure}
-								onretry={retryFailedCluster}
-							/>
-						{/if}
 					</div>
 				</Resizable.Pane>
 
@@ -684,6 +674,16 @@
 			{isQueryable}
 			emulatedStorage={activeCluster?.emulatedStorage}
 			onretry={failedClusterId ? retryFailedCluster : undefined}
+		/>
+	{/if}
+
+	{#if connectionStatus === 'error' && connectionError && databaseSchema}
+		<ConnectionFailureDialog
+			{failedClusterName}
+			{activeClusterName}
+			error={connectionError}
+			oncontinue={dismissConnectionFailure}
+			onretry={retryFailedCluster}
 		/>
 	{/if}
 </AppShell>

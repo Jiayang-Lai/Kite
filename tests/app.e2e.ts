@@ -8,12 +8,20 @@ function countKustoWorkers(page: Page) {
 	return page.workers().filter((worker) => worker.url().includes('kusto.worker-')).length;
 }
 
+function countKqlTranslatorWorkers(page: Page) {
+	return page.workers().filter((worker) => worker.url().includes('kql-translator.worker-')).length;
+}
+
 async function expectDuckDbWorkerCount(page: Page, count: number) {
 	await expect.poll(() => countDuckDbWorkers(page)).toBe(count);
 }
 
 async function expectKustoWorkerCount(page: Page, count: number) {
 	await expect.poll(() => countKustoWorkers(page), { timeout: 15_000 }).toBe(count);
+}
+
+async function expectKqlTranslatorWorkerCount(page: Page, count: number) {
+	await expect.poll(() => countKqlTranslatorWorkers(page), { timeout: 15_000 }).toBe(count);
 }
 
 async function activateKustoIntelliSense(page: Page) {
@@ -90,6 +98,7 @@ test('runs KQL through the emulated cluster and disables Kusto commands', async 
 	await expect(page.getByRole('cell', { name: 'Connected' })).toBeVisible({
 		timeout: 30_000
 	});
+	await expectKqlTranslatorWorkerCount(page, 1);
 
 	await page.goto('/admin/commands');
 	await expect(
@@ -97,6 +106,7 @@ test('runs KQL through the emulated cluster and disables Kusto commands', async 
 			name: 'Management commands are not supported for emulated clusters'
 		})
 	).toBeVisible({ timeout: 30_000 });
+	await expectKqlTranslatorWorkerCount(page, 0);
 });
 
 test('releases inactive DuckDB workers and keeps at most one emulated session', async ({

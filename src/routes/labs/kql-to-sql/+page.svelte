@@ -7,7 +7,7 @@
 	import * as Resizable from '$lib/components/ui/resizable';
 	import { disposeDuckDb, executeDuckDbQuery, getDuckDbCatalog } from '$lib/duckdb/query-client';
 	import type { DuckDbCatalogDatabase } from '$lib/duckdb/types';
-	import { translateKqlToSql } from '$lib/kql/wasm-translator';
+	import { disposeKqlTranslator, translateKqlToSql } from '$lib/kql/wasm-translator';
 	import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 	import type { QueryResult } from '$lib/types/query-result';
 	import type { PaneAPI } from 'paneforge';
@@ -143,6 +143,7 @@
 	});
 
 	onDestroy(() => {
+		disposeKqlTranslator();
 		void disposeDuckDb();
 	});
 </script>
@@ -150,7 +151,7 @@
 <svelte:head><title>KQL to SQL WASM validation</title></svelte:head>
 
 <main
-	class="grid h-dvh min-h-[36rem] grid-rows-[12rem_minmax(0,1fr)] gap-4 bg-muted/30 p-4 lg:grid-cols-[16rem_minmax(0,1fr)] lg:grid-rows-1"
+	class="grid h-dvh min-h-144 grid-rows-[12rem_minmax(0,1fr)] gap-4 bg-muted/30 p-4 lg:grid-cols-[16rem_minmax(0,1fr)] lg:grid-rows-1"
 >
 	<h1 class="sr-only">KQL to SQL WASM validation</h1>
 

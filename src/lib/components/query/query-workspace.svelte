@@ -42,6 +42,7 @@
 	import { usesBuiltInMockCatalog } from '$lib/cluster/mock-cluster-schema';
 	import { MOCK_RECENT_QUERIES, MOCK_SAVED_QUERIES } from '$lib/data/mock-queries';
 	import { getKustoErrorMessage, startKustoQuery } from '$lib/kusto/query-client';
+	import { disposeKqlTranslator } from '$lib/kql/wasm-translator';
 	import { getRecentQueryStore } from '$lib/query/recent-query-store.svelte';
 	import { getSavedQueryStore } from '$lib/query/saved-query-store.svelte';
 	import type { KustoDatabase, KustoDatabaseSchema } from '$lib/types/kusto-schema';
@@ -144,6 +145,10 @@
 
 	$effect(() => {
 		explorerExpansion = clusterSession.getExplorerExpansion(activeClusterId);
+	});
+
+	$effect(() => {
+		if (!isEmulatedCluster) disposeKqlTranslator();
 	});
 
 	function quoteEntity(name: string) {
@@ -407,6 +412,7 @@
 			schemaRequestId += 1;
 			queryRequestId += 1;
 			activeExecution?.cancel();
+			disposeKqlTranslator();
 		};
 	});
 </script>

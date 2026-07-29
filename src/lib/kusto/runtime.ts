@@ -14,7 +14,10 @@ import { configureKustoDocumentation } from './documentation';
  * API instance, language registration, and worker configuration.
  */
 export type MonacoApi = typeof import('monaco-editor/esm/vs/editor/editor.api');
-export type KustoApi = typeof import('@kusto/monaco-kusto');
+export type KustoApi = typeof import('@kusto/monaco-kusto') & {
+	disposeKustoWorker(): Promise<void>;
+	hasKustoWorker(): boolean;
+};
 
 type MonacoEnvironment = { getWorker: (_moduleId: string, label: string) => Worker };
 type MonacoWindow = Window &
@@ -51,10 +54,11 @@ export async function loadKustoRuntime() {
 		// This must be one ordered ESM import. Monaco's suggestion contribution
 		// registers ISuggestMemories as a standalone service during module
 		// evaluation, before the first call to `monaco.editor.create`.
-		const { monaco, kusto } = await import('$lib/kusto/monaco-integration');
+		const { monaco, kusto: importedKusto } = await import('$lib/kusto/monaco-integration');
+		const kusto = importedKusto as KustoApi;
 		configureKustoDocumentation(kusto);
 		return { monaco, kusto };
 	})();
 
-	return browserWindow.__kiteMonacoEsmPromise;
+	return browserWindow.__kiteMonacoEsmPromise!;
 }

@@ -33,6 +33,7 @@
 	import { registerDocumentationHoverProvider } from '$lib/kusto/documentation';
 	import { type KustoApi, loadKustoRuntime, type MonacoApi } from '$lib/kusto/runtime';
 	import { createKustoSchema, getKustoDatabase } from '$lib/kusto/schema';
+	import { retainKustoWorker } from '$lib/kusto/worker-lifecycle';
 	import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 	import { cn } from '$lib/utils';
 
@@ -196,6 +197,7 @@
 
 	onMount(() => {
 		let disposed = false;
+		let releaseKustoWorker: (() => void) | undefined;
 
 		const initialize = async () => {
 			if (!container) return;
@@ -205,6 +207,7 @@
 
 			monaco = runtime.monaco;
 			kusto = runtime.kusto;
+			releaseKustoWorker = retainKustoWorker(runtime.kusto);
 			documentationHoverDisposable = registerDocumentationHoverProvider(runtime.monaco);
 
 			const activeDatabase = getKustoDatabase(databaseSchema, database);
@@ -265,6 +268,7 @@
 			if (container?.contains(document.activeElement)) editor?.focus();
 			editor?.dispose();
 			model?.dispose();
+			releaseKustoWorker?.();
 		};
 	});
 

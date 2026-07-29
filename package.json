@@ -9,6 +9,7 @@
 	},
 	"scripts": {
 		"generate:kusto-docs": "node scripts/generate-kusto-documentation-index.mjs",
+		"profile:kusto-memory": "npm run build && node scripts/profile-kusto-memory.mjs",
 		"dev": "vite dev",
 		"prebuild": "npm run generate:kusto-docs",
 		"build": "vite build",

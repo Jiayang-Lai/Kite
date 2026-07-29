@@ -4,8 +4,16 @@ function countDuckDbWorkers(page: Page) {
 	return page.workers().filter((worker) => worker.url().includes('duckdb-browser-')).length;
 }
 
+function countKustoWorkers(page: Page) {
+	return page.workers().filter((worker) => worker.url().includes('kusto.worker-')).length;
+}
+
 async function expectDuckDbWorkerCount(page: Page, count: number) {
 	await expect.poll(() => countDuckDbWorkers(page)).toBe(count);
+}
+
+async function expectKustoWorkerCount(page: Page, count: number) {
+	await expect.poll(() => countKustoWorkers(page), { timeout: 15_000 }).toBe(count);
 }
 
 test('serves the production build and opens the query explorer', async ({ page }) => {
@@ -131,6 +139,23 @@ test('releases inactive DuckDB workers and keeps at most one emulated session', 
 		})
 	).toBeVisible();
 	await expectDuckDbWorkerCount(page, 0);
+});
+
+test('releases the Kusto worker after leaving Query and recreates it for the next editor', async ({
+	page
+}) => {
+	test.setTimeout(45_000);
+	await page.goto('/explorer/query');
+	await expect(page.getByRole('heading', { name: 'Kite KQL Editor' })).toBeVisible();
+	await expectKustoWorkerCount(page, 1);
+
+	await page.locator('a[href="/explorer"]').first().click();
+	await expect(page.getByRole('link', { name: 'Query workspace' })).toBeVisible();
+	await expectKustoWorkerCount(page, 0);
+
+	await page.getByRole('link', { name: 'Query workspace' }).click();
+	await expect(page.getByRole('heading', { name: 'Kite KQL Editor' })).toBeVisible();
+	await expectKustoWorkerCount(page, 1);
 });
 
 test('creates DuckDB databases and tables from emulated cluster administration', async ({

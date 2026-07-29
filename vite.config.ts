@@ -1,15 +1,42 @@
 import tailwindcss from '@tailwindcss/vite';
+import { resolve } from 'node:path';
 import { defineConfig } from 'vitest/config';
 import { playwright } from '@vitest/browser-playwright';
 import adapter from '@sveltejs/adapter-cloudflare';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
+const monacoKustoContributionPath =
+	'/node_modules/@kusto/monaco-kusto/release/esm/monaco.contribution.js';
+
+/**
+ * Monaco-Kusto imports its mode relatively, so a normal package alias cannot
+ * replace its worker manager. Redirect only that private import to Kite's
+ * lifecycle-aware implementation; all other package code remains upstream.
+ */
+const monacoKustoLifecycleMode = {
+	name: 'kite-monaco-kusto-lifecycle-mode',
+	enforce: 'pre' as const,
+	resolveId(source: string, importer?: string) {
+		if (source === './kustoMode' && importer?.includes(monacoKustoContributionPath)) {
+			return resolve('src/lib/kusto/monaco-kusto-mode.ts');
+		}
+		return null;
+	}
+};
+
 export default defineConfig({
 	resolve: {
-		dedupe: ['monaco-editor']
+		dedupe: ['monaco-editor'],
+		alias: [
+			{
+				find: /^@kusto\/monaco-kusto$/,
+				replacement: resolve('src/lib/kusto/monaco-kusto.ts')
+			}
+		]
 	},
 	plugins: [
+		monacoKustoLifecycleMode,
 		tailwindcss(),
 		sveltekit({
 			compilerOptions: {

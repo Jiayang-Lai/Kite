@@ -16,6 +16,10 @@ async function expectKustoWorkerCount(page: Page, count: number) {
 	await expect.poll(() => countKustoWorkers(page), { timeout: 15_000 }).toBe(count);
 }
 
+async function activateKustoIntelliSense(page: Page) {
+	await page.locator('.monaco-editor').click({ position: { x: 24, y: 24 } });
+}
+
 test('serves the production build and opens the query explorer', async ({ page }) => {
 	await page.goto('/');
 
@@ -147,6 +151,8 @@ test('releases the Kusto worker after leaving Query and recreates it for the nex
 	test.setTimeout(45_000);
 	await page.goto('/explorer/query');
 	await expect(page.getByRole('heading', { name: 'Kite KQL Editor' })).toBeVisible();
+	await expectKustoWorkerCount(page, 0);
+	await activateKustoIntelliSense(page);
 	await expectKustoWorkerCount(page, 1);
 
 	await page.locator('a[href="/explorer"]').first().click();
@@ -155,6 +161,7 @@ test('releases the Kusto worker after leaving Query and recreates it for the nex
 
 	await page.getByRole('link', { name: 'Query workspace' }).click();
 	await expect(page.getByRole('heading', { name: 'Kite KQL Editor' })).toBeVisible();
+	await activateKustoIntelliSense(page);
 	await expectKustoWorkerCount(page, 1);
 });
 

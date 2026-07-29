@@ -136,6 +136,7 @@ function startPreview() {
 	const output = [];
 	preview.stdout.on('data', (chunk) => output.push(chunk.toString()));
 	preview.stderr.on('data', (chunk) => output.push(chunk.toString()));
+	const exited = once(preview, 'exit');
 	const started = new Promise((resolve, reject) => {
 		const timeout = setTimeout(() => reject(new Error(output.join(''))), 15_000);
 		preview.stdout.on('data', (chunk) => {
@@ -148,10 +149,10 @@ function startPreview() {
 			reject(new Error(`Preview server exited early (${code}).\n${output.join('')}`));
 		});
 	});
-	return { preview, started };
+	return { preview, started, exited };
 }
 
-const { preview, started } = startPreview();
+const { preview, started, exited } = startPreview();
 let browser;
 try {
 	await started;
@@ -175,6 +176,8 @@ try {
 
 	await page.getByRole('link', { name: 'Query workspace' }).click();
 	await page.getByRole('heading', { name: 'Kite KQL Editor' }).waitFor();
+	results.push(await snapshot('query-before-intellisense', browser, page, cdp));
+	await page.locator('.monaco-editor').click({ position: { x: 24, y: 24 } });
 	results.push(await snapshot('query-active', browser, page, cdp));
 
 	await page.locator('a[href="/explorer"]').first().click();
@@ -186,5 +189,5 @@ try {
 } finally {
 	await browser?.close();
 	preview.kill('SIGTERM');
-	await once(preview, 'exit').catch(() => undefined);
+	await exited.catch(() => undefined);
 }

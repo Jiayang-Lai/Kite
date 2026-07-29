@@ -84,10 +84,12 @@
 	let changeDisposable = $state<MonacoDisposable | null>(null);
 	let documentationHoverDisposable = $state<MonacoDisposable | null>(null);
 	let findWidgetFocusGuardDisposable = $state<MonacoDisposable | null>(null);
+	let intelliSenseActivationDisposable = $state<MonacoDisposable | null>(null);
 	let initializationError = $state<string | null>(null);
 	let isLoading = $state(true);
 	let syncingFromEditor = false;
 	let schemaRequestId = 0;
+	let isIntelliSenseActive = $state(false);
 	const editorInstanceId = createEditorInstanceId();
 
 	function createModelUri(monacoApi: MonacoApi, databaseName: string) {
@@ -120,6 +122,18 @@
 		void applySchema(databaseName, schema, targetClusterUrl).catch((error) => {
 			console.error('Failed to apply the Kusto database schema.', error);
 		});
+	}
+
+	/**
+	 * Monaco's language registration is cheap; the Kusto worker is not. Delay
+	 * creating it until the editor receives focus, then install the latest schema
+	 * before the user asks for completions or diagnostics.
+	 */
+	function activateIntelliSense() {
+		if (isIntelliSenseActive) return;
+		isIntelliSenseActive = true;
+		const activeDatabase = getKustoDatabase(databaseSchema, database);
+		applySchemaSafely(activeDatabase.name, databaseSchema, clusterUrl);
 	}
 
 	function bindModel(nextModel: MonacoModel) {
@@ -245,10 +259,9 @@
 				}
 			});
 			findWidgetFocusGuardDisposable = registerFindWidgetFocusGuard(container, editor);
+			intelliSenseActivationDisposable = editor.onDidFocusEditorText(activateIntelliSense);
 
 			bindModel(editorModel);
-			await applySchema(activeDatabase.name);
-			editor.focus();
 			isLoading = false;
 		};
 
@@ -265,6 +278,7 @@
 			changeDisposable?.dispose();
 			documentationHoverDisposable?.dispose();
 			findWidgetFocusGuardDisposable?.dispose();
+			intelliSenseActivationDisposable?.dispose();
 			if (container?.contains(document.activeElement)) editor?.focus();
 			editor?.dispose();
 			model?.dispose();
@@ -285,7 +299,7 @@
 	});
 
 	$effect(() => {
-		if (!monaco || !editor || !model) return;
+		if (!isIntelliSenseActive || !monaco || !editor || !model) return;
 
 		const activeDatabase = getKustoDatabase(databaseSchema, database);
 		applySchemaSafely(activeDatabase.name, databaseSchema, clusterUrl);

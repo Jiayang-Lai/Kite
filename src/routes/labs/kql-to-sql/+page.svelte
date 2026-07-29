@@ -5,7 +5,7 @@
 	import MonacoEditor from '$lib/components/query/monaco-editor.svelte';
 	import QueryResults from '$lib/components/query/query-results.svelte';
 	import * as Resizable from '$lib/components/ui/resizable';
-	import { disposeDuckDb, executeDuckDbQuery, getDuckDbCatalog } from '$lib/duckdb/query-client';
+	import { disposeDuckDb, executeDuckDbQuery, getDuckDbCatalog } from '$lib/duckdb/lazy-client';
 	import type { DuckDbCatalogDatabase } from '$lib/duckdb/types';
 	import { disposeKqlTranslator, translateKqlToSql } from '$lib/kql/wasm-translator';
 	import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';

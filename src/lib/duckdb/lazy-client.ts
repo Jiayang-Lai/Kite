@@ -1,3 +1,4 @@
+import { browser } from '$app/environment';
 import type { DuckDbFileQueryOptions } from './query-client';
 import type { QueryExecution } from '$lib/types/query-result';
 
@@ -8,6 +9,10 @@ type DuckDbClient = typeof import('./query-client');
 let clientPromise: Promise<DuckDbClient> | undefined;
 
 function loadClient() {
+	if (!browser) {
+		return Promise.reject(new Error('DuckDB-WASM is available only in a browser.'));
+	}
+
 	clientPromise ??= import('./query-client').catch((error: unknown) => {
 		clientPromise = undefined;
 		throw error;
@@ -21,6 +26,10 @@ export async function executeDuckDbSql(...args: Parameters<DuckDbClient['execute
 
 export async function executeDuckDbQuery(...args: Parameters<DuckDbClient['executeDuckDbQuery']>) {
 	return (await loadClient()).executeDuckDbQuery(...args);
+}
+
+export async function getDuckDbCatalog(...args: Parameters<DuckDbClient['getDuckDbCatalog']>) {
+	return (await loadClient()).getDuckDbCatalog(...args);
 }
 
 export async function isPersistentDuckDbSession(

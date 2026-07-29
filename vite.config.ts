@@ -56,6 +56,11 @@ export default defineConfig({
 			}
 		})
 	],
+	// The browser-only DuckDB client is emitted as an orphaned SSR dynamic chunk.
+	// Inline its package so Wrangler can bundle preview artifacts without node_modules.
+	ssr: {
+		noExternal: ['@duckdb/duckdb-wasm']
+	},
 	test: {
 		expect: { requireAssertions: true },
 		projects: [

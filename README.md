@@ -10,7 +10,7 @@
 [![License: MIT](https://img.shields.io/github/license/Jiayang-Lai/Kite)](LICENSE)
 [![Node.js >=22](https://img.shields.io/badge/Node.js-%3E%3D22-339933?logo=nodedotjs&logoColor=white)](package.json)
 
-A local-first [Kusto](https://learn.microsoft.com/kusto/) application for exploring data, writing KQL, and operating clusters without any cloud-hosted infrastructure.
+A local-first [Kusto](https://learn.microsoft.com/kusto/) application for exploring data, writing KQL, and operating clusters without any cloud-hosted infrastructure — including a browser-based Kusto emulation mode that runs KQL with no Kusto server to install.
 
 [Try Kite online](https://kite.humblehamster.com/)
 
@@ -27,15 +27,23 @@ A local-first [Kusto](https://learn.microsoft.com/kusto/) application for explor
 > - **Emulated** translates KQL to SQL and executes it with DuckDB-WASM entirely in the browser.
 > - **Remote** can execute queries, but currently supports only a Kustainer instance running on the local machine. Hosted Azure Data Explorer and other remote Kusto clusters are not yet supported.
 
+> [!TIP]
+> **Run KQL entirely in your browser.** Select **Emulated cluster** to translate KQL to DuckDB SQL and execute it in DuckDB-WASM. It is Kite's fastest way to get from an empty browser tab to a working local KQL workspace—no Kustainer, container, or cloud account required.
+
 ## About
 
-Kite makes the Kusto workflow available entirely on your own machine. Use the browser-only emulated cluster, or pair the workspace with a local Kustainer instance, to query data, explore schemas, administer databases, and ingest files without provisioning Azure Data Explorer or sending your data to a cloud service. The hosted Kite site is optional.
+Kite makes the Kusto workflow available entirely on your own machine. Its browser-only emulated cluster lets you query data, explore schemas, administer databases, and ingest files without provisioning Azure Data Explorer, starting a server, or sending data to a cloud service. When you need a local Kusto service, you can also pair the workspace with Kustainer. The hosted Kite site is optional.
 
 Kite brings KQL authoring, schema exploration, and cluster administration into one interface. It includes a Monaco-powered query editor with Kusto language support, a built-in mock catalog, and an in-browser DuckDB backend powered by the [KQL-to-SQL translator](https://github.com/Jiayang-Lai/kql-to-sql).
 
-The browser-emulated cluster downloads its version-pinned DuckDB-WASM runtime from jsDelivr because
-the runtime binaries exceed Cloudflare Pages' per-file size limit. Kite continues to host the
-DuckDB workers and the KQL translator itself.
+> [!NOTE]
+> Kite's KQL-to-SQL translator is a fork of work by [saoc90](https://github.com/saoc90). Thank you for making the original project available.
+
+### Browser-based Kusto emulation
+
+The **Emulated cluster** is a local KQL execution environment built into Kite. Submitted KQL is translated to DuckDB SQL by Kite's [KQL-to-SQL translator](https://github.com/Jiayang-Lai/kql-to-sql) and run in an isolated DuckDB-WASM worker. You can use it online or self-hosted; your data stays in the browser's memory or private browser storage.
+
+It is ideal for trying Kite, prototyping KQL, building a small local data workspace, and working without Docker. It intentionally differs from a full Kusto service: supported KQL is limited by the translator, and Kusto dot commands are unavailable. See [Browser-emulated cluster](docs/emulated-cluster.md) for the capability matrix and details.
 
 With Kite, you can:
 

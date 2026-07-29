@@ -56,6 +56,18 @@ test('places the cluster switcher below its trigger on smaller displays', async 
 	);
 });
 
+test('shows cluster switch failures from the Explorer overview', async ({ page }) => {
+	await page.goto('/explorer');
+
+	await page.getByRole('button', { name: /Mock cluster/ }).click();
+	await page.getByRole('menuitem').filter({ hasText: 'Local Kusto' }).click();
+
+	await expect(page.getByRole('alert')).toContainText('Could not connect to Local Kusto', {
+		timeout: 15_000
+	});
+	await expect(page.getByRole('alert')).toContainText('continue working with Mock cluster');
+});
+
 test('translates KQL to DuckDB SQL and executes it in the browser', async ({ page }) => {
 	const wasmLoader = await page.request.get('/kql-wasm/_framework/dotnet.js');
 	expect(wasmLoader.ok()).toBe(true);

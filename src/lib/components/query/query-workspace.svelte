@@ -4,6 +4,7 @@
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import ServerIcon from '@lucide/svelte/icons/server';
+	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import { mode } from 'mode-watcher';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
@@ -498,7 +499,27 @@
 		/>
 	{:else if view === 'saved-queries'}
 		<SavedQueriesPage queries={savedQueries} onopen={openQuery} delete={deleteSavedQuery} />
-	{:else}<Resizable.PaneGroup
+	{:else}
+		{#if isEmulatedCluster}
+			<div
+				class="border-warning/40 bg-warning/10 text-warning flex shrink-0 items-start gap-2 rounded-lg border px-3 py-2 text-xs"
+				role="alert"
+			>
+				<TriangleAlertIcon class="size-4 shrink-0" />
+				<p>
+					Results from the emulated cluster may differ from Kusto. Translation is limited to the
+					operators and functions supported by
+					<a
+						href="https://github.com/Jiayang-Lai/kql-to-sql"
+						target="_blank"
+						rel="noreferrer"
+						class="font-medium underline underline-offset-2 hover:text-warning/80">kql-to-sql</a
+					>.
+				</p>
+			</div>
+		{/if}
+
+		<Resizable.PaneGroup
 			direction="horizontal"
 			autoSaveId="kite-cluster-layout"
 			class="min-h-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-xs"

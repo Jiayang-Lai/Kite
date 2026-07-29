@@ -83,6 +83,9 @@ test('runs KQL through the emulated cluster and disables Kusto commands', async 
 	const wasmLoader = await page.request.get('/kql-wasm/_framework/dotnet.js');
 	expect(wasmLoader.ok()).toBe(true);
 	await page.goto('/explorer/query');
+	await expect(
+		page.getByRole('alert').filter({ hasText: 'Results from the emulated cluster may differ' })
+	).toHaveCount(0);
 
 	await page.getByRole('button', { name: /Mock cluster/ }).click();
 	const emulatedClusterItem = page.getByRole('menuitem').filter({ hasText: 'Emulated cluster' });
@@ -92,6 +95,17 @@ test('runs KQL through the emulated cluster and disables Kusto commands', async 
 	await expect(clusterTooltip).toContainText('Emulated cluster');
 	await expect(clusterTooltip).toContainText('KQL translated and executed in this browser tab');
 	await emulatedClusterItem.click();
+	const emulatedClusterWarning = page
+		.getByRole('alert')
+		.filter({ hasText: 'Results from the emulated cluster may differ from Kusto' });
+	await expect(emulatedClusterWarning).toBeVisible({ timeout: 30_000 });
+	await expect(emulatedClusterWarning).toContainText(
+		'Translation is limited to the operators and functions supported by kql-to-sql.'
+	);
+	await expect(emulatedClusterWarning.getByRole('link', { name: 'kql-to-sql' })).toHaveAttribute(
+		'href',
+		'https://github.com/Jiayang-Lai/kql-to-sql'
+	);
 	await expect(page.getByText('memory', { exact: true }).first()).toBeVisible({
 		timeout: 30_000
 	});

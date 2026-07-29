@@ -2,7 +2,7 @@ import {
 	disposeAllDuckDbSessions,
 	disposeDuckDb,
 	disposeInactiveDuckDbSessions
-} from '$lib/duckdb/query-client';
+} from '$lib/duckdb/lazy-client';
 import { loadEmulatedSchema } from '$lib/emulated/emulated-cluster';
 import { registerEmulatedStorage } from '$lib/emulated/storage';
 import { loadBackendSchema } from '$lib/kusto/backend-schema';

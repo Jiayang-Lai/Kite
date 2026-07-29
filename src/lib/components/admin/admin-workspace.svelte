@@ -27,7 +27,7 @@
 	import { connectClusterRuntime, releaseClusterRuntime } from '$lib/cluster/cluster-runtime';
 	import { usesBuiltInMockCatalog } from '$lib/cluster/mock-cluster-schema';
 	import { MOCK_RECENT_QUERIES, MOCK_SAVED_QUERIES } from '$lib/data/mock-queries';
-	import { deletePersistentDuckDbStorage } from '$lib/duckdb/query-client';
+	import { deletePersistentDuckDbStorage } from '$lib/duckdb/storage';
 	import { getKustoErrorMessage } from '$lib/kusto/query-client';
 	import { getRecentQueryStore } from '$lib/query/recent-query-store.svelte';
 	import { getSavedQueryStore } from '$lib/query/saved-query-store.svelte';

@@ -3,7 +3,7 @@ import {
 	createDuckDbDatabase,
 	dropDuckDbDatabase,
 	executeDuckDbSql
-} from '$lib/duckdb/query-client';
+} from '$lib/duckdb/lazy-client';
 import { loadEmulatedSchema, quoteDuckDbIdentifier } from '$lib/emulated/emulated-cluster';
 import {
 	compareTableSnapshots,

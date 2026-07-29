@@ -1,4 +1,4 @@
-import { startDuckDbFileQuery, type DuckDbRegisteredFileSource } from '$lib/duckdb/query-client';
+import { startDuckDbFileQuery, type DuckDbRegisteredFileSource } from '$lib/duckdb/lazy-client';
 import { loadEmulatedSchema, quoteDuckDbIdentifier } from '$lib/emulated/emulated-cluster';
 import type { QueryExecution, QueryResult } from '$lib/types/query-result';
 

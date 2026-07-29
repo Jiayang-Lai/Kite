@@ -41,6 +41,7 @@ test('serves the production build and opens the query explorer', async ({ page }
 	await page.getByRole('link', { name: 'Open Query Explorer' }).click();
 	await expect(page).toHaveURL(/\/explorer\/query$/);
 	await expect(page.getByRole('heading', { name: 'Kite KQL Editor' })).toBeVisible();
+	await expectDuckDbWorkerCount(page, 0);
 });
 
 test('places the cluster switcher below its trigger on smaller displays', async ({ page }) => {

@@ -3,7 +3,7 @@ import {
 	executeDuckDbSql,
 	getDuckDbInternalCatalogName,
 	isPersistentDuckDbSession
-} from '$lib/duckdb/query-client';
+} from '$lib/duckdb/lazy-client';
 import { translateKqlToSql } from '$lib/kql/wasm-translator';
 import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 import type { QueryExecution } from '$lib/types/query-result';

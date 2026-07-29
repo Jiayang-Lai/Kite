@@ -7,6 +7,9 @@ import duckdbMvpWorker from '@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.
 import { getEmulatedStorage, type EmulatedStorage } from '$lib/emulated/storage';
 import type { DuckDbCatalogDatabase, DuckDbCatalogSchema, DuckDbQueryResult } from './types';
 import type { QueryExecution, QueryResult } from '$lib/types/query-result';
+import { getPersistentDuckDbFilePrefix } from './storage';
+
+export { deletePersistentDuckDbStorage, getPersistentDuckDbFilePrefix } from './storage';
 
 const DUCKDB_BUNDLES: duckdb.DuckDBBundles = {
 	mvp: {
@@ -87,7 +90,6 @@ export type DuckDbFileQueryOptions = {
 const DEFAULT_SESSION_ID = 'kql-to-sql-lab';
 const PERSISTENCE_SCHEMA = 'kite_internal';
 const PERSISTENCE_TABLE = 'databases';
-const PERSISTENCE_FILE_PREFIX = 'kite-v1-';
 const PERSISTENCE_WRITE_PROBE = '__kite_opfs_write_probe';
 const sessionPromises = new Map<string, Promise<DuckDbSession>>();
 let nextRequestId = 0;
@@ -113,16 +115,6 @@ function rewritePersistentSql(session: DuckDbSession, sql: string) {
 		/("(?:[^"]|"")*")\s*\.\s*(?:"main"|main)\s*\.\s*("(?:[^"]|"")*")/gi,
 		`${quoteIdentifier(session.internalCatalogName)}.$1.$2`
 	);
-}
-
-function storageToken(value: string) {
-	return Array.from(new TextEncoder().encode(value), (byte) =>
-		byte.toString(16).padStart(2, '0')
-	).join('');
-}
-
-export function getPersistentDuckDbFilePrefix(storageId: string) {
-	return `${PERSISTENCE_FILE_PREFIX}${storageToken(storageId)}-`;
 }
 
 function getPersistentCatalogPath(storageId: string) {
@@ -380,25 +372,6 @@ export async function dropDuckDbDatabase(sessionId: string, name: string, fallba
 	);
 	session.persistentDatabases.delete(name.toLowerCase());
 	await checkpointDuckDbSession(session);
-}
-
-/**
- * Permanently removes every OPFS file owned by a persistent emulated cluster.
- * The session must be disposed first so its synchronous file handles are closed.
- */
-export async function deletePersistentDuckDbStorage(storageId: string) {
-	if (typeof navigator === 'undefined' || !navigator.storage?.getDirectory) {
-		throw new Error('Persistent browser storage is not available.');
-	}
-
-	const root = await navigator.storage.getDirectory();
-	const prefix = getPersistentDuckDbFilePrefix(storageId);
-	const directory = root as FileSystemDirectoryHandle & {
-		entries: () => AsyncIterableIterator<[string, FileSystemHandle]>;
-	};
-	for await (const [name] of directory.entries()) {
-		if (name.startsWith(prefix)) await root.removeEntry(name);
-	}
 }
 
 function normalizeValue(value: unknown): unknown {

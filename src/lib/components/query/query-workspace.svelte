@@ -27,7 +27,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Resizable from '$lib/components/ui/resizable';
 	import { Spinner } from '$lib/components/ui/spinner';
-	import { deletePersistentDuckDbStorage } from '$lib/duckdb/query-client';
+	import { deletePersistentDuckDbStorage } from '$lib/duckdb/storage';
 	import { startEmulatedQuery } from '$lib/emulated/emulated-cluster';
 	import { getClusterSession } from '$lib/cluster/cluster-session.svelte';
 	import { connectClusterRuntime, releaseClusterRuntime } from '$lib/cluster/cluster-runtime';

@@ -10,7 +10,7 @@ const runtimeMocks = vi.hoisted(() => ({
 	registerEmulatedStorage: vi.fn()
 }));
 
-vi.mock('$lib/duckdb/query-client', () => ({
+vi.mock('$lib/duckdb/lazy-client', () => ({
 	disposeAllDuckDbSessions: runtimeMocks.disposeAllDuckDbSessions,
 	disposeDuckDb: runtimeMocks.disposeDuckDb,
 	disposeInactiveDuckDbSessions: runtimeMocks.disposeInactiveDuckDbSessions

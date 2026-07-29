@@ -1,0 +1,3 @@
+[submodule "kql-to-sql"]
+	path = vendor/kql-to-sql
+	url = https://github.com/Jiayang-Lai/kql-to-sql.git

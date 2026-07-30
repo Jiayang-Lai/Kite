@@ -1,5 +1,6 @@
 <script lang="ts">
 	import DatabaseIcon from '@lucide/svelte/icons/database';
+	import FileDownIcon from '@lucide/svelte/icons/file-down';
 	import FileCode2Icon from '@lucide/svelte/icons/file-code-2';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import PlusIcon from '@lucide/svelte/icons/plus';
@@ -64,6 +65,7 @@
 		type TableMutationPlan,
 		type TableSchemaSnapshot
 	} from '$lib/kusto/table-management';
+	import { buildAvroTableSchema } from '$lib/kusto/avro-table-template';
 	import type { KustoColumn, KustoDatabaseSchema, KustoTable } from '$lib/types/kusto-schema';
 
 	type DatabaseManagementProps = {
@@ -766,6 +768,19 @@
 		activeCancel?.();
 	}
 
+	function exportTableSchema(table: KustoTable) {
+		const schema = JSON.stringify(buildAvroTableSchema(table), null, '\t');
+		const fileName = `${table.name.replaceAll(/[^A-Za-z0-9._-]/g, '_') || 'table'}.avsc`;
+		const url = URL.createObjectURL(
+			new Blob([`${schema}\n`], { type: 'application/vnd.apache.avro.schema+json' })
+		);
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = fileName;
+		link.click();
+		URL.revokeObjectURL(url);
+	}
+
 	onDestroy(() => {
 		mutationRequestId += 1;
 		activeCancel?.();
@@ -796,6 +811,15 @@
 
 {#snippet tableActions(table: KustoTable)}
 	<div class="flex flex-wrap items-center justify-end gap-1">
+		<Button
+			size="xs"
+			variant="outline"
+			onclick={() => exportTableSchema(table)}
+			title={`Download ${table.name}'s schema as an Avro record`}
+		>
+			<FileDownIcon />
+			Export Avro
+		</Button>
 		<Button
 			size="xs"
 			variant="outline"

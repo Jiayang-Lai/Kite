@@ -85,6 +85,10 @@ Open the URL shown in the terminal, usually <http://localhost:5173>.
 
 Kite opens with its built-in **Mock cluster** selected. The mock catalog supports schema browsing and editor language features, but it does not execute queries.
 
+### Quick starts
+
+- [Create a table and ingest CSV in the emulated cluster](docs/avro-emulated-quick-start.md)
+
 ### Use the browser-emulated cluster
 
 Select **Emulated cluster** from the cluster selector to run KQL without a Kusto server. Kite:

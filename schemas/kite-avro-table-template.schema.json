@@ -1,0 +1,41 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://kite.humblehamster.com/schemas/kite-avro-table-template.schema.json",
+	"title": "KiteAvroTableTemplate",
+	"description": "The single-record Avro profile Kite accepts when creating a Kusto table.",
+	"type": "object",
+	"required": ["type", "name", "fields"],
+	"properties": {
+		"type": { "const": "record" },
+		"name": {
+			"type": "string",
+			"pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+		},
+		"namespace": { "type": "string" },
+		"doc": { "type": "string" },
+		"kite.folder": { "type": "string" },
+		"kite.tableName": { "type": "string" },
+		"fields": {
+			"type": "array",
+			"minItems": 1,
+			"items": { "$ref": "#/$defs/field" }
+		}
+	},
+	"$defs": {
+		"field": {
+			"type": "object",
+			"required": ["name", "type"],
+			"properties": {
+				"name": {
+					"type": "string",
+					"pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+				},
+				"doc": { "type": "string" },
+				"kite.columnName": { "type": "string" },
+				"type": {}
+			},
+			"additionalProperties": true
+		}
+	},
+	"additionalProperties": true
+}

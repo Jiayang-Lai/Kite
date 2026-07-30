@@ -1,0 +1,70 @@
+{
+	"type": "record",
+	"name": "DeviceNetworkEvents",
+	"doc": "Microsoft Defender for Endpoints device network events. This table contains information about network connections and related events initiated by processes running on an endpoint.",
+	"kite.tableName": "DeviceNetworkEvents",
+	"kite.reference": "https://learn.microsoft.com/en-us/azure/azure-monitor/reference/tables/devicenetworkevents",
+	"fields": [
+		{ "name": "ActionType", "type": "string" },
+		{ "name": "AdditionalFields", "type": { "type": "map", "values": "string" } },
+		{ "name": "AppGuardContainerId", "type": "string" },
+		{ "name": "DeviceId", "type": "string" },
+		{ "name": "DeviceName", "type": "string" },
+		{ "name": "InitiatingProcessAccountDomain", "type": "string" },
+		{ "name": "InitiatingProcessAccountName", "type": "string" },
+		{ "name": "InitiatingProcessAccountObjectId", "type": "string" },
+		{ "name": "InitiatingProcessAccountSid", "type": "string" },
+		{ "name": "InitiatingProcessAccountUpn", "type": "string" },
+		{ "name": "InitiatingProcessCommandLine", "type": "string" },
+		{ "name": "InitiatingProcessFileName", "type": "string" },
+		{ "name": "InitiatingProcessFolderPath", "type": "string" },
+		{ "name": "InitiatingProcessId", "type": "long" },
+		{ "name": "InitiatingProcessIntegrityLevel", "type": "string" },
+		{ "name": "InitiatingProcessMD5", "type": "string" },
+		{ "name": "InitiatingProcessParentFileName", "type": "string" },
+		{ "name": "InitiatingProcessParentId", "type": "long" },
+		{ "name": "InitiatingProcessSHA1", "type": "string" },
+		{ "name": "InitiatingProcessSHA256", "type": "string" },
+		{ "name": "InitiatingProcessTokenElevation", "type": "string" },
+		{ "name": "InitiatingProcessFileSize", "type": "long" },
+		{ "name": "InitiatingProcessVersionInfoCompanyName", "type": "string" },
+		{ "name": "InitiatingProcessVersionInfoProductName", "type": "string" },
+		{ "name": "InitiatingProcessVersionInfoProductVersion", "type": "string" },
+		{ "name": "InitiatingProcessVersionInfoInternalFileName", "type": "string" },
+		{ "name": "InitiatingProcessVersionInfoOriginalFileName", "type": "string" },
+		{ "name": "InitiatingProcessVersionInfoFileDescription", "type": "string" },
+		{ "name": "LocalIP", "type": "string" },
+		{ "name": "LocalIPType", "type": "string" },
+		{ "name": "LocalPort", "type": "int" },
+		{ "name": "MachineGroup", "type": "string" },
+		{ "name": "Protocol", "type": "string" },
+		{ "name": "RemoteIP", "type": "string" },
+		{ "name": "RemoteIPType", "type": "string" },
+		{ "name": "RemotePort", "type": "int" },
+		{ "name": "RemoteUrl", "type": "string" },
+		{ "name": "ReportId", "type": "long" },
+		{
+			"name": "TimeGenerated",
+			"type": { "type": "long", "logicalType": "timestamp-millis" }
+		},
+		{
+			"name": "Timestamp",
+			"type": { "type": "long", "logicalType": "timestamp-millis" }
+		},
+		{
+			"name": "InitiatingProcessParentCreationTime",
+			"type": { "type": "long", "logicalType": "timestamp-millis" }
+		},
+		{
+			"name": "InitiatingProcessCreationTime",
+			"type": { "type": "long", "logicalType": "timestamp-millis" }
+		},
+		{ "name": "InitiatingProcessSessionId", "type": "long" },
+		{ "name": "IsInitiatingProcessRemoteSession", "type": "boolean" },
+		{ "name": "InitiatingProcessRemoteSessionDeviceName", "type": "string" },
+		{ "name": "InitiatingProcessRemoteSessionIP", "type": "string" },
+		{ "name": "InitiatingProcessUniqueId", "type": "string" },
+		{ "name": "SourceSystem", "type": "string" },
+		{ "name": "Type", "type": "string" }
+	]
+}

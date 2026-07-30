@@ -57,6 +57,7 @@ test('places the cluster switcher below its trigger on smaller displays', async 
 });
 
 test('shows cluster switch failures from the Explorer overview', async ({ page }) => {
+	await page.route('http://localhost:8080/**', (route) => route.abort('connectionrefused'));
 	await page.goto('/explorer');
 
 	await page.getByRole('button', { name: /Mock cluster/ }).click();
@@ -230,7 +231,38 @@ test('creates DuckDB databases and tables from emulated cluster administration',
 	await expect(page.getByText('Events', { exact: true }).first()).toBeVisible();
 	await expect(page.getByText('State', { exact: true }).first()).toBeVisible();
 
+	await page.getByRole('button', { name: 'New table' }).click();
+	const importTableDialog = page.getByRole('dialog', { name: 'New table' });
+	await importTableDialog.locator('input[type="file"]').setInputFiles({
+		name: 'metrics.avsc',
+		mimeType: 'application/vnd.apache.avro.schema+json',
+		buffer: Buffer.from(`{
+			"type": "record",
+			"name": "Metrics",
+			"doc": "Imported metric rows",
+			"kite.folder": "Operations",
+			"fields": [
+				{ "name": "RecordedAt", "type": { "type": "long", "logicalType": "timestamp-millis" } },
+				{ "name": "Value", "type": "double" },
+				{ "name": "Labels", "type": { "type": "map", "values": "string" } }
+			]
+		}`)
+	});
+	await expect(importTableDialog.getByLabel('Table name')).toHaveValue('Metrics');
+	await expect(importTableDialog.getByLabel('Description')).toHaveValue('Imported metric rows');
+	await expect(importTableDialog.getByText('Imported metrics.avsc.')).toBeVisible();
+	await importTableDialog.getByRole('button', { name: 'Review table' }).click();
+	await expect(importTableDialog.getByText('RecordedAt', { exact: true })).toBeVisible();
+	await expect(importTableDialog.getByText('datetime', { exact: true })).toBeVisible();
+	await expect(importTableDialog.getByText('dynamic', { exact: true })).toBeVisible();
+	await importTableDialog.getByLabel(/Type CREATE Metrics to confirm/).fill('CREATE Metrics');
+	await importTableDialog.getByRole('button', { name: 'Create table' }).click();
+	await expect(page.getByText('Metrics', { exact: true }).first()).toBeVisible();
+
 	await page.getByRole('button', { name: 'Events 1 column' }).click();
+	const avroDownload = page.waitForEvent('download');
+	await page.getByRole('button', { name: 'Export Avro' }).click();
+	expect((await avroDownload).suggestedFilename()).toBe('Events.avsc');
 	await page.getByRole('button', { name: 'Edit table' }).click();
 	const editDialog = page.getByRole('dialog', { name: 'Edit Events' });
 	await editDialog.getByLabel('Description').fill('Event rows');
@@ -282,7 +314,7 @@ test('creates DuckDB databases and tables from emulated cluster administration',
 	await expect(page.getByText('Table Analytics.Events removed.')).toBeVisible();
 	await expect(removeTableDialog).toBeHidden();
 
-	await page.getByRole('button', { name: 'Analytics 0 tables' }).hover();
+	await page.getByRole('button', { name: 'Analytics 1 table' }).hover();
 	await page.getByRole('button', { name: 'More actions for database Analytics' }).click();
 	await page.getByRole('menuitem', { name: 'Delete database' }).click();
 	const removeDatabaseDialog = page.getByRole('dialog', { name: 'Delete database' });

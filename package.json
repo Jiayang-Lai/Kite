@@ -8,12 +8,13 @@
 		"node": ">=22"
 	},
 	"scripts": {
+		"generate:avro-table-template-types": "node scripts/generate-avro-table-template-types.mjs",
 		"generate:kusto-docs": "node scripts/generate-kusto-documentation-index.mjs",
 		"build:kql-wasm": "node scripts/build-kql-wasm.mjs",
 		"verify:kql-wasm": "node scripts/verify-kql-wasm.mjs",
 		"profile:kusto-memory": "npm run build && node scripts/profile-kusto-memory.mjs",
 		"dev": "vite dev",
-		"prebuild": "npm run generate:kusto-docs && npm run verify:kql-wasm",
+		"prebuild": "npm run generate:avro-table-template-types && npm run generate:kusto-docs && npm run verify:kql-wasm",
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync",
@@ -47,6 +48,7 @@
 		"@vitest/browser-playwright": "^4.1.8",
 		"bits-ui": "^2.18.1",
 		"clsx": "^2.1.1",
+		"json-schema-to-typescript": "^15.0.4",
 		"paneforge": "^1.0.2",
 		"playwright": "^1.60.0",
 		"prettier": "^3.8.3",
@@ -70,6 +72,7 @@
 		"@duckdb/duckdb-wasm": "1.32.0",
 		"@kusto/language-service-next": "^12.4.0",
 		"@kusto/monaco-kusto": "^15.0.0",
+		"avsc": "^5.7.9",
 		"azure-kusto-data": "^7.2.0",
 		"mode-watcher": "^1.1.0",
 		"monaco-editor": "^0.55.1"

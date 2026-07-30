@@ -144,6 +144,14 @@
 		clusterSession.selectedFunction = selectedFunction;
 	});
 
+	// Schema mutations can be made from the Admin workspace while this editor is
+	// mounted. Keep the local snapshot (and therefore Monaco's schema prop) in
+	// sync with the app-wide session so completion never uses stale table metadata.
+	$effect(() => {
+		const sessionSchema = clusterSession.databaseSchema;
+		if (databaseSchema !== sessionSchema) databaseSchema = sessionSchema;
+	});
+
 	$effect(() => {
 		explorerExpansion = clusterSession.getExplorerExpansion(activeClusterId);
 	});

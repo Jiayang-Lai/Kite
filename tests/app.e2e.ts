@@ -57,6 +57,7 @@ test('places the cluster switcher below its trigger on smaller displays', async 
 });
 
 test('shows cluster switch failures from the Explorer overview', async ({ page }) => {
+	await page.route('http://localhost:8080/**', (route) => route.abort('connectionrefused'));
 	await page.goto('/explorer');
 
 	await page.getByRole('button', { name: /Mock cluster/ }).click();
@@ -313,7 +314,7 @@ test('creates DuckDB databases and tables from emulated cluster administration',
 	await expect(page.getByText('Table Analytics.Events removed.')).toBeVisible();
 	await expect(removeTableDialog).toBeHidden();
 
-	await page.getByRole('button', { name: 'Analytics 0 tables' }).hover();
+	await page.getByRole('button', { name: 'Analytics 1 table' }).hover();
 	await page.getByRole('button', { name: 'More actions for database Analytics' }).click();
 	await page.getByRole('menuitem', { name: 'Delete database' }).click();
 	const removeDatabaseDialog = page.getByRole('dialog', { name: 'Delete database' });

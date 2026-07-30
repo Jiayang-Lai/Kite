@@ -1,5 +1,6 @@
 <script lang="ts">
 	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert';
+	import FileUpIcon from '@lucide/svelte/icons/file-up';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SaveIcon from '@lucide/svelte/icons/save';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
@@ -18,6 +19,7 @@
 		type CreateTablePlan,
 		type KustoScalarType
 	} from '$lib/kusto/table-management';
+	import { readAvroTableTemplate } from '$lib/kusto/avro-table-template';
 
 	type NewColumnDraft = {
 		id: number;
@@ -55,6 +57,9 @@
 	let columns = $state<NewColumnDraft[]>([]);
 	let reviewing = $state(false);
 	let confirmationText = $state('');
+	let templateImportError = $state('');
+	let importedTemplateName = $state('');
+	let templateInput = $state<HTMLInputElement>();
 	const confirmationPhrase = $derived(`CREATE ${tableName.trim()}`);
 
 	const preparedPlan = $derived.by(() => {
@@ -87,6 +92,8 @@
 		columns = [{ id: nextColumnId++, name: '', type: 'string' }];
 		reviewing = false;
 		confirmationText = '';
+		templateImportError = '';
+		importedTemplateName = '';
 	});
 
 	$effect(() => {
@@ -124,6 +131,30 @@
 			return;
 		}
 		onsubmit?.(preparedPlan.plan);
+	}
+
+	function openTemplatePicker() {
+		if (!isRunning) templateInput?.click();
+	}
+
+	async function importTemplate(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = '';
+		if (!file || isRunning) return;
+
+		templateImportError = '';
+		try {
+			const template = await readAvroTableTemplate(file);
+			if (isRunning) return;
+			tableName = template.tableName;
+			docstring = template.docstring;
+			folder = template.folder;
+			columns = template.columns.map((column) => ({ id: nextColumnId++, ...column }));
+			importedTemplateName = file.name;
+		} catch (error) {
+			templateImportError = error instanceof Error ? error.message : String(error);
+		}
 	}
 </script>
 
@@ -222,6 +253,13 @@
 						/>
 					</div>
 				{:else}
+					<input
+						bind:this={templateInput}
+						type="file"
+						accept=".avsc,.json,application/vnd.apache.avro.schema+json,application/json"
+						class="sr-only"
+						onchange={importTemplate}
+					/>
 					<dl class="grid gap-2 rounded-lg border bg-muted/20 p-3 text-xs sm:grid-cols-2">
 						<div>
 							<dt class="text-muted-foreground">Cluster</dt>
@@ -232,6 +270,25 @@
 							<dd class="mt-0.5 break-all font-mono">{databaseName}</dd>
 						</div>
 					</dl>
+
+					<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+						<div>
+							<p class="text-sm font-medium">Import Avro template</p>
+							<p class="text-muted-foreground mt-0.5 text-xs">
+								Import one <code>.avsc</code> record schema to replace this draft, then edit it if needed.
+							</p>
+						</div>
+						<Button variant="outline" size="sm" onclick={openTemplatePicker} disabled={isRunning}>
+							<FileUpIcon /> Import JSON template
+						</Button>
+					</div>
+
+					{#if importedTemplateName}
+						<p class="text-muted-foreground text-xs">Imported {importedTemplateName}.</p>
+					{/if}
+					{#if templateImportError}
+						<p class="text-destructive text-xs" role="alert">{templateImportError}</p>
+					{/if}
 
 					<div>
 						<label class="text-sm font-medium" for="create-table-name">Table name</label>

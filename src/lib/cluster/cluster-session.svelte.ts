@@ -66,7 +66,11 @@ export function createClusterSession(initialClusterId: string): ClusterSession {
 		} else if (change.type === 'group') {
 			expansion.groups[`${change.database}:${change.group}`] = change.open;
 		} else if (change.type === 'schema-table') {
-			const databaseTables = (expansion.schemaTables[change.database] ??= {});
+			let databaseTables = expansion.schemaTables[change.database];
+			if (!databaseTables) {
+				databaseTables = {};
+				expansion.schemaTables[change.database] = databaseTables;
+			}
 			databaseTables[change.table] = change.open;
 		} else {
 			expansion.sections[change.section] = change.open;

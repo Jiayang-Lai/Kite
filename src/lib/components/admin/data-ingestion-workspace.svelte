@@ -1,12 +1,15 @@
 <script lang="ts">
 	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert';
 	import CircleStopIcon from '@lucide/svelte/icons/circle-stop';
+	import CircleXIcon from '@lucide/svelte/icons/circle-x';
 	import CloudDownloadIcon from '@lucide/svelte/icons/cloud-download';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import FileUpIcon from '@lucide/svelte/icons/file-up';
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
 	import PlayIcon from '@lucide/svelte/icons/play';
+	import ArrowLeftRightIcon from '@lucide/svelte/icons/arrow-left-right';
+	import ListPlusIcon from '@lucide/svelte/icons/list-plus';
 	import ServerIcon from '@lucide/svelte/icons/server';
 	import TablePropertiesIcon from '@lucide/svelte/icons/table-properties';
 	import XIcon from '@lucide/svelte/icons/x';
@@ -44,8 +47,10 @@
 		hashInlineCsvChunk,
 		planInlineCsvFile,
 		readInlineCsvChunk,
+		readInlineCsvPayload,
 		type InlineCsvPlan
 	} from '$lib/kusto/inline-file';
+	import { compareCsvShape } from '$lib/kusto/ingestion-guardrails';
 	import {
 		getKustoErrorMessage,
 		startKustoManagementCommand,
@@ -58,6 +63,10 @@
 	type SourceMode = 'inline' | 'inline-file' | 'file' | 'remote-file';
 	type InlineFileState =
 		'idle' | 'scanning' | 'ready' | 'running' | 'partial' | 'cancelled' | 'succeeded' | 'failed';
+	type TargetColumnShapeWarning = {
+		kind: 'header-order' | 'missing-source-column';
+		message: string;
+	};
 
 	type DataIngestionWorkspaceProps = {
 		databases?: KustoDatabaseSchema;
@@ -91,10 +100,16 @@
 	);
 
 	const INLINE_DATA_MAX_LENGTH = 100_000;
+	const INLINE_DATA_SCAN_DEBOUNCE_MS = 300;
 	const EMULATED_MAX_FILE_BYTES = 512 * 1024 * 1024;
 	const EMULATED_SCAN_CHUNK_BYTES = 16 * 1024 * 1024;
 	let sourceMode = $state<SourceMode>('inline');
 	let inlineData = $state('');
+	let inlineDataHasHeader = $state(false);
+	let inlineDataPlan = $state.raw<InlineCsvPlan>();
+	let inlineDataPayload = $state('');
+	let inlineDataScanError = $state('');
+	let inlineDataScanning = $state(false);
 	let selectedFiles = $state.raw<FileList>();
 	let inlineFile = $state.raw<File>();
 	let inlineFileVersion = $state(0);
@@ -109,6 +124,7 @@
 	let extentIds = $state<string[]>([]);
 	let plannedInlineFileKey = '';
 	let scanRequestId = 0;
+	let inlineDataScanRequestId = 0;
 	let scanController: AbortController | undefined;
 	let relativePath = $state('');
 	let fileFormat = $state<MountedFileFormat>('parquet');
@@ -187,7 +203,7 @@
 			if (sourceMode === 'inline-file') return { command: '', error: '' };
 			const command = (() => {
 				if (sourceMode === 'inline') {
-					return buildInlineIngestionCommand({ table, data: inlineData });
+					return buildInlineIngestionCommand({ table, data: inlineDataPayload });
 				}
 				if (sourceMode === 'remote-file') {
 					return buildRemoteFileIngestionCommand({
@@ -209,20 +225,70 @@
 			return { command: '', error: error instanceof Error ? error.message : String(error) };
 		}
 	});
+	const inlineDataGuardrails = $derived(
+		inlineDataPlan && activeTable ? compareCsvShape(inlineDataPlan, activeTable.columns) : []
+	);
+	const inlineFileGuardrails = $derived(
+		inlineFilePlan && activeTable ? compareCsvShape(inlineFilePlan, activeTable.columns) : []
+	);
+	const activeGuardrails = $derived(
+		sourceMode === 'inline'
+			? inlineDataGuardrails
+			: sourceMode === 'inline-file'
+				? inlineFileGuardrails
+				: []
+	);
+	const activeCsvPlan = $derived(
+		sourceMode === 'inline'
+			? inlineDataPlan
+			: sourceMode === 'inline-file'
+				? inlineFilePlan
+				: undefined
+	);
+	const targetColumnShapeWarnings = $derived.by(() => {
+		if (!activeCsvPlan || !activeTable) return [];
+		return activeTable.columns.map((column, index) => {
+			if (index >= activeCsvPlan.columnCount) {
+				return {
+					kind: 'missing-source-column',
+					message: `No source column at position ${index + 1}.`
+				} satisfies TargetColumnShapeWarning;
+			}
+			const sourceHeader = activeCsvPlan.headerColumns?.[index];
+			if (sourceHeader !== undefined && sourceHeader !== column.name) {
+				return {
+					kind: 'header-order',
+					message: `Source header: ${sourceHeader}`
+				} satisfies TargetColumnShapeWarning;
+			}
+			return undefined;
+		});
+	});
+	const extraSourceColumnCount = $derived(
+		activeCsvPlan && activeTable
+			? Math.max(0, activeCsvPlan.columnCount - activeTable.columns.length)
+			: 0
+	);
+	const sourceShapeCheckUnavailable = $derived(
+		!isEmulatedCluster && (sourceMode === 'file' || sourceMode === 'remote-file')
+	);
 	const canIngest = $derived(
 		Boolean(
 			(ingestion || isEmulatedCluster) &&
 			selectedDatabase &&
 			selectedTable &&
 			!isRunning &&
-			(sourceMode === 'inline-file'
-				? isEmulatedCluster
-					? inlineFile &&
-						localFileFormat &&
-						(localFileFormat === 'parquet' || inlineFilePlan) &&
-						['ready', 'cancelled', 'failed'].includes(inlineFileState)
-					: inlineFilePlan && ['ready', 'partial', 'cancelled', 'failed'].includes(inlineFileState)
-				: preparedCommand.command)
+			(sourceMode === 'inline'
+				? inlineDataPlan && !inlineDataScanError
+				: sourceMode === 'inline-file'
+					? isEmulatedCluster
+						? inlineFile &&
+							localFileFormat &&
+							(localFileFormat === 'parquet' || inlineFilePlan) &&
+							['ready', 'cancelled', 'failed'].includes(inlineFileState)
+						: inlineFilePlan &&
+							['ready', 'partial', 'cancelled', 'failed'].includes(inlineFileState)
+					: preparedCommand.command)
 		)
 	);
 	const hasSourceInput = $derived(
@@ -273,6 +339,42 @@
 	$effect(() => {
 		if (!databaseNames.length) return;
 		if (!databaseNames.includes(selectedDatabase)) selectedDatabase = databaseNames[0];
+	});
+
+	$effect(() => {
+		const data = inlineData;
+		const hasHeader = inlineDataHasHeader;
+		const nextScanRequestId = ++inlineDataScanRequestId;
+		inlineDataPlan = undefined;
+		inlineDataPayload = '';
+		inlineDataScanError = '';
+		inlineDataScanning = Boolean(data.trim());
+		if (!data.trim()) return;
+
+		const timer = setTimeout(() => {
+			void (async () => {
+				try {
+					const source = new Blob([data]);
+					const plan = await planInlineCsvFile(source, {
+						maxFileBytes: INLINE_DATA_MAX_LENGTH * 4,
+						maxPayloadBytes: INLINE_DATA_MAX_LENGTH * 4,
+						hasHeader
+					});
+					if (nextScanRequestId !== inlineDataScanRequestId) return;
+					const payload = await readInlineCsvPayload(source, plan);
+					if (nextScanRequestId !== inlineDataScanRequestId) return;
+					inlineDataPlan = plan;
+					inlineDataPayload = payload;
+				} catch (error) {
+					if (nextScanRequestId !== inlineDataScanRequestId) return;
+					inlineDataScanError = error instanceof Error ? error.message : String(error);
+				} finally {
+					if (nextScanRequestId === inlineDataScanRequestId) inlineDataScanning = false;
+				}
+			})();
+		}, INLINE_DATA_SCAN_DEBOUNCE_MS);
+
+		return () => clearTimeout(timer);
 	});
 
 	$effect(() => {
@@ -403,7 +505,7 @@
 				database: selectedDatabase,
 				table,
 				format: 'csv',
-				source: { kind: 'inline', data: inlineData }
+				source: { kind: 'inline', data: inlineDataPayload }
 			});
 		}
 		if (sourceMode === 'inline-file') {
@@ -583,6 +685,7 @@
 	onDestroy(() => {
 		requestId += 1;
 		scanRequestId += 1;
+		inlineDataScanRequestId += 1;
 		scanController?.abort();
 		activeExecution?.cancel();
 	});
@@ -649,8 +752,6 @@
 							</div>
 							{#if isEmulatedCluster}
 								<EmulatedStorageBadge storage={emulatedStorage} />
-							{:else}
-								<Badge variant="outline">Local emulator</Badge>
 							{/if}
 						</div>
 					</div>
@@ -728,10 +829,30 @@
 										class="min-h-40 resize-y font-mono text-xs"
 										placeholder={'2026-07-22T12:00:00Z,sensor-1,temperature,21.5\n2026-07-22T12:01:00Z,sensor-2,humidity,45.2'}
 									/>
+									<label class="flex w-fit items-center gap-2 text-sm">
+										<input
+											id="inline-data-has-header"
+											type="checkbox"
+											bind:checked={inlineDataHasHeader}
+											disabled={isRunning}
+											class="border-input accent-primary size-4 rounded border"
+										/>
+										First row contains column names
+									</label>
 									<p class="text-muted-foreground text-xs">
-										Values are parsed as CSV in the table column order. Whitespace and line breaks
-										are preserved.
+										Values are parsed as CSV in the table column order. When enabled, the first row
+										is used for comparison and excluded from ingestion.
 									</p>
+									{#if inlineDataScanning}
+										<p class="text-muted-foreground text-xs" aria-live="polite">
+											Checking CSV shape…
+										</p>
+									{:else if inlineDataScanError}
+										<p class="text-destructive flex items-center gap-2 text-xs" role="alert">
+											<CircleAlertIcon class="size-4 shrink-0" />
+											{inlineDataScanError}
+										</p>
+									{/if}
 								</Tabs.Content>
 
 								<Tabs.Content value="inline-file" class="space-y-3">
@@ -837,26 +958,6 @@
 													Header: <code>{inlineFilePlan.header}</code>
 												</p>
 											{/if}
-											{#if activeTable && inlineFilePlan && inlineFilePlan.columnCount !== activeTable.columns.length}
-												<p
-													class="flex gap-2 text-xs text-amber-700 dark:text-amber-300"
-													role="alert"
-												>
-													<CircleAlertIcon class="size-4 shrink-0" /> File rows have {inlineFilePlan.columnCount}
-													columns; {activeTable.name} has {activeTable.columns.length}.
-												</p>
-											{/if}
-											{#if inlineFilePlan?.inconsistentRecordCount}
-												<p
-													class="flex gap-2 text-xs text-amber-700 dark:text-amber-300"
-													role="alert"
-												>
-													<CircleAlertIcon class="size-4 shrink-0" />
-													{inlineFilePlan.inconsistentRecordCount.toLocaleString()} rows have a different
-													column count.
-												</p>
-											{/if}
-
 											{#if !isEmulatedCluster && inlineFilePlan && (inlineFileState === 'running' || completedFileChunks > 0)}
 												<div class="space-y-2 border-t pt-3" aria-live="polite">
 													<div class="flex items-center justify-between gap-3 text-xs">
@@ -1010,6 +1111,26 @@
 									{preparedCommand.error}
 								</p>
 							{/if}
+							{#if activeGuardrails.length}
+								<div
+									class="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-200"
+									role="alert"
+								>
+									<p class="flex items-center gap-2 font-medium">
+										<CircleAlertIcon class="size-4 shrink-0" /> Source shape differs from the target
+									</p>
+									<ul class="list-disc space-y-1 pl-5">
+										{#each activeGuardrails as guardrail (guardrail.id)}
+											<li>{guardrail.message}</li>
+										{/each}
+									</ul>
+								</div>
+							{:else if sourceShapeCheckUnavailable && hasSourceInput}
+								<p class="text-muted-foreground text-xs">
+									Source shape cannot be checked before ingestion because this file is read by
+									Kustainer, not the browser.
+								</p>
+							{/if}
 
 							<div class="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
 								<p class="text-muted-foreground text-xs">
@@ -1049,17 +1170,47 @@
 								{#if activeTable?.columns.length}
 									<ol class="divide-y">
 										{#each activeTable.columns as column, index (`${column.name}:${index}`)}
-											<li class="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2 px-3 py-2 text-xs">
+											<li
+												class={`grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2 px-3 py-2 text-xs ${targetColumnShapeWarnings[index] ? 'bg-amber-500/10' : ''}`}
+											>
 												<span class="text-muted-foreground text-right tabular-nums"
 													>{index + 1}</span
 												>
 												<span class="min-w-0">
 													<span class="block truncate font-medium">{column.name}</span>
 													<span class="text-muted-foreground font-mono">{column.type}</span>
+													{#if targetColumnShapeWarnings[index]}
+														<span
+															class="mt-1 flex items-start gap-1 text-amber-800 dark:text-amber-200"
+															title={targetColumnShapeWarnings[index].message}
+														>
+															{#if targetColumnShapeWarnings[index].kind === 'header-order'}
+																<ArrowLeftRightIcon class="mt-0.5 size-3 shrink-0" />
+															{:else}
+																<CircleXIcon class="mt-0.5 size-3 shrink-0" />
+															{/if}
+															<span class="line-clamp-2"
+																>{targetColumnShapeWarnings[index].message}</span
+															>
+														</span>
+													{/if}
 												</span>
 											</li>
 										{/each}
 									</ol>
+									{#if extraSourceColumnCount}
+										<p
+											class="border-t border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"
+											role="alert"
+										>
+											<span class="flex items-center gap-1">
+												<ListPlusIcon class="size-3 shrink-0" />
+												+ {extraSourceColumnCount} extra source column{extraSourceColumnCount === 1
+													? ''
+													: 's'}
+											</span>
+										</p>
+									{/if}
 								{:else}
 									<p class="text-muted-foreground p-4 text-center text-xs">
 										No table columns available.
@@ -1075,7 +1226,7 @@
 
 			<Resizable.Pane
 				bind:this={resultsPane}
-				defaultSize={34}
+				defaultSize={15}
 				minSize={5}
 				collapsible
 				collapsedSize={5}
@@ -1138,6 +1289,25 @@
 						<dt class="text-muted-foreground">Mode</dt>
 						<dd>Append</dd>
 					</dl>
+					{#if activeGuardrails.length}
+						<div
+							class="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-200"
+							role="alert"
+						>
+							<p class="flex items-center gap-2 font-medium">
+								<CircleAlertIcon class="size-4 shrink-0" /> Review source-shape warnings before continuing
+							</p>
+							<ul class="list-disc space-y-1 pl-5">
+								{#each activeGuardrails as guardrail (guardrail.id)}
+									<li>{guardrail.message}</li>
+								{/each}
+							</ul>
+						</div>
+					{:else if sourceShapeCheckUnavailable}
+						<p class="text-muted-foreground text-xs">
+							Source shape was not checked; Kustainer reads this source directly.
+						</p>
+					{/if}
 					<pre
 						class="bg-muted max-h-36 overflow-auto rounded-md p-3 font-mono text-xs whitespace-pre-wrap">{pendingCommand}</pre>
 					<div>

@@ -19,9 +19,44 @@ export type InlineCsvPlan = {
 	columnCount: number;
 	inconsistentRecordCount: number;
 	header?: string;
+	headerColumns?: string[];
 	headerColumnCount?: number;
 	chunks: InlineCsvChunk[];
 };
+
+/** Parses one complete CSV record, preserving commas and escaped quotes inside fields. */
+export function parseCsvRecord(record: string): string[] {
+	const values: string[] = [];
+	let value = '';
+	let inQuotes = false;
+
+	for (let index = 0; index < record.length; index += 1) {
+		const character = record[index];
+		if (inQuotes) {
+			if (character === '"') {
+				if (record[index + 1] === '"') {
+					value += '"';
+					index += 1;
+				} else {
+					inQuotes = false;
+				}
+			} else {
+				value += character;
+			}
+		} else if (character === ',') {
+			values.push(value);
+			value = '';
+		} else if (character === '"' && value === '') {
+			inQuotes = true;
+		} else {
+			value += character;
+		}
+	}
+
+	if (inQuotes) throw new Error('The CSV record ends inside a quoted field.');
+	values.push(value);
+	return values;
+}
 
 export type InlineCsvPlanOptions = {
 	maxFileBytes: number;
@@ -215,6 +250,7 @@ export async function planInlineCsvFile(
 				.decode(await file.slice(headerRange.start, headerRange.end).arrayBuffer())
 				.replace(/\r\n?$|\n$/, '')
 		: undefined;
+	const headerColumns = header === undefined ? undefined : parseCsvRecord(header);
 
 	return {
 		fileBytes: file.size,
@@ -223,6 +259,7 @@ export async function planInlineCsvFile(
 		columnCount: firstColumnCount ?? 0,
 		inconsistentRecordCount,
 		header,
+		headerColumns,
 		headerColumnCount,
 		chunks
 	};
@@ -233,6 +270,11 @@ export async function readInlineCsvChunk(file: Blob, chunk: InlineCsvChunk) {
 	return new TextDecoder('utf-8', { fatal: true }).decode(
 		await file.slice(chunk.byteStart, chunk.byteEnd).arrayBuffer()
 	);
+}
+
+/** Reads every data record from a plan, excluding its optional header record. */
+export async function readInlineCsvPayload(file: Blob, plan: InlineCsvPlan) {
+	return (await Promise.all(plan.chunks.map((chunk) => readInlineCsvChunk(file, chunk)))).join('');
 }
 
 /** Creates a stable per-target content key used by Kusto ingest-by tags. */

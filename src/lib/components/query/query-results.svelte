@@ -6,6 +6,7 @@
 
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import ResultTable from '$lib/components/query/result-table.svelte';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import * as Tabs from '$lib/components/ui/tabs';
@@ -53,19 +54,6 @@
 		}
 		previousError = error ?? '';
 	});
-
-	function formatCell(value: unknown) {
-		if (value === null || value === undefined) return 'null';
-		if (typeof value === 'string') return value;
-		if (typeof value === 'object') {
-			try {
-				return JSON.stringify(value);
-			} catch {
-				return String(value);
-			}
-		}
-		return String(value);
-	}
 </script>
 
 <Tabs.Root
@@ -74,11 +62,14 @@
 >
 	<header
 		class={cn(
-			'flex shrink-0 items-center justify-between gap-2 px-2',
+			'relative z-20 flex min-w-0 shrink-0 items-center justify-between gap-2 px-2',
 			collapsed ? 'h-full' : 'h-9 border-b'
 		)}
 	>
-		<Tabs.List variant="line" class={cn('bg-transparent p-0', collapsed ? 'h-full' : 'h-8')}>
+		<Tabs.List
+			variant="line"
+			class={cn('min-w-0 bg-transparent p-0', collapsed ? 'h-full' : 'h-8')}
+		>
 			<Tabs.Trigger value="results" class={cn('px-2 text-xs', collapsed ? 'h-full' : 'h-8')}>
 				<Rows3Icon />
 				Results
@@ -97,12 +88,12 @@
 			</Tabs.Trigger>
 		</Tabs.List>
 
-		<div class="text-muted-foreground flex shrink-0 items-center gap-2 text-[10px]">
+		<div class="text-muted-foreground flex shrink-0 items-center gap-1 text-[10px] sm:gap-2">
 			{#if isRunning}
 				<Spinner class="size-3" />
 				<span>Running</span>
 			{:else if result && !error}
-				<span>{Math.round(result.elapsedMs)} ms</span>
+				<span class="hidden sm:inline">{Math.round(result.elapsedMs)} ms</span>
 			{/if}
 			<Button
 				variant="ghost"
@@ -130,39 +121,7 @@
 					</div>
 				</div>
 			{:else if result?.columns.length}
-				<ScrollArea class="h-full" orientation="both" type="auto">
-					<table class="w-max min-w-full border-collapse text-left text-xs">
-						<thead class="bg-muted/90 sticky top-0 z-10 backdrop-blur-sm">
-							<tr>
-								{#each result.columns as column, index (`${column.name}:${index}`)}
-									<th class="min-w-32 border-r border-b px-2 py-1.5 font-medium last:border-r-0">
-										<span class="block whitespace-nowrap">{column.name}</span>
-										<span class="text-muted-foreground block font-mono text-[9px] font-normal">
-											{column.type}
-										</span>
-									</th>
-								{/each}
-							</tr>
-						</thead>
-						<tbody>
-							{#each result.rows as row, rowIndex (rowIndex)}
-								<tr class="hover:bg-muted/40">
-									{#each row as cell, cellIndex (cellIndex)}
-										<td
-											class={cn(
-												'max-w-96 border-r border-b px-2 py-1.5 font-mono whitespace-pre-wrap last:border-r-0',
-												(cell === null || cell === undefined) && 'text-muted-foreground italic'
-											)}
-											title={formatCell(cell)}
-										>
-											{formatCell(cell)}
-										</td>
-									{/each}
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</ScrollArea>
+				<ResultTable {result} />
 			{:else if result}
 				<div class="text-muted-foreground grid h-full place-items-center px-4 text-center text-xs">
 					Query completed successfully without a tabular result.

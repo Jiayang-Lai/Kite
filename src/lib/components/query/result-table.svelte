@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { createTable, tableFeatures, type ColumnDef } from '@tanstack/svelte-table';
 	import { createVirtualizer } from '@tanstack/svelte-virtual';
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import ChevronUpIcon from '@lucide/svelte/icons/chevron-up';
+	import { tick } from 'svelte';
 	import { get } from 'svelte/store';
 
 	import type { QueryResult } from '$lib/types/query-result';
@@ -15,6 +18,7 @@
 
 	const features = tableFeatures({});
 	let scrollElement = $state<HTMLDivElement>();
+	let expandedRowId = $state<string>();
 	const data = $derived(result.rows);
 	const columns = $derived<ColumnDef<typeof features, unknown[]>[]>(
 		result.columns.map((column, index) => ({
@@ -24,7 +28,7 @@
 		}))
 	);
 	const columnTemplate = $derived(
-		`repeat(${Math.max(result.columns.length, 1)}, minmax(8rem, 24rem))`
+		`2.25rem repeat(${Math.max(result.columns.length, 1)}, minmax(8rem, 24rem))`
 	);
 
 	const table = createTable({
@@ -54,6 +58,11 @@
 		});
 	});
 
+	$effect(() => {
+		result;
+		expandedRowId = undefined;
+	});
+
 	function formatCell(value: unknown) {
 		if (value === null || value === undefined) return 'null';
 		if (typeof value === 'string') return value;
@@ -70,6 +79,27 @@
 	function columnIndex(id: string) {
 		return Number(id.slice('column-'.length));
 	}
+
+	function formatDetailCell(value: unknown) {
+		if (value === null || value === undefined) return 'null';
+		if (typeof value === 'object') {
+			try {
+				return JSON.stringify(value, null, 2);
+			} catch {
+				return String(value);
+			}
+		}
+		return String(value);
+	}
+
+	function toggleRow(rowId: string) {
+		expandedRowId = expandedRowId === rowId ? undefined : rowId;
+		void tick().then(() => get(rowVirtualizer).measure());
+	}
+
+	function measureRow(node: HTMLTableRowElement) {
+		get(rowVirtualizer).measureElement(node);
+	}
 </script>
 
 <div
@@ -81,6 +111,7 @@
 		<thead class="bg-muted/95 sticky top-0 z-10 grid border-b shadow-xs backdrop-blur-sm">
 			{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
 				<tr class="grid" style:grid-template-columns={columnTemplate}>
+					<th class="border-r px-1" scope="col"><span class="sr-only">Inspect row</span></th>
 					{#each headerGroup.headers as header (header.id)}
 						{@const index = columnIndex(header.column.id)}
 						{@const column = result.columns[index]}
@@ -101,11 +132,29 @@
 				{@const row = rows[virtualRow.index]}
 				{#if row}
 					<tr
+						use:measureRow
+						data-index={virtualRow.index}
 						class="hover:bg-muted/40 absolute left-0 grid w-max min-w-full"
 						style:grid-template-columns={columnTemplate}
-						style:height={`${virtualRow.size}px`}
 						style:transform={`translateY(${virtualRow.start}px)`}
 					>
+						<td class="flex items-center justify-center border-r border-b px-1 py-1">
+							<button
+								type="button"
+								class="text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring inline-flex size-6 items-center justify-center rounded-sm focus-visible:ring-[3px] focus-visible:outline-1"
+								onclick={() => toggleRow(row.id)}
+								aria-label={expandedRowId === row.id
+									? 'Collapse row details'
+									: 'Inspect row details'}
+								aria-expanded={expandedRowId === row.id}
+							>
+								{#if expandedRowId === row.id}
+									<ChevronUpIcon class="size-4" />
+								{:else}
+									<ChevronDownIcon class="size-4" />
+								{/if}
+							</button>
+						</td>
 						{#each row.getAllCells() as cell (cell.id)}
 							{@const value = formatCell(cell.getValue())}
 							<td
@@ -119,6 +168,24 @@
 								{value}
 							</td>
 						{/each}
+						{#if expandedRowId === row.id}
+							<td class="bg-muted/30 col-span-full border-b px-3 py-3">
+								<dl class="grid gap-x-4 gap-y-3 sm:grid-cols-[minmax(10rem,16rem)_minmax(0,1fr)]">
+									{#each result.columns as column, index (`${column.name}:${index}`)}
+										<dt class="text-muted-foreground min-w-0 text-xs">
+											<span class="block truncate font-medium text-foreground">{column.name}</span>
+											<span class="font-mono text-[10px]">{column.type}</span>
+										</dt>
+										<dd class="min-w-0">
+											<pre
+												class="bg-background/60 min-h-9 max-h-64 overflow-auto rounded-sm border p-2 font-mono text-xs whitespace-pre-wrap break-words">{formatDetailCell(
+													row.original[index]
+												)}</pre>
+										</dd>
+									{/each}
+								</dl>
+							</td>
+						{/if}
 					</tr>
 				{/if}
 			{/each}

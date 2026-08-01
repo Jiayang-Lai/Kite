@@ -46,8 +46,10 @@ throw new Error(`Smoke test failed for ${target.href}: ${lastError?.message ?? '
 function parseOptions(arguments_) {
 	const values = {
 		url: '',
-		attempts: 6,
-		delay: 5_000,
+		// Cloudflare Pages can acknowledge a deployment before every asset is reachable.
+		// Allow enough time for the production edge to converge before failing the release.
+		attempts: 12,
+		delay: 10_000,
 		timeout: 15_000
 	};
 

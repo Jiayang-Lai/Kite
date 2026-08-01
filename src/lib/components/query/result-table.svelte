@@ -178,7 +178,7 @@
 										</dt>
 										<dd class="min-w-0">
 											<pre
-												class="bg-background/60 min-h-9 max-h-64 overflow-auto rounded-sm border p-2 font-mono text-xs whitespace-pre-wrap break-words">{formatDetailCell(
+												class="bg-background/60 min-h-9 max-h-64 overflow-auto rounded-sm border p-2 font-mono text-xs whitespace-pre-wrap wrap-break-word">{formatDetailCell(
 													row.original[index]
 												)}</pre>
 										</dd>

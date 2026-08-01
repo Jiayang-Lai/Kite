@@ -72,6 +72,8 @@
 		"@duckdb/duckdb-wasm": "1.32.0",
 		"@kusto/language-service-next": "^12.4.0",
 		"@kusto/monaco-kusto": "^15.0.0",
+		"@tanstack/svelte-table": "^9.0.0-beta.65",
+		"@tanstack/svelte-virtual": "^3.13.35",
 		"avsc": "^5.7.9",
 		"azure-kusto-data": "^7.2.0",
 		"mode-watcher": "^1.1.0",

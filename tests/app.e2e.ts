@@ -90,6 +90,9 @@ test('translates KQL to DuckDB SQL and executes it in the browser', async ({ pag
 		timeout: 30_000
 	});
 	await expect(resultDrawer.getByRole('cell', { name: '12' })).toBeVisible();
+	await resultDrawer.getByRole('button', { name: 'Inspect row details' }).click();
+	await expect(resultDrawer.getByRole('button', { name: 'Collapse row details' })).toBeVisible();
+	await expect(resultDrawer.locator('pre').filter({ hasText: 'Texas' })).toBeVisible();
 });
 
 test('runs KQL through the emulated cluster and disables Kusto commands', async ({ page }) => {

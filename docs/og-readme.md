@@ -1,47 +1,24 @@
 ## Kusto backend
 
-The editor opens on its built-in **Mock cluster**, so every visitor can explore the schema and
-editor language features without a backend. **Emulated cluster** executes translated KQL through
-DuckDB-WASM in the browser. `Local Kusto` (`http://localhost:8080`) remains available for query
-execution against a local Kustainer.
+The editor opens on its built-in **Mock cluster**, so every visitor can explore the schema and editor language features without a backend. **Emulated cluster** executes translated KQL through DuckDB-WASM in the browser. `Local Kusto` (`http://localhost:8080`) remains available for query execution against a local Kustainer.
 
-The built-in **Mock cluster** is always available in the selector. It uses the local mock database
-catalog for schema browsing and editor language features; query execution is disabled for it.
+The built-in **Mock cluster** is always available in the selector. It uses the local mock database catalog for schema browsing and editor language features; query execution is disabled for it.
 
 ### Browser-emulated DuckDB
 
-The built-in `Emulated cluster` loads the .NET KQL-to-SQL bridge from
-`/kql-wasm/_framework/dotnet.js`, requests the DuckDB dialect, and executes the translated SQL in an
-isolated DuckDB-WASM worker. Its live catalog supplies databases, tables, and columns to Explorer
-and Monaco.
+The built-in `Emulated cluster` loads the .NET KQL-to-SQL bridge from `/kql-wasm/_framework/dotnet.js`, requests the DuckDB dialect, and executes the translated SQL in an isolated DuckDB-WASM worker. Its live catalog supplies databases, tables, and columns to Explorer and Monaco.
 
-Structured Admin dialogs create and drop attached databases, create and alter tables, and update
-table comments. Custom emulated connections can use ephemeral memory or persistent browser OPFS;
-the built-in connection remains ephemeral. Kusto dot commands are unavailable because the emulated
-connection does not expose a Kusto management endpoint.
+Structured Admin dialogs create and drop attached databases, create and alter tables, and update table comments. Custom emulated connections can use ephemeral memory or persistent browser OPFS; the built-in connection remains ephemeral. Kusto dot commands are unavailable because the emulated connection does not expose a Kusto management endpoint.
 
-The ingestion page accepts inline CSV, browser-selected CSV/Parquet, and remote HTTP(S)
-CSV/Parquet. Appends run in DuckDB transactions and temporary registered files are removed after
-execution. Persistent custom connections checkpoint committed changes and reopen their OPFS file
-after reload; their logical databases are schemas within one cluster file. Ephemeral connections
-clear their data when the tab releases them. See
-[`docs/emulated-cluster.md`](emulated-cluster.md) for setup and limitations.
+The ingestion page accepts inline CSV, browser-selected CSV/Parquet, and remote HTTP(S) CSV/Parquet. Appends run in DuckDB transactions and temporary registered files are removed after execution. Persistent custom connections checkpoint committed changes and reopen their OPFS file after reload; their logical databases are schemas within one cluster file. Ephemeral connections clear their data when the tab releases them. See [`docs/emulated-cluster.md`](emulated-cluster.md) for setup and limitations.
 
-The endpoint must allow the app origin through CORS. On startup, Kite discovers databases and
-their schemas with read-only management commands. Queries entered in Monaco are sent only to the
-Kusto query endpoint, and can be run with the **Run** button or `Ctrl/Cmd+Enter`.
+The endpoint must allow the app origin through CORS. On startup, Kite discovers databases and their schemas with read-only management commands. Queries entered in Monaco are sent only to the Kusto query endpoint, and can be run with the **Run** button or `Ctrl/Cmd+Enter`.
 
 ### Local Kustainer ingestion
 
-The `Local Kusto` connection supports direct ingestion into existing tables. Pasted CSV and
-browser-selected CSV files are sent with `.ingest inline` management commands. Browser files are
-preflighted as UTF-8 CSV and split at complete record boundaries into commands no larger than 512
-KiB. The default browser-file limit is 10 MiB. A header row can be removed once before chunking, and
-each chunk receives a stable `ingest-by` tag so an interrupted chunk can be retried without knowingly
-duplicating it.
+The `Local Kusto` connection supports direct ingestion into existing tables. Pasted CSV and browser-selected CSV files are sent with `.ingest inline` management commands. Browser files are preflighted as UTF-8 CSV and split at complete record boundaries into commands no larger than 512 KiB. The default browser-file limit is 10 MiB. A header row can be removed once before chunking, and each chunk receives a stable `ingest-by` tag so an interrupted chunk can be retried without knowingly duplicating it.
 
-Mounted-file ingestion expects Parquet or CSV files beneath `/kustodata/raw` inside the Kustainer
-container. Mount a host staging directory at that location, for example:
+Mounted-file ingestion expects Parquet or CSV files beneath `/kustodata/raw` inside the Kustainer container. Mount a host staging directory at that location, for example:
 
 ```yaml
 services:
@@ -55,11 +32,7 @@ services:
       - ACCEPT_EULA=Y
 ```
 
-Mounted-file paths are relative to `/kustodata/raw`; Kite does not copy browser files into that
-directory. Inline-file contents remain in the browser and are sent sequentially through the Kusto
-management endpoint. Kustainer has no authentication or encrypted connection, so keep it bound to
-the local machine. Direct ingestion is intended for local development and does not provide managed
-queues, automatic retries, rollback, or durable job history.
+Mounted-file paths are relative to `/kustodata/raw`; Kite does not copy browser files into that directory. Inline-file contents remain in the browser and are sent sequentially through the Kusto management endpoint. Kustainer has no authentication or encrypted connection, so keep it bound to the local machine. Direct ingestion is intended for local development and does not provide managed queues, automatic retries, rollback, or durable job history.
 
 ## Research Note: Kusto Monaco Documentation
 

@@ -282,7 +282,8 @@ test('creates DuckDB databases and tables from emulated cluster administration',
 	await page.getByRole('option', { name: 'Analytics' }).click();
 	await page.locator('#ingestion-table').click();
 	await page.getByRole('option', { name: 'Events' }).click();
-	await page.getByLabel('CSV rows').fill('Texas,12\nOhio,8');
+	await page.getByLabel('CSV rows').fill('State,Count\nTexas,12\nOhio,8');
+	await page.locator('#inline-data-has-header').check();
 	await page.getByRole('button', { name: 'Review ingestion' }).click();
 	let ingestionDialog = page.getByRole('dialog', { name: 'Ingest data into Events?' });
 	await ingestionDialog.getByLabel('Type RUN to enable ingestion').fill('RUN');
@@ -293,12 +294,17 @@ test('creates DuckDB databases and tables from emulated cluster administration',
 	await page.locator('#inline-file-input').setInputFiles({
 		name: 'more-events.csv',
 		mimeType: 'text/csv',
-		buffer: Buffer.from('State,Count\nNevada,3\n')
+		buffer: Buffer.from('Count,State\nNevada,3\n')
 	});
 	const reviewIngestionButton = page.getByRole('button', { name: 'Review ingestion' });
 	await expect(reviewIngestionButton).toBeEnabled();
+	await expect(ingestionWorkspace.getByText('Source shape differs from the target')).toBeVisible();
+	await expect(ingestionWorkspace.getByText('Source header: Count')).toBeVisible();
 	await reviewIngestionButton.click();
 	ingestionDialog = page.getByRole('dialog', { name: 'Ingest data into Events?' });
+	await expect(
+		ingestionDialog.getByText('Review source-shape warnings before continuing')
+	).toBeVisible();
 	await ingestionDialog.getByLabel('Type RUN to enable ingestion').fill('RUN');
 	await ingestionDialog.getByRole('button', { name: 'Ingest data' }).click();
 	await expect(page.getByRole('cell', { name: '1', exact: true })).toBeVisible();

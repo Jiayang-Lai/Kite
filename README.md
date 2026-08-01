@@ -4,31 +4,23 @@
   <img src="docs/.pics/kite.svg" alt="Kite application icon" width="128" height="128">
 </p>
 
-[![Latest release](https://img.shields.io/github/v/release/Jiayang-Lai/Kite?display_name=tag&sort=semver)](https://github.com/Jiayang-Lai/Kite/releases/latest)
-[![Main UAT](https://github.com/Jiayang-Lai/Kite/actions/workflows/main-uat.yml/badge.svg?branch=main&event=push)](https://github.com/Jiayang-Lai/Kite/actions/workflows/main-uat.yml)
-[![Website](https://img.shields.io/website?url=https%3A%2F%2Fkite.humblehamster.com&label=website)](https://kite.humblehamster.com/)
-[![License: MIT](https://img.shields.io/github/license/Jiayang-Lai/Kite)](LICENSE)
-[![Node.js >=22](https://img.shields.io/badge/Node.js-%3E%3D22-339933?logo=nodedotjs&logoColor=white)](package.json)
+[![Latest release](https://img.shields.io/github/v/release/Jiayang-Lai/Kite?display_name=tag&sort=semver)](https://github.com/Jiayang-Lai/Kite/releases/latest) [![Main UAT](https://github.com/Jiayang-Lai/Kite/actions/workflows/main-uat.yml/badge.svg?branch=main&event=push)](https://github.com/Jiayang-Lai/Kite/actions/workflows/main-uat.yml) [![Website](https://img.shields.io/website?url=https%3A%2F%2Fkite.humblehamster.com&label=website)](https://kite.humblehamster.com/) [![License: MIT](https://img.shields.io/github/license/Jiayang-Lai/Kite)](LICENSE) [![Node.js >=22](https://img.shields.io/badge/Node.js-%3E%3D22-339933?logo=nodedotjs&logoColor=white)](package.json)
 
 A local-first [Kusto](https://learn.microsoft.com/kusto/) application for exploring data, writing KQL, and operating clusters without any cloud-hosted infrastructure — including a browser-based Kusto emulation mode that runs KQL with no Kusto server to install.
 
 [Try Kite online](https://kite.humblehamster.com/)
 
-> [!NOTE]
-> Kite is currently in alpha.
+> [!NOTE] Kite is currently in alpha.
 
-> [!WARNING]
-> Kite is evolving rapidly. Always maintain a separate backup of your Kustainer data and saved queries, especially before updating or reconfiguring the application. Do not rely on Kite or its local storage as the only copy of important data.
+> [!WARNING] Kite is evolving rapidly. Always maintain a separate backup of your Kustainer data and saved queries, especially before updating or reconfiguring the application. Do not rely on Kite or its local storage as the only copy of important data.
 
-> [!IMPORTANT]
-> Kite currently supports three connection modes:
+> [!IMPORTANT] Kite currently supports three connection modes:
 >
 > - **Mock** provides schema browsing and editor language features, but cannot execute queries.
 > - **Emulated** translates KQL to SQL and executes it with DuckDB-WASM entirely in the browser.
 > - **Remote** can execute queries, but currently supports only a Kustainer instance running on the local machine. Hosted Azure Data Explorer and other remote Kusto clusters are not yet supported.
 
-> [!TIP]
-> **Run KQL entirely in your browser.** Select **Emulated cluster** to translate KQL to DuckDB SQL and execute it in DuckDB-WASM. It is Kite's fastest way to get from an empty browser tab to a working local KQL workspace—no Kustainer, container, or cloud account required.
+> [!TIP] **Run KQL entirely in your browser.** Select **Emulated cluster** to translate KQL to DuckDB SQL and execute it in DuckDB-WASM. It is Kite's fastest way to get from an empty browser tab to a working local KQL workspace—no Kustainer, container, or cloud account required.
 
 ## About
 
@@ -36,8 +28,7 @@ Kite makes the Kusto workflow available entirely on your own machine. Its browse
 
 Kite brings KQL authoring, schema exploration, and cluster administration into one interface. It includes a Monaco-powered query editor with Kusto language support, a built-in mock catalog, and an in-browser DuckDB backend powered by the [KQL-to-SQL translator](https://github.com/Jiayang-Lai/kql-to-sql).
 
-> [!NOTE]
-> Kite's KQL-to-SQL translator is a fork of work by [saoc90](https://github.com/saoc90). Thank you for making the original project available.
+> [!NOTE] Kite's KQL-to-SQL translator is a fork of work by [saoc90](https://github.com/saoc90). Thank you for making the original project available.
 
 ### Browser-based Kusto emulation
 
@@ -98,28 +89,17 @@ Select **Emulated cluster** from the cluster selector to run KQL without a Kusto
 3. Executes the SQL in an isolated DuckDB-WASM worker.
 4. Displays the result through the same result drawer used for Kusto queries.
 
-Use **Admin → Databases & tables** to create databases and tables or update table schemas. Use
-**Admin → Data ingestion** to append inline CSV, a local CSV/Parquet file, or a remote CSV/Parquet
-file. Kusto dot commands are intentionally unavailable for emulated clusters.
+Use **Admin → Databases & tables** to create databases and tables or update table schemas. Use **Admin → Data ingestion** to append inline CSV, a local CSV/Parquet file, or a remote CSV/Parquet file. Kusto dot commands are intentionally unavailable for emulated clusters.
 
-Custom emulated clusters use **Persistent browser storage** by default, storing their DuckDB cluster
-file in OPFS so databases, tables, and ingested rows survive cluster switches and reloads.
-Persistent data is private to the current site and browser profile; removing that connection
-deletes its local files. Persistent logical databases are isolated as DuckDB schemas inside one
-cluster file. The built-in emulated cluster and custom clusters created with **Ephemeral memory**
-instead keep databases in WASM memory. Switching clusters, leaving the workspace, or reloading
-releases the worker and clears that ephemeral data.
+Custom emulated clusters use **Persistent browser storage** by default, storing their DuckDB cluster file in OPFS so databases, tables, and ingested rows survive cluster switches and reloads. Persistent data is private to the current site and browser profile; removing that connection deletes its local files. Persistent logical databases are isolated as DuckDB schemas inside one cluster file. The built-in emulated cluster and custom clusters created with **Ephemeral memory** instead keep databases in WASM memory. Switching clusters, leaving the workspace, or reloading releases the worker and clears that ephemeral data.
 
-Only the selected emulated connection owns a DuckDB worker and memory allocation. Persistence does
-not remove the selected cluster's runtime memory requirements.
+Only the selected emulated connection owns a DuckDB worker and memory allocation. Persistence does not remove the selected cluster's runtime memory requirements.
 
-See [Browser-emulated cluster](docs/emulated-cluster.md) for the capability matrix, ingestion
-behavior, memory model, and troubleshooting notes.
+See [Browser-emulated cluster](docs/emulated-cluster.md) for the capability matrix, ingestion behavior, memory model, and troubleshooting notes.
 
 ### Build the KQL translator WASM
 
-The translator source is pinned as a Git submodule and its generated output remains ignored by Git.
-Initialize the submodule and build the bridge before running a production build:
+The translator source is pinned as a Git submodule and its generated output remains ignored by Git. Initialize the submodule and build the bridge before running a production build:
 
 ```bash
 git submodule update --init --recursive
@@ -127,9 +107,7 @@ dotnet workload restore vendor/kql-to-sql/src/KqlWasmBridge/KqlWasmBridge.csproj
 npm run build:kql-wasm
 ```
 
-`npm run build` verifies that `static/kql-wasm/_framework/dotnet.js` and its provenance manifest
-are present before producing a deployable application. `npm run dev` remains available for Mock and
-remote clusters without this optional local artifact.
+`npm run build` verifies that `static/kql-wasm/_framework/dotnet.js` and its provenance manifest are present before producing a deployable application. `npm run dev` remains available for Mock and remote clusters without this optional local artifact.
 
 ### Connect to local Kusto
 

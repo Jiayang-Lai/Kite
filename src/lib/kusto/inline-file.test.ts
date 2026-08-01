@@ -4,6 +4,7 @@ import {
 	hashInlineCsvChunk,
 	planInlineCsvFile,
 	readInlineCsvChunk,
+	readInlineCsvPayload,
 	type InlineCsvPlanOptions
 } from './inline-file';
 
@@ -59,9 +60,21 @@ describe('inline CSV file planning', () => {
 		});
 
 		expect(plan.header).toBe('name,value');
+		expect(plan.headerColumns).toEqual(['name', 'value']);
 		expect(plan.headerColumnCount).toBe(2);
 		expect(plan.totalRecords).toBe(2);
 		expect(await readInlineCsvChunk(file, plan.chunks[0])).toBe('α,1\nβ,2\n');
+		expect(await readInlineCsvPayload(file, plan)).toBe('α,1\nβ,2\n');
+	});
+
+	it('parses quoted CSV header fields', async () => {
+		const plan = await planInlineCsvFile(new Blob(['"device,name",value\nrouter,1\n']), {
+			...DEFAULT_OPTIONS,
+			hasHeader: true,
+			maxPayloadBytes: 64
+		});
+
+		expect(plan.headerColumns).toEqual(['device,name', 'value']);
 	});
 
 	it('reports inconsistent column counts', async () => {

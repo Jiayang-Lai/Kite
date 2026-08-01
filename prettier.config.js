@@ -4,8 +4,12 @@ const config = {
 	singleQuote: true,
 	trailingComma: 'none',
 	printWidth: 100,
+	proseWrap: 'never',
 	plugins: ['prettier-plugin-svelte', 'prettier-plugin-tailwindcss'],
-	overrides: [{ files: '*.svelte', options: { parser: 'svelte' } }],
+	overrides: [
+		{ files: '*.svelte', options: { parser: 'svelte' } },
+		{ files: '.github/workflows/*.{yml,yaml}', options: { proseWrap: 'preserve' } }
+	],
 	tailwindStylesheet: './src/routes/layout.css'
 };
 

@@ -10,17 +10,25 @@ A local-first [Kusto](https://learn.microsoft.com/kusto/) application for explor
 
 [Try Kite online](https://kite.humblehamster.com/)
 
-> [!NOTE] Kite is currently in alpha.
+<!-- prettier-ignore -->
+> [!NOTE]
+> Kite is currently in alpha.
 
-> [!WARNING] Kite is evolving rapidly. Always maintain a separate backup of your Kustainer data and saved queries, especially before updating or reconfiguring the application. Do not rely on Kite or its local storage as the only copy of important data.
+<!-- prettier-ignore -->
+> [!WARNING]
+> Kite is evolving rapidly. Always maintain a separate backup of your Kustainer data and saved queries, especially before updating or reconfiguring the application. Do not rely on Kite or its local storage as the only copy of important data.
 
-> [!IMPORTANT] Kite currently supports three connection modes:
+<!-- prettier-ignore -->
+> [!IMPORTANT]
+> Kite currently supports three connection modes:
 >
 > - **Mock** provides schema browsing and editor language features, but cannot execute queries.
 > - **Emulated** translates KQL to SQL and executes it with DuckDB-WASM entirely in the browser.
 > - **Remote** can execute queries, but currently supports only a Kustainer instance running on the local machine. Hosted Azure Data Explorer and other remote Kusto clusters are not yet supported.
 
-> [!TIP] **Run KQL entirely in your browser.** Select **Emulated cluster** to translate KQL to DuckDB SQL and execute it in DuckDB-WASM. It is Kite's fastest way to get from an empty browser tab to a working local KQL workspace—no Kustainer, container, or cloud account required.
+<!-- prettier-ignore -->
+> [!TIP]
+> **Run KQL entirely in your browser.** Select **Emulated cluster** to translate KQL to DuckDB SQL and execute it in DuckDB-WASM. It is Kite's fastest way to get from an empty browser tab to a working local KQL workspace—no Kustainer, container, or cloud account required.
 
 ## About
 
@@ -28,7 +36,9 @@ Kite makes the Kusto workflow available entirely on your own machine. Its browse
 
 Kite brings KQL authoring, schema exploration, and cluster administration into one interface. It includes a Monaco-powered query editor with Kusto language support, a built-in mock catalog, and an in-browser DuckDB backend powered by the [KQL-to-SQL translator](https://github.com/Jiayang-Lai/kql-to-sql).
 
-> [!NOTE] Kite's KQL-to-SQL translator is a fork of work by [saoc90](https://github.com/saoc90). Thank you for making the original project available.
+<!-- prettier-ignore -->
+> [!NOTE]
+> Kite's KQL-to-SQL translator is a fork of work by [saoc90](https://github.com/saoc90). Thank you for making the original project available.
 
 ### Browser-based Kusto emulation
 

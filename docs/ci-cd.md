@@ -360,7 +360,7 @@ The GitHub `preview` environment admits deployments from `main` because the priv
 
 The Cloudflare token should be limited to the account and Pages permissions required for deployment. Production should require authorized reviewers and should prevent self-approval when separation of duties is required. RC and production tags should be protected by a tag ruleset that restricts creation, updates, and deletion.
 
-The Terraform ruleset requires `Validate` from the `Pull Request` workflow for `main`, allows only squash merging, and prohibits direct pushes, force pushes, and deletion. The production environment requires an authorized reviewer. The solo-maintainer default permits the repository owner to self-approve; enable prevention of self-review when a second maintainer is available.
+The Terraform ruleset requires both `Validate` and `Validate container image` from the `Pull Request` workflow for `main`, allows only squash merging, and prohibits direct pushes, force pushes, and deletion. The production environment requires an authorized reviewer. The solo-maintainer default permits the repository owner to self-approve; enable prevention of self-review when a second maintainer is available.
 
 The GitHub Terraform root deliberately does not handle the Cloudflare token. The separate `infra/cloudflare` root adopts the existing Pages project, generates an account-owned token with only `Pages Write`, and synchronizes it to all four GitHub environment secrets. That generated credential necessarily remains in the encrypted Cloudflare Terraform state. See `infra/github/README.md` and `infra/cloudflare/README.md` for state, authentication, first-apply, rotation, and team-hardening instructions.
 

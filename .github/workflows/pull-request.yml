@@ -108,7 +108,7 @@ jobs:
 
   container:
     name: Validate container image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
@@ -131,16 +131,16 @@ jobs:
         run: npm run test:e2e:install
 
       - name: Build the container image
-        run: docker build -t kite:ci .
+        run: podman build --format docker --tag kite:ci .
 
       - name: Validate the image user and bundled assets
         run: |
-          image_user="$(docker image inspect --format '{{.Config.User}}' kite:ci)"
+          image_user="$(podman image inspect --format '{{.Config.User}}' kite:ci)"
           test -n "$image_user" && test "$image_user" != "0" && test "$image_user" != "root" || {
             echo "Container image must declare a non-root user; found '${image_user:-unset}'" >&2
             exit 1
           }
-          docker run --rm --entrypoint /bin/sh kite:ci -c '
+          podman run --rm --entrypoint /bin/sh kite:ci -c '
             test "$(id -u)" -ne 0 &&
             test -n "$(find /usr/share/nginx/html/_app/immutable/assets -type f -name "duckdb-eh.*.wasm" -print -quit)" &&
             test -n "$(find /usr/share/nginx/html/_app/immutable/assets -type f -name "duckdb-mvp.*.wasm" -print -quit)" &&
@@ -149,7 +149,7 @@ jobs:
           '
 
       - name: Start the container
-        run: docker run --detach --name kite-container-ci --publish 127.0.0.1:3000:8080 kite:ci
+        run: podman run --detach --name kite-container-ci --publish 127.0.0.1:3000:8080 kite:ci
 
       - name: Wait for the container to become ready
         run: >-
@@ -178,5 +178,5 @@ jobs:
       - name: Stop the container
         if: always()
         run: |
-          docker logs kite-container-ci || true
-          docker rm --force kite-container-ci || true
+          podman logs kite-container-ci || true
+          podman rm --force kite-container-ci || true

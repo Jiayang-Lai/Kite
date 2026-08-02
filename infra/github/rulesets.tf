@@ -40,6 +40,10 @@ resource "github_repository_ruleset" "protect_main" {
       required_check {
         context = "Validate"
       }
+
+      required_check {
+        context = "Validate container image"
+      }
     }
   }
 }

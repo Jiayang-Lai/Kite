@@ -134,6 +134,15 @@ docker build -t kite:local .
 docker run --rm -p 3000:8080 kite:local
 ```
 
+Tagged releases are also published to GitHub Container Registry:
+
+```bash
+podman pull ghcr.io/jiayang-lai/kite:latest
+podman run --rm -p 3000:8080 ghcr.io/jiayang-lai/kite:latest
+```
+
+Use a version tag such as `v0.0.4` instead of `latest` to pin a release.
+
 With Podman (including rootless Podman):
 
 ```bash

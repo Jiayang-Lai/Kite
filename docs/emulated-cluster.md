@@ -139,7 +139,7 @@ Use a remote Kustainer connection when shared/server-managed durability, Kusto m
 - `src/lib/kql/wasm-translator.ts` loads the .NET bridge and requests the DuckDB dialect.
 - `src/lib/duckdb/query-client.ts` owns DuckDB bundles, workers, sessions, registered files, and OPFS catalogs, checkpoints, and result adaptation.
 - `src/lib/emulation/storage.ts` owns persisted storage descriptors and runtime session registration.
-- `src/lib/emulation/emulation-cluster.ts` adapts KQL execution and the DuckDB catalog.
+- `src/lib/emulation/cluster.ts` adapts KQL execution and the DuckDB catalog.
 - `src/lib/emulation/schema-management.ts` implements structured database and table DDL.
 - `src/lib/emulation/data-ingestion.ts` validates sources and performs atomic append operations.
 - `src/lib/components/admin/data-ingestion-workspace.svelte` provides the shared Kustainer/DuckDB ingestion UI.

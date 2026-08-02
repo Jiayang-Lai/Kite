@@ -101,8 +101,8 @@
 
 	const INLINE_DATA_MAX_LENGTH = 100_000;
 	const INLINE_DATA_SCAN_DEBOUNCE_MS = 300;
-	const EMULATED_MAX_FILE_BYTES = 512 * 1024 * 1024;
-	const EMULATED_SCAN_CHUNK_BYTES = 16 * 1024 * 1024;
+	const EMULATION_MAX_FILE_BYTES = 512 * 1024 * 1024;
+	const EMULATION_SCAN_CHUNK_BYTES = 16 * 1024 * 1024;
 	let sourceMode = $state<SourceMode>('inline');
 	let inlineData = $state('');
 	let inlineDataHasHeader = $state(false);
@@ -441,9 +441,9 @@
 				);
 			}
 			if (!file.size) throw new Error('The selected file is empty.');
-			if (isEmulatedCluster && file.size > EMULATED_MAX_FILE_BYTES) {
+			if (isEmulatedCluster && file.size > EMULATION_MAX_FILE_BYTES) {
 				throw new Error(
-					`The selected file is ${formatBytes(file.size)}; browser ingestion is limited to ${formatBytes(EMULATED_MAX_FILE_BYTES)}.`
+					`The selected file is ${formatBytes(file.size)}; browser ingestion is limited to ${formatBytes(EMULATION_MAX_FILE_BYTES)}.`
 				);
 			}
 			if (format === 'parquet') {
@@ -453,11 +453,11 @@
 			}
 			const maxPayloadBytes = getInlineFilePayloadBudget(
 				table,
-				isEmulatedCluster ? EMULATED_SCAN_CHUNK_BYTES : (ingestion?.maxInlineCommandBytes ?? 0)
+				isEmulatedCluster ? EMULATION_SCAN_CHUNK_BYTES : (ingestion?.maxInlineCommandBytes ?? 0)
 			);
 			const plan = await planInlineCsvFile(file, {
 				maxFileBytes: isEmulatedCluster
-					? EMULATED_MAX_FILE_BYTES
+					? EMULATION_MAX_FILE_BYTES
 					: (ingestion?.maxInlineFileBytes ?? 0),
 				maxPayloadBytes,
 				hasHeader: inlineFileHasHeader,
@@ -1003,7 +1003,7 @@
 										<p class="text-muted-foreground text-xs">
 											{#if isEmulatedCluster}
 												DuckDB reads the selected file directly in this browser tab. Limit:
-												{formatBytes(EMULATED_MAX_FILE_BYTES)}.
+											{formatBytes(EMULATION_MAX_FILE_BYTES)}.
 											{:else if ingestion}
 												The file stays in the browser and is sent sequentially as record-safe inline
 												commands. Limit: {formatBytes(ingestion.maxInlineFileBytes)}.

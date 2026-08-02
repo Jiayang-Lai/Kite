@@ -1,5 +1,5 @@
 import { startDuckDbFileQuery, type DuckDbRegisteredFileSource } from '$lib/duckdb/lazy-client';
-import { loadEmulatedSchema, quoteDuckDbIdentifier } from '$lib/emulation/emulation-cluster';
+import { loadEmulatedSchema, quoteDuckDbIdentifier } from '$lib/emulation/cluster';
 import type { QueryExecution, QueryResult } from '$lib/types/query-result';
 
 export type EmulatedIngestionFormat = 'csv' | 'parquet';

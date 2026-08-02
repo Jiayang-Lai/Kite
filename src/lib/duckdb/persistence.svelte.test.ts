@@ -12,7 +12,7 @@ import {
 	registerEmulatedStorage,
 	unregisterEmulatedStorage
 } from '$lib/emulation/storage';
-import { loadEmulatedSchema } from '$lib/emulation/emulation-cluster';
+import { loadEmulatedSchema } from '$lib/emulation/cluster';
 
 const sessions = new Map<string, string>();
 

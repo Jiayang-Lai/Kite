@@ -150,6 +150,7 @@ If you are interested in more self-hosted Kusto examples and a Docker-based loca
 | ----------------------------- | ----------------------------------------------------- |
 | `npm run dev`                 | Start the development server                          |
 | `npm run build`               | Generate Kusto docs and create a production build     |
+| `npm run build:container`     | Create the static production build for a container    |
 | `npm run preview`             | Preview the production build locally                  |
 | `npm run check`               | Run Svelte and TypeScript checks                      |
 | `npm run lint`                | Check formatting with Prettier                        |

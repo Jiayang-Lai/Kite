@@ -2,9 +2,31 @@ import tailwindcss from '@tailwindcss/vite';
 import { resolve } from 'node:path';
 import { defineConfig } from 'vitest/config';
 import { playwright } from '@vitest/browser-playwright';
-import adapter from '@sveltejs/adapter-cloudflare';
+import cloudflareAdapter from '@sveltejs/adapter-cloudflare';
+import staticAdapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
+
+const BUILD_TARGETS = ['cloudflare', 'container'] as const;
+type BuildTarget = (typeof BUILD_TARGETS)[number];
+
+function getBuildTarget(): BuildTarget {
+	const target = process.env.KITE_BUILD_TARGET ?? 'cloudflare';
+	if ((BUILD_TARGETS as readonly string[]).includes(target)) return target as BuildTarget;
+
+	throw new Error(
+		`Unsupported KITE_BUILD_TARGET ${JSON.stringify(target)}. Use one of: ${BUILD_TARGETS.join(', ')}.`
+	);
+}
+
+const buildTarget = getBuildTarget();
+const kitAdapter =
+	buildTarget === 'container'
+		? staticAdapter({
+				pages: 'build',
+				assets: 'build'
+			})
+		: cloudflareAdapter();
 
 const monacoKustoContributionPath =
 	'/node_modules/@kusto/monaco-kusto/release/esm/monaco.contribution.js';
@@ -45,8 +67,9 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 
-			// Keep this aligned with Wrangler's Pages output directory.
-			adapter: adapter()
+			// Cloudflare remains the default deployment target. Container builds emit
+			// static files for the web server added with the Docker target.
+			adapter: kitAdapter
 		}),
 		// A browser has no filesystem; Bridge.js only needs this import to resolve.
 		nodePolyfills({

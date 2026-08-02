@@ -52,6 +52,14 @@ export default defineConfig({
 		dedupe: ['monaco-editor'],
 		alias: [
 			{
+				find: '#kite-duckdb-bundles',
+				replacement: resolve(
+					buildTarget === 'container'
+						? 'src/lib/duckdb/duckdb-bundles.local.ts'
+						: 'src/lib/duckdb/duckdb-bundles.cdn.ts'
+				)
+			},
+			{
 				find: /^@kusto\/monaco-kusto$/,
 				replacement: resolve('src/lib/kusto/monaco-kusto.ts')
 			}

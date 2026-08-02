@@ -1,6 +1,5 @@
 import * as duckdb from '@duckdb/duckdb-wasm';
-import duckdbEhWorker from '@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url';
-import duckdbMvpWorker from '@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url';
+import DUCKDB_BUNDLES from '#kite-duckdb-bundles';
 
 import { getEmulatedStorage, type EmulatedStorage } from '$lib/emulation/storage';
 import type { DuckDbCatalogDatabase, DuckDbCatalogSchema, DuckDbQueryResult } from './types';
@@ -8,24 +7,6 @@ import type { QueryExecution, QueryResult } from '$lib/types/query-result';
 import { getPersistentDuckDbFilePrefix } from './storage';
 
 export { deletePersistentDuckDbStorage, getPersistentDuckDbFilePrefix } from './storage';
-
-// DuckDB pins these CDN URLs to this package's exact version. The runtime WASM files are larger
-// than Cloudflare Pages' 25 MiB per-file limit, while the workers remain same-origin Kite assets.
-const DUCKDB_CDN_BUNDLES = duckdb.getJsDelivrBundles();
-const DUCKDB_BUNDLES: duckdb.DuckDBBundles = {
-	mvp: {
-		mainModule: DUCKDB_CDN_BUNDLES.mvp.mainModule,
-		mainWorker: duckdbMvpWorker
-	},
-	...(DUCKDB_CDN_BUNDLES.eh
-		? {
-				eh: {
-					mainModule: DUCKDB_CDN_BUNDLES.eh.mainModule,
-					mainWorker: duckdbEhWorker
-				}
-			}
-		: {})
-};
 
 const CATALOG_SQL = `
 	SELECT

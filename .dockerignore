@@ -17,6 +17,5 @@ sbom.json
 
 infra
 static/kql-wasm
-static/kusto-docs
 vendor/**/bin
 vendor/**/obj

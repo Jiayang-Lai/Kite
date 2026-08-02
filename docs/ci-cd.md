@@ -61,6 +61,8 @@ CI validates a proposed change without deploying it to UAT or production. Pull r
 
 The exact checks and commands will be defined with the workflow implementation. Required checks must pass before a pull request can be merged.
 
+The Pull Request workflow prepares and caches `static/kusto-docs` before starting its Cloudflare and container validation jobs. Both build targets restore the same cache and then run in parallel, avoiding duplicate documentation downloads while preserving clean-checkout behavior when the cache is empty. The key combines the UTC ISO week and generator hash, so Main UAT and release container builds reuse documentation within a week while refreshing it weekly or whenever the generator changes.
+
 ### KQL translator WebAssembly artifact
 
 The browser-emulated cluster depends on the .NET WebAssembly bridge from the source-pinned [`Jiayang-Lai/kql-to-sql`](https://github.com/Jiayang-Lai/kql-to-sql) Git submodule. Kite publishes the resulting framework at `static/kql-wasm/_framework`; generated files remain ignored by Git.

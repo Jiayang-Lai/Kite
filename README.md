@@ -152,7 +152,7 @@ podman run --rm -p 3000:8080 kite:local
 
 The Docker image format keeps the Dockerfile health check; Podman's default OCI image format does not support that metadata.
 
-The container build compiles the translator directly from `vendor/kql-to-sql`; it performs no Git operations. It downloads application dependencies and Kusto documentation, so the build still requires network access. The final image contains only the generated static application and an unprivileged nginx server.
+The container build compiles the translator directly from `vendor/kql-to-sql`; it performs no Git operations. It downloads application dependencies and any Kusto documentation missing from `static/kusto-docs`, so a clean build still requires network access. CI restores that directory from its shared Kusto documentation cache before building the image. The final image contains only the generated static application and an unprivileged nginx server.
 
 Open <http://localhost:3000>. The container listens on port `8080`; mapping it to host port `3000` leaves `localhost:8080` available for Kite's built-in local Kustainer connection. Use `/healthz` for container health checks.
 

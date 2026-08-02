@@ -1,5 +1,17 @@
 import { expect, test, type Page } from '@playwright/test';
 
+const APPLICATION_ROUTES = [
+	'/',
+	'/admin',
+	'/admin/commands',
+	'/admin/databases',
+	'/admin/ingestion',
+	'/explorer',
+	'/explorer/query',
+	'/explorer/query/saved',
+	'/labs/kql-to-sql'
+];
+
 function countDuckDbWorkers(page: Page) {
 	return page.workers().filter((worker) => worker.url().includes('duckdb-browser-')).length;
 }
@@ -44,6 +56,15 @@ test('serves the production build and opens the query explorer', async ({ page }
 	await expectDuckDbWorkerCount(page, 0);
 });
 
+test('serves every application route after a direct browser reload', async ({ page }) => {
+	for (const route of APPLICATION_ROUTES) {
+		const navigation = await page.goto(route);
+		expect(navigation?.ok(), `Direct navigation to ${route} must succeed`).toBe(true);
+		const reload = await page.reload();
+		expect(reload?.ok(), `Reloading ${route} must succeed`).toBe(true);
+	}
+});
+
 test('places the cluster switcher below its trigger on smaller displays', async ({ page }) => {
 	await page.setViewportSize({ width: 600, height: 800 });
 	await page.goto('/explorer/query');
@@ -70,6 +91,24 @@ test('shows cluster switch failures from the Explorer overview', async ({ page }
 });
 
 test('translates KQL to DuckDB SQL and executes it in the browser', async ({ page }) => {
+	const forbiddenRequestHost = process.env.KITE_E2E_FORBID_REQUEST_HOST;
+	const requireLocalDuckDbAssets = process.env.KITE_E2E_REQUIRE_LOCAL_DUCKDB_ASSETS === 'true';
+	const forbiddenRequestUrls: string[] = [];
+	const duckDbWorkerUrls = new Set<string>();
+	const duckDbWasmUrls = new Set<string>();
+	page.context().on('request', (request) => {
+		const requestUrl = new URL(request.url());
+		if (forbiddenRequestHost && requestUrl.hostname === forbiddenRequestHost) {
+			forbiddenRequestUrls.push(request.url());
+		}
+		if (/\/duckdb-browser-(?:eh|mvp)\.worker\.[^/]+\.js$/.test(requestUrl.pathname)) {
+			duckDbWorkerUrls.add(request.url());
+		}
+		if (/\/duckdb-(?:eh|mvp)\.[^/]+\.wasm$/.test(requestUrl.pathname)) {
+			duckDbWasmUrls.add(request.url());
+		}
+	});
+
 	const wasmLoader = await page.request.get('/kql-wasm/_framework/dotnet.js');
 	expect(wasmLoader.ok()).toBe(true);
 	await page.goto('/labs/kql-to-sql');
@@ -93,6 +132,24 @@ test('translates KQL to DuckDB SQL and executes it in the browser', async ({ pag
 	await resultDrawer.getByRole('button', { name: 'Inspect row details' }).click();
 	await expect(resultDrawer.getByRole('button', { name: 'Collapse row details' })).toBeVisible();
 	await expect(resultDrawer.locator('pre').filter({ hasText: 'Texas' })).toBeVisible();
+	expect(
+		forbiddenRequestUrls,
+		`Requests to ${forbiddenRequestHost ?? 'the forbidden host'} are not allowed`
+	).toEqual([]);
+	if (requireLocalDuckDbAssets) {
+		const applicationOrigin = new URL(page.url()).origin;
+		expect(duckDbWorkerUrls.size, 'The browser must request a DuckDB worker').toBeGreaterThan(0);
+		expect(
+			duckDbWasmUrls.size,
+			'The browser must request a DuckDB runtime WASM file'
+		).toBeGreaterThan(0);
+		expect(
+			[...duckDbWorkerUrls, ...duckDbWasmUrls].every(
+				(assetUrl) => new URL(assetUrl).origin === applicationOrigin
+			),
+			'DuckDB worker and runtime WASM requests must use the Kite origin'
+		).toBe(true);
+	}
 });
 
 test('runs KQL through the emulated cluster and disables Kusto commands', async ({ page }) => {

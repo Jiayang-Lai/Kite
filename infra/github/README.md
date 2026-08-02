@@ -77,7 +77,7 @@ The defaults suit a solo-maintained repository:
 
 - pull requests are required, but an approving review is not;
 - review conversations must be resolved;
-- `Validate` must pass against the latest `main`;
+- `Validate` and `Validate container image` must pass against the latest `main`;
 - only squash merge is permitted;
 - direct pushes, force pushes, and deletion of `main` are blocked;
 - the repository owner is the required production reviewer and may self-approve; and

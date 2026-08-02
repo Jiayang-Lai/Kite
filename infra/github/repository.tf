@@ -36,10 +36,6 @@ resource "github_repository" "kite" {
   archive_on_destroy = true
 
   security_and_analysis {
-    code_security {
-      status = "enabled"
-    }
-
     secret_scanning {
       status = "enabled"
     }

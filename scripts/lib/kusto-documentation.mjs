@@ -2,7 +2,7 @@ export const KUSTO_TOC_URL =
 	'https://raw.githubusercontent.com/MicrosoftDocs/dataexplorer-docs/refs/heads/main/data-explorer/kusto-tocs/query/toc.yml';
 export const KUSTO_DOCS_SITE_BASE_URL = 'https://learn.microsoft.com/en-us/kusto/query';
 
-const maxRateLimitRetries = 3;
+const maxRateLimitRetries = 5;
 
 export function createDocumentationIndex(toc) {
 	const index = {};
@@ -56,6 +56,16 @@ export function validateDocumentationIndex(value) {
 	}
 
 	return value;
+}
+
+export function getDocumentationIndexStats(index) {
+	const lookupKeyCount = Object.keys(index).length;
+	const uniquePathCount = new Set(Object.values(index)).size;
+	return {
+		lookupKeyCount,
+		uniquePathCount,
+		aliasCount: lookupKeyCount - uniquePathCount
+	};
 }
 
 export async function mapWithConcurrency(items, limit, callback) {

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import {
 	createDocumentationIndex,
 	fetchWithRateLimitRetry,
+	getDocumentationIndexStats,
 	KUSTO_TOC_URL
 } from './lib/kusto-documentation.mjs';
 
@@ -23,6 +24,7 @@ const index = createDocumentationIndex(await response.text());
 await mkdir(dirname(snapshotPath), { recursive: true });
 await writeFile(snapshotPath, `${JSON.stringify(index, null, '\t')}\n`);
 
+const { lookupKeyCount, uniquePathCount, aliasCount } = getDocumentationIndexStats(index);
 console.log(
-	`Updated ${snapshotPath.replace(`${projectRoot}/`, '')} with ${Object.keys(index).length} documentation paths.`
+	`Updated ${snapshotPath.replace(`${projectRoot}/`, '')}: ${lookupKeyCount} lookup keys resolve to ${uniquePathCount} unique documentation paths (${aliasCount} aliases).`
 );

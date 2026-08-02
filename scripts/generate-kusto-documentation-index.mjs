@@ -4,7 +4,10 @@ import { fileURLToPath } from 'node:url';
 
 import { format, resolveConfig } from 'prettier';
 
-import { validateDocumentationIndex } from './lib/kusto-documentation.mjs';
+import {
+	getDocumentationIndexStats,
+	validateDocumentationIndex
+} from './lib/kusto-documentation.mjs';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const snapshotPath = resolve(projectRoot, 'data/kusto-documentation-index.json');
@@ -18,4 +21,7 @@ const source =
 const prettierConfig = (await resolveConfig(outputPath)) ?? {};
 await writeFile(outputPath, await format(source, { ...prettierConfig, filepath: outputPath }));
 
-console.log(`Generated ${outputPath.replace(`${projectRoot}/`, '')} from the committed snapshot.`);
+const { lookupKeyCount, uniquePathCount, aliasCount } = getDocumentationIndexStats(index);
+console.log(
+	`Generated ${outputPath.replace(`${projectRoot}/`, '')} from the committed snapshot: ${lookupKeyCount} lookup keys resolve to ${uniquePathCount} unique documentation paths (${aliasCount} aliases).`
+);

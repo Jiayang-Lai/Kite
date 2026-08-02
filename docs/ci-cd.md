@@ -73,7 +73,7 @@ dotnet workload restore vendor/kql-to-sql/src/KqlWasmBridge/KqlWasmBridge.csproj
 npm run build:kql-wasm
 ```
 
-The build creates `static/kql-wasm/manifest.json` with the translator commit and a SHA-256 checksum of the framework. `npm run build` verifies the manifest before creating the Cloudflare bundle, and the workflow verifies that the final bundle contains `kql-wasm/_framework/dotnet.js`. Release candidate and production deployments promote that retained bundle without rebuilding it, so they cannot combine an unreviewed translator revision with a frozen Kite release.
+The build creates `static/kql-wasm/manifest.json` with the translator commit. `npm run build` verifies the manifest and required framework files before creating the Cloudflare bundle, and the workflow verifies that the final bundle contains `kql-wasm/_framework/dotnet.js`. Release candidate and production deployments promote that retained bundle without rebuilding it, so they cannot combine an unreviewed translator revision with a frozen Kite release.
 
 ## Preview environments
 

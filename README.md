@@ -117,7 +117,35 @@ dotnet workload restore vendor/kql-to-sql/src/KqlWasmBridge/KqlWasmBridge.csproj
 npm run build:kql-wasm
 ```
 
-`npm run build` verifies that `static/kql-wasm/_framework/dotnet.js` and its provenance manifest are present before producing a deployable application. `npm run dev` remains available for Mock and remote clusters without this optional local artifact.
+`npm run build` checks that the generated framework files are present before producing a deployable application. `npm run dev` remains available for Mock and remote clusters without this optional local artifact.
+
+### Run with Docker or Podman
+
+Docker and Podman both build the vendored KQL translator WASM and the container-targeted Kite frontend, including the local DuckDB-WASM assets. Initialize the submodule once so its source is available in the build context; you do not need to install Node.js or .NET locally.
+
+```bash
+git submodule update --init --recursive
+```
+
+With Docker:
+
+```bash
+docker build -t kite:local .
+docker run --rm -p 3000:8080 kite:local
+```
+
+With Podman (including rootless Podman):
+
+```bash
+podman build --format docker -t kite:local .
+podman run --rm -p 3000:8080 kite:local
+```
+
+The Docker image format keeps the Dockerfile health check; Podman's default OCI image format does not support that metadata.
+
+The container build compiles the translator directly from `vendor/kql-to-sql`; it performs no Git operations. It downloads application dependencies and Kusto documentation, so the build still requires network access. The final image contains only the generated static application and an unprivileged nginx server.
+
+Open <http://localhost:3000>. The container listens on port `8080`; mapping it to host port `3000` leaves `localhost:8080` available for Kite's built-in local Kustainer connection. Use `/healthz` for container health checks.
 
 ### Connect to local Kusto
 
@@ -150,6 +178,7 @@ If you are interested in more self-hosted Kusto examples and a Docker-based loca
 | ----------------------------- | ----------------------------------------------------- |
 | `npm run dev`                 | Start the development server                          |
 | `npm run build`               | Generate Kusto docs and create a production build     |
+| `npm run build:container`     | Create the static production build for a container    |
 | `npm run preview`             | Preview the production build locally                  |
 | `npm run check`               | Run Svelte and TypeScript checks                      |
 | `npm run lint`                | Check formatting with Prettier                        |

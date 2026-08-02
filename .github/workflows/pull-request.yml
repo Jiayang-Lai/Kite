@@ -72,8 +72,8 @@ jobs:
       - name: Audit production dependencies
         run: npm run security:audit
 
-      - name: Validate and build
-        run: npm run test:ci
+      - name: Validate and build the Cloudflare target
+        run: KITE_BUILD_TARGET=cloudflare npm run test:ci
 
       - name: Validate the Cloudflare deployment bundle
         run: |
@@ -82,6 +82,11 @@ jobs:
           test -f .svelte-kit/output/server/index.js
           test -f .svelte-kit/tsconfig.json
           test -f .svelte-kit/cloudflare/kql-wasm/_framework/dotnet.js
+          duckdb_runtime_wasm="$(find .svelte-kit/cloudflare -type f \( -name 'duckdb-eh*.wasm' -o -name 'duckdb-mvp*.wasm' \) -print -quit)"
+          test -z "$duckdb_runtime_wasm" || {
+            echo "Cloudflare bundle unexpectedly contains DuckDB runtime WASM: $duckdb_runtime_wasm" >&2
+            exit 1
+          }
           oversized_file="$(find .svelte-kit/cloudflare -type f -size +25M -print -quit)"
           test -z "$oversized_file" || {
             echo "Cloudflare Pages limit exceeded (25 MiB): $oversized_file" >&2
@@ -100,3 +105,78 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 7
+
+  container:
+    name: Validate container image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out the prospective merge
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install test dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install the Playwright browser
+        run: npm run test:e2e:install
+
+      - name: Build the container image
+        run: docker build -t kite:ci .
+
+      - name: Validate the image user and bundled assets
+        run: |
+          image_user="$(docker image inspect --format '{{.Config.User}}' kite:ci)"
+          test -n "$image_user" && test "$image_user" != "0" && test "$image_user" != "root" || {
+            echo "Container image must declare a non-root user; found '${image_user:-unset}'" >&2
+            exit 1
+          }
+          docker run --rm --entrypoint /bin/sh kite:ci -c '
+            test "$(id -u)" -ne 0 &&
+            test -n "$(find /usr/share/nginx/html/_app/immutable/assets -type f -name "duckdb-eh.*.wasm" -print -quit)" &&
+            test -n "$(find /usr/share/nginx/html/_app/immutable/assets -type f -name "duckdb-mvp.*.wasm" -print -quit)" &&
+            test -n "$(find /usr/share/nginx/html/_app/immutable/assets -type f -name "duckdb-browser-eh.worker.*.js" -print -quit)" &&
+            test -n "$(find /usr/share/nginx/html/_app/immutable/assets -type f -name "duckdb-browser-mvp.worker.*.js" -print -quit)"
+          '
+
+      - name: Start the container
+        run: docker run --detach --name kite-container-ci --publish 127.0.0.1:3000:8080 kite:ci
+
+      - name: Wait for the container to become ready
+        run: >-
+          curl --fail --silent --show-error
+          --retry 30 --retry-delay 1 --retry-all-errors --connect-timeout 2
+          http://127.0.0.1:3000/healthz --output /dev/null
+
+      - name: Check direct application routes and translator asset
+        run: |
+          routes="/ /admin /admin/commands /admin/databases /admin/ingestion /explorer /explorer/query /explorer/query/saved /labs/kql-to-sql"
+          for route in $routes; do
+            curl --fail --silent --show-error --retry 3 --retry-delay 1 --retry-all-errors "http://127.0.0.1:3000$route" --output /dev/null
+          done
+          curl --fail --silent --show-error --retry 3 --retry-delay 1 --retry-all-errors http://127.0.0.1:3000/kql-wasm/_framework/dotnet.js --output /dev/null
+
+      - name: Run the DuckDB and KQL browser scenario
+        env:
+          KITE_E2E_FORBID_REQUEST_HOST: cdn.jsdelivr.net
+          KITE_E2E_REQUIRE_LOCAL_DUCKDB_ASSETS: 'true'
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
+          PLAYWRIGHT_EXTERNAL_SERVER: 'true'
+        run: >-
+          npx playwright test tests/app.e2e.ts
+          --grep "serves every application route after a direct browser reload|translates KQL to DuckDB SQL and executes it in the browser"
+
+      - name: Stop the container
+        if: always()
+        run: |
+          docker logs kite-container-ci || true
+          docker rm --force kite-container-ci || true

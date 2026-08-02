@@ -1,5 +1,5 @@
-import { cp, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
-import { createHash, randomUUID } from 'node:crypto';
+import { cp, mkdir, readdir, rename, rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { execFile as execFileCallback } from 'node:child_process';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,47 +29,14 @@ try {
 	const stagingFramework = resolve(stagingRoot, '_framework');
 	await cp(frameworkSource, stagingFramework, { recursive: true, errorOnExist: true });
 
-	const manifest = {
-		schemaVersion: 1,
-		translator: {
-			repository: 'https://github.com/Jiayang-Lai/kql-to-sql.git',
-			commit: await getGitRevision(translatorRoot)
-		},
-		frameworkSha256: await hashDirectory(stagingFramework)
-	};
-	await writeFile(
-		resolve(stagingRoot, 'manifest.json'),
-		`${JSON.stringify(manifest, null, '\t')}\n`
-	);
-
-	await verifyFramework(stagingFramework, manifest);
+	await verifyFramework(stagingFramework);
 	await replaceDirectory(stagingRoot, artifactRoot);
 	console.log(`KQL translator WebAssembly built at ${relative(projectRoot, artifactRoot)}.`);
 } finally {
 	await rm(temporaryRoot, { recursive: true, force: true });
 }
 
-async function getGitRevision(repositoryRoot) {
-	const { stdout } = await execFile('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot });
-	return stdout.trim();
-}
-
-async function hashDirectory(directory) {
-	const files = (await listFiles(directory)).sort((left, right) => left.localeCompare(right));
-	const digest = createHash('sha256');
-
-	for (const file of files) {
-		const contents = await readFile(resolve(directory, file));
-		digest.update(file);
-		digest.update('\0');
-		digest.update(contents);
-		digest.update('\0');
-	}
-
-	return digest.digest('hex');
-}
-
-async function verifyFramework(frameworkDirectory, manifest) {
+async function verifyFramework(frameworkDirectory) {
 	const files = await listFiles(frameworkDirectory);
 	const requiredFiles = ['dotnet.js'];
 	for (const file of requiredFiles) {
@@ -82,9 +49,6 @@ async function verifyFramework(frameworkDirectory, manifest) {
 	}
 	if (!files.some((file) => /^dotnet\.native\..+\.wasm$/.test(file))) {
 		throw new Error('Published KQL translator framework is missing the .NET native runtime.');
-	}
-	if (!/^[0-9a-f]{40}$/i.test(manifest.translator.commit)) {
-		throw new Error('KQL translator manifest contains an invalid source commit.');
 	}
 }
 

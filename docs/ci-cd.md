@@ -61,7 +61,9 @@ CI validates a proposed change without deploying it to UAT or production. Pull r
 
 The exact checks and commands will be defined with the workflow implementation. Required checks must pass before a pull request can be merged.
 
-The Pull Request workflow prepares and caches `static/kusto-docs` before starting its Cloudflare and container validation jobs. Both build targets restore the same cache and then run in parallel, avoiding duplicate documentation downloads while preserving clean-checkout behavior when the cache is empty. The key combines the UTC ISO week and generator hash, so Main UAT and release container builds reuse documentation within a week while refreshing it weekly or whenever the generator changes.
+The Pull Request workflow prepares and caches `static/kusto-docs` before starting its Cloudflare and container validation jobs. Both build targets restore the same cache and then run in parallel, avoiding duplicate documentation downloads while preserving clean-checkout behavior when the cache is empty. The key combines the UTC ISO week with hashes of the reviewed documentation snapshot and downloader, so Main UAT and release container builds reuse Markdown within a week while refreshing it weekly or whenever those inputs change.
+
+Generated application source follows a single reviewed-input pattern. `schemas/kite-avro-table-template.schema.json` and `data/kusto-documentation-index.json` are committed inputs; their deterministic TypeScript outputs are committed under `src/lib/generated` and verified by `npm run check:generated`. Routine builds download Kusto Markdown from the committed snapshot but never update that snapshot from the live Microsoft TOC. Maintainers use `npm run update:kusto-docs-index` when they intend to review an upstream index change.
 
 ### KQL translator WebAssembly artifact
 

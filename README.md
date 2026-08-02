@@ -183,22 +183,25 @@ If you are interested in more self-hosted Kusto examples and a Docker-based loca
 
 ## Available scripts
 
-| Command                       | Description                                           |
-| ----------------------------- | ----------------------------------------------------- |
-| `npm run dev`                 | Start the development server                          |
-| `npm run build`               | Generate Kusto docs and create a production build     |
-| `npm run build:container`     | Create the static production build for a container    |
-| `npm run preview`             | Preview the production build locally                  |
-| `npm run check`               | Run Svelte and TypeScript checks                      |
-| `npm run lint`                | Check formatting with Prettier                        |
-| `npm run lint:ci`             | Check formatting for files currently enforced by CI   |
-| `npm run test:unit:run`       | Run unit tests once                                   |
-| `npm run test:e2e:install`    | Install Playwright Chromium and system dependencies   |
-| `npm run test:e2e`            | Build the app and run end-to-end tests                |
-| `npm run test:e2e:run`        | Run end-to-end tests against an existing build        |
-| `npm run test:ci`             | Run the complete local CI validation suite            |
-| `npm run security:audit`      | Audit production dependencies                         |
-| `npm run generate:kusto-docs` | Refresh the bundled Kusto documentation and its index |
+| Command                           | Description                                           |
+| --------------------------------- | ----------------------------------------------------- |
+| `npm run dev`                     | Start the development server                          |
+| `npm run build`                   | Generate sources and create a production build        |
+| `npm run build:container`         | Create the static production build for a container    |
+| `npm run preview`                 | Preview the production build locally                  |
+| `npm run check`                   | Run Svelte and TypeScript checks                      |
+| `npm run lint`                    | Check formatting with Prettier                        |
+| `npm run lint:ci`                 | Check formatting for files currently enforced by CI   |
+| `npm run test:unit:run`           | Run unit tests once                                   |
+| `npm run test:e2e:install`        | Install Playwright Chromium and system dependencies   |
+| `npm run test:e2e`                | Build the app and run end-to-end tests                |
+| `npm run test:e2e:run`            | Run end-to-end tests against an existing build        |
+| `npm run test:ci`                 | Run the complete local CI validation suite            |
+| `npm run security:audit`          | Audit production dependencies                         |
+| `npm run generate`                | Regenerate committed TypeScript from committed inputs |
+| `npm run check:generated`         | Verify that committed generated TypeScript is current |
+| `npm run download:kusto-docs`     | Download missing Markdown from the committed index    |
+| `npm run update:kusto-docs-index` | Refresh the reviewed Kusto index snapshot             |
 
 ## License
 

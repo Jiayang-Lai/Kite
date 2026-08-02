@@ -34,8 +34,8 @@ jobs:
       - name: Calculate the Kusto documentation cache key
         id: cache_key
         env:
-          GENERATOR_HASH: ${{ hashFiles('scripts/generate-kusto-documentation-index.mjs') }}
-        run: echo "value=kusto-docs-${RUNNER_OS}-$(date -u +%G-%V)-${GENERATOR_HASH}" >> "$GITHUB_OUTPUT"
+          DOCUMENTATION_HASH: ${{ hashFiles('data/kusto-documentation-index.json', 'scripts/download-kusto-documentation.mjs', 'scripts/lib/kusto-documentation.mjs') }}
+        run: echo "value=kusto-docs-${RUNNER_OS}-$(date -u +%G-%V)-${DOCUMENTATION_HASH}" >> "$GITHUB_OUTPUT"
 
       - name: Restore generated Kusto documentation
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
@@ -44,7 +44,7 @@ jobs:
           key: ${{ steps.cache_key.outputs.value }}
 
       - name: Generate missing Kusto documentation
-        run: node scripts/generate-kusto-documentation-index.mjs
+        run: npm run download:kusto-docs
 
   validate:
     name: Validate

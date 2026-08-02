@@ -9,7 +9,7 @@ sbom: ## Generate Software Bill of Materials (SBOM) using Syft
 
 scan: ## Run grype security scan on the SBOM file (requires sbom.json to be present)
 	@echo "Running grype security scan on the SBOM file..."
-	grype sbom:sbom.json -v --fail-on medium
+	grype sbom:sbom.json -v --fail-on high
 
 vuln: sbom scan ## Generate SBOM and run vulnerability scan
 

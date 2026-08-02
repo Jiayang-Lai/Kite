@@ -20,7 +20,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 	npm run build:kql-wasm
 RUN npm run build:container
 
-FROM nginxinc/nginx-unprivileged:1.31-alpine3.24-slim AS runtime
+FROM docker.io/nginxinc/nginx-unprivileged:1.31-alpine3.24-slim AS runtime
 
 ARG KITE_VERSION=dev
 ARG VCS_REF=unknown

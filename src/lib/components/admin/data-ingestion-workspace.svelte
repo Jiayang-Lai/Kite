@@ -31,8 +31,8 @@
 		resolveEmulatedRemoteUrl,
 		startEmulatedIngestion,
 		type EmulatedIngestionFormat
-	} from '$lib/emulated/data-ingestion';
-	import type { EmulatedStorage } from '$lib/emulated/storage';
+	} from '$lib/emulation/data-ingestion';
+	import type { EmulatedStorage } from '$lib/emulation/storage';
 	import {
 		buildInlineIngestionCommand,
 		buildMountedFileIngestionCommand,

@@ -2,7 +2,7 @@ import * as duckdb from '@duckdb/duckdb-wasm';
 import duckdbEhWorker from '@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url';
 import duckdbMvpWorker from '@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url';
 
-import { getEmulatedStorage, type EmulatedStorage } from '$lib/emulated/storage';
+import { getEmulatedStorage, type EmulatedStorage } from '$lib/emulation/storage';
 import type { DuckDbCatalogDatabase, DuckDbCatalogSchema, DuckDbQueryResult } from './types';
 import type { QueryExecution, QueryResult } from '$lib/types/query-result';
 import { getPersistentDuckDbFilePrefix } from './storage';

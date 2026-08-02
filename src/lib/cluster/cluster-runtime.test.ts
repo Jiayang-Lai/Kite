@@ -15,10 +15,10 @@ vi.mock('$lib/duckdb/lazy-client', () => ({
 	disposeDuckDb: runtimeMocks.disposeDuckDb,
 	disposeInactiveDuckDbSessions: runtimeMocks.disposeInactiveDuckDbSessions
 }));
-vi.mock('$lib/emulated/emulated-cluster', () => ({
+vi.mock('$lib/emulation/emulation-cluster', () => ({
 	loadEmulatedSchema: runtimeMocks.loadEmulatedSchema
 }));
-vi.mock('$lib/emulated/storage', () => ({
+vi.mock('$lib/emulation/storage', () => ({
 	registerEmulatedStorage: runtimeMocks.registerEmulatedStorage
 }));
 vi.mock('$lib/kusto/backend-schema', () => ({

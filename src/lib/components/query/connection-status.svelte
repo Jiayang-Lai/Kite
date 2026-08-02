@@ -4,7 +4,7 @@
 
 	import EmulatedStorageBadge from '$lib/components/cluster/emulated-storage-badge.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import type { EmulatedStorage } from '$lib/emulated/storage';
+	import type { EmulatedStorage } from '$lib/emulation/storage';
 
 	type ConnectionStatusProps = {
 		status: 'loading' | 'ready' | 'error';

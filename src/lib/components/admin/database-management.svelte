@@ -38,7 +38,7 @@
 		dropEmulatedDatabase,
 		dropEmulatedTable,
 		mutateEmulatedTable
-	} from '$lib/emulated/schema-management';
+	} from '$lib/emulation/schema-management';
 	import type {
 		ExplorerExpansionChange,
 		ExplorerExpansionState

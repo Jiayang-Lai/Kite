@@ -3,8 +3,8 @@ import {
 	disposeDuckDb,
 	disposeInactiveDuckDbSessions
 } from '$lib/duckdb/lazy-client';
-import { loadEmulatedSchema } from '$lib/emulated/emulated-cluster';
-import { registerEmulatedStorage } from '$lib/emulated/storage';
+import { loadEmulatedSchema } from '$lib/emulation/emulation-cluster';
+import { registerEmulatedStorage } from '$lib/emulation/storage';
 import { loadBackendSchema } from '$lib/kusto/backend-schema';
 import type { KustoClusterConnection } from '$lib/kusto/query-client';
 import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';

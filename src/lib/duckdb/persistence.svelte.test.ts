@@ -11,8 +11,8 @@ import {
 	createEmulatedStorage,
 	registerEmulatedStorage,
 	unregisterEmulatedStorage
-} from '$lib/emulated/storage';
-import { loadEmulatedSchema } from '$lib/emulated/emulated-cluster';
+} from '$lib/emulation/storage';
+import { loadEmulatedSchema } from '$lib/emulation/emulation-cluster';
 
 const sessions = new Map<string, string>();
 

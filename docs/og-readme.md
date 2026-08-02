@@ -40,15 +40,15 @@ Mounted-file paths are relative to `/kustodata/raw`; Kite does not copy browser 
 
 The Monaco adapter has a documentation path, but it consults the legacy `Kusto.Data.IntelliSense.CslDocumentation` registry. That registry is empty in the published browser package, and it runs in the Kusto worker rather than the Svelte window. Applications therefore need to enrich completion items themselves.
 
-This project uses `kustoDefaults.setLanguageSettings({ onDidProvideCompletionItems })` to add completion details and Markdown documentation. `npm run generate:kusto-docs` downloads Microsoft's rendered Markdown export (`?accept=text/markdown`) into `static/kusto-docs`, avoiding browser CORS and remote per-completion requests. The hook lazy-loads the matching same-origin Markdown file, removes front matter and Learn include directives when choosing the inline summary, and shows the full Markdown in Monaco's completion documentation pane. The `view online` link uses the normal public Learn URL.
+This project uses `kustoDefaults.setLanguageSettings({ onDidProvideCompletionItems })` to add completion details and Markdown documentation. `npm run download:kusto-docs` downloads Microsoft's rendered Markdown export (`?accept=text/markdown`) into `static/kusto-docs`, avoiding browser CORS and remote per-completion requests. The hook lazy-loads the matching same-origin Markdown file, removes front matter and Learn include directives when choosing the inline summary, and shows the full Markdown in Monaco's completion documentation pane. The `view online` link uses the normal public Learn URL.
 
 The documentation lookup index is generated from Microsoft's Kusto query TOC instead of maintaining a hand-written operator list:
 
 ```sh
-npm run generate:kusto-docs
+npm run update:kusto-docs-index
 ```
 
-This writes `src/lib/generated/kusto-documentation-index.ts` and the Markdown files under `static/kusto-docs`. The generated map includes query operator and function document paths. The current `monaco-kusto` completion callback does not preserve the original Kusto completion kind, so this TOC-derived map is used to resolve a completion label to its documentation path.
+This updates the reviewed `data/kusto-documentation-index.json` snapshot and regenerates `src/lib/generated/kusto-documentation-index.ts`. Normal builds download Markdown from that committed snapshot without consulting the live TOC. The generated map includes query operator and function document paths. The current `monaco-kusto` completion callback does not preserve the original Kusto completion kind, so this TOC-derived map is used to resolve a completion label to its documentation path.
 
 # Todos
 

@@ -180,6 +180,60 @@ jobs:
               `No successful release-candidate deployment exists for ${process.env.RC_TAG}.`
             );
 
+  publish-container:
+    name: Publish container image
+    needs:
+      - classify
+      - verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out the tagged revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Log in to GitHub Container Registry
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GHCR_TOKEN" | podman login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Build and publish the container image
+        env:
+          COMMIT_SHA: ${{ needs.classify.outputs.commit_sha }}
+          RELEASE_TAG: ${{ needs.classify.outputs.tag }}
+          RELEASE_TYPE: ${{ needs.classify.outputs.type }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          version_tag="${RELEASE_TAG#v}"
+          build_date="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          image_tags=("$image:$RELEASE_TAG" "$image:$version_tag")
+
+          if [[ "$RELEASE_TYPE" == "stable" ]]; then
+            image_tags+=("$image:latest")
+          fi
+
+          build_arguments=()
+          for image_tag in "${image_tags[@]}"; do
+            build_arguments+=(--tag "$image_tag")
+          done
+
+          podman build --format docker \
+            --build-arg "KITE_VERSION=$version_tag" \
+            --build-arg "VCS_REF=$COMMIT_SHA" \
+            --build-arg "BUILD_DATE=$build_date" \
+            "${build_arguments[@]}" \
+            .
+
+          for image_tag in "${image_tags[@]}"; do
+            podman push "$image_tag"
+          done
+
   release-candidate:
     name: Deploy release candidate
     if: needs.classify.outputs.type == 'rc'

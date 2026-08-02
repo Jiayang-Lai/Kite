@@ -7,7 +7,7 @@
 	import EmulatedStorageBadge from '$lib/components/cluster/emulated-storage-badge.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Card from '$lib/components/ui/card';
-	import type { EmulatedStorage } from '$lib/emulated/storage';
+	import type { EmulatedStorage } from '$lib/emulation/storage';
 
 	type ExplorerHeroProps = {
 		clusterName: string;

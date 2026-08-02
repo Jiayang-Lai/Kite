@@ -1,6 +1,6 @@
 import type { CancellableExecution, QueryExecution, QueryResult } from '$lib/types/query-result';
 import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
-import type { EmulatedStorage } from '$lib/emulated/storage';
+import type { EmulatedStorage } from '$lib/emulation/storage';
 import { Client as KustoClient, ClientRequestProperties } from 'azure-kusto-data';
 
 /** Browser-visible endpoint for Kite's default Kusto connection. */
@@ -12,7 +12,7 @@ export const EMULATED_KUSTO_CLUSTER_URL = 'emulated://kite';
 
 export type KustoIngestionConfiguration = {
 	/** Ingestion support exposed by this connection. */
-	mode: 'emulator';
+	mode: 'kustainer';
 	/** Absolute directory visible inside Kustainer that contains staged source files. */
 	containerRoot: string;
 	/** Largest browser-selected file accepted for chunked inline ingestion. */
@@ -73,7 +73,7 @@ const DEFAULT_KUSTO_CLUSTERS: KustoClusterConnection[] = [
 		url: DEFAULT_KUSTO_CLUSTER_URL,
 		kind: 'remote',
 		ingestion: {
-			mode: 'emulator',
+			mode: 'kustainer',
 			containerRoot: '/kustodata/raw',
 			maxInlineFileBytes: 10 * 1024 * 1024,
 			maxInlineCommandBytes: 512 * 1024

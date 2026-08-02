@@ -3,7 +3,7 @@
 	import MemoryStickIcon from '@lucide/svelte/icons/memory-stick';
 
 	import { Badge } from '$lib/components/ui/badge';
-	import type { EmulatedStorage } from '$lib/emulated/storage';
+	import type { EmulatedStorage } from '$lib/emulation/storage';
 	import { cn } from '$lib/utils.js';
 
 	type EmulatedStorageBadgeProps = {

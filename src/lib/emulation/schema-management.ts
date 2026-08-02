@@ -4,7 +4,7 @@ import {
 	dropDuckDbDatabase,
 	executeDuckDbSql
 } from '$lib/duckdb/lazy-client';
-import { loadEmulatedSchema, quoteDuckDbIdentifier } from '$lib/emulated/emulated-cluster';
+import { loadEmulatedSchema, quoteDuckDbIdentifier } from '$lib/emulation/cluster';
 import {
 	compareTableSnapshots,
 	snapshotLoadedTable,

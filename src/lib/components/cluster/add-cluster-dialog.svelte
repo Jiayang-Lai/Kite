@@ -6,7 +6,7 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import type { NewClusterConnection } from '$lib/cluster/cluster-connection-store.svelte';
 	import { createStarterMockSchema, normalizeMockSchema } from '$lib/cluster/mock-cluster-schema';
-	import type { EmulatedStorageMode } from '$lib/emulated/storage';
+	import type { EmulatedStorageMode } from '$lib/emulation/storage';
 	import type { KustoClusterConnection } from '$lib/kusto/query-client';
 
 	type AddClusterDialogProps = {

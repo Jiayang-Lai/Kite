@@ -18,7 +18,7 @@ import {
 	registerEmulatedStorage,
 	unregisterEmulatedStorage,
 	type EmulatedStorageMode
-} from '$lib/emulated/storage';
+} from '$lib/emulation/storage';
 import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 
 const CLUSTER_CONNECTION_STORE = Symbol('cluster-connection-store');

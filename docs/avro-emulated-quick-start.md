@@ -4,7 +4,7 @@ This walkthrough creates a `DeviceNetworkEvents` table in Kite's browser-based *
 
 ## What you need
 
-- A running Kite app (use the hosted app or follow the [local setup](../README.md#run-locally)).
+- A running Kite app (use the hosted app or follow the [development guide](development.md#run-the-development-server)).
 - The included [DeviceNetworkEvents.avsc](../samples/DeviceNetworkEvents.avsc) table schema JSON file. Download it locally if you are using the hosted app.
 
 The data source used below is:

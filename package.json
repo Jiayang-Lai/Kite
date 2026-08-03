@@ -1,7 +1,7 @@
 {
 	"name": "kite",
 	"private": true,
-	"version": "0.0.4",
+	"version": "0.0.7",
 	"type": "module",
 	"packageManager": "npm@11.14.1",
 	"engines": {
@@ -26,7 +26,7 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"lint": "prettier --check .",
-		"lint:ci": "prettier --check package.json playwright.config.ts README.md docs/ci-cd.md infra/README.md infra/*/README.md scripts .github tests",
+		"lint:ci": "prettier --check package.json playwright.config.ts README.md docs/*.md infra/README.md infra/*/README.md scripts .github tests",
 		"format": "prettier --write .",
 		"test:unit": "vitest",
 		"test:unit:run": "vitest --run",

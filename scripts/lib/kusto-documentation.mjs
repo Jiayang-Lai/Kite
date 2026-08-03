@@ -2,7 +2,15 @@ export const KUSTO_TOC_URL =
 	'https://raw.githubusercontent.com/MicrosoftDocs/dataexplorer-docs/refs/heads/main/data-explorer/kusto-tocs/query/toc.yml';
 export const KUSTO_DOCS_SITE_BASE_URL = 'https://learn.microsoft.com/en-us/kusto/query';
 
-const maxRateLimitRetries = 5;
+const defaultRetryOptions = {
+	maxRetries: 5,
+	minimumRequestInterval: 50,
+	baseRetryDelay: 15_000,
+	maximumRetryDelay: 120_000,
+	maximumJitter: 1_000
+};
+
+const retryableStatuses = new Set([408, 429, 500, 502, 503, 504]);
 
 export function createDocumentationIndex(toc) {
 	const index = {};
@@ -85,41 +93,139 @@ export async function mapWithConcurrency(items, limit, callback) {
 	await Promise.all(workers);
 }
 
-export async function fetchWithRateLimitRetry(url, progress) {
-	for (let retry = 0; ; retry++) {
-		const response = await fetch(url);
-		if (response.status !== 429) {
-			return response;
-		}
+export function createRateLimitedFetcher(options = {}) {
+	const {
+		fetchImplementation = globalThis.fetch,
+		sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+		now = Date.now,
+		random = Math.random,
+		maxRetries = defaultRetryOptions.maxRetries,
+		minimumRequestInterval = defaultRetryOptions.minimumRequestInterval,
+		baseRetryDelay = defaultRetryOptions.baseRetryDelay,
+		maximumRetryDelay = defaultRetryOptions.maximumRetryDelay,
+		maximumJitter = defaultRetryOptions.maximumJitter
+	} = options;
 
-		if (retry >= maxRateLimitRetries) {
-			return response;
-		}
+	let blockedUntil = 0;
+	let nextRequestAt = 0;
+	let previousPermit = Promise.resolve();
 
-		const { delay, source } = getRetryDelay(response.headers.get('retry-after'));
-		console.warn(
-			`${progress} Rate limited; retrying in ${formatDuration(delay)} (${source}, attempt ${retry + 1}/${maxRateLimitRetries}).`
-		);
-		await new Promise((resolve) => setTimeout(resolve, delay));
+	async function acquirePermit() {
+		let releasePermit;
+		const permit = new Promise((resolve) => {
+			releasePermit = resolve;
+		});
+		const waitForPreviousPermit = previousPermit;
+		previousPermit = permit;
+
+		await waitForPreviousPermit;
+		try {
+			for (;;) {
+				const wait = Math.max(blockedUntil, nextRequestAt) - now();
+				if (wait <= 0) {
+					break;
+				}
+				await sleep(wait);
+			}
+			nextRequestAt = now() + minimumRequestInterval;
+		} finally {
+			releasePermit();
+		}
 	}
+
+	function blockRequestsFor(milliseconds) {
+		blockedUntil = Math.max(blockedUntil, now() + milliseconds);
+	}
+
+	return async function fetchWithRetry(url, progress) {
+		for (let retry = 0; ; retry++) {
+			await acquirePermit();
+
+			let response;
+			try {
+				response = await fetchImplementation(url);
+			} catch (error) {
+				if (retry >= maxRetries) {
+					throw error;
+				}
+
+				const { delay, source } = getRetryDelay({
+					retry,
+					baseRetryDelay,
+					maximumRetryDelay,
+					maximumJitter,
+					random,
+					now
+				});
+				blockRequestsFor(delay);
+				console.warn(
+					`${progress} Request failed; retrying in ${formatDuration(delay)} (${source}, attempt ${retry + 1}/${maxRetries}): ${getErrorMessage(error)}`
+				);
+				continue;
+			}
+
+			if (!retryableStatuses.has(response.status) || retry >= maxRetries) {
+				return response;
+			}
+			await response.body?.cancel();
+
+			const { delay, source } = getRetryDelay({
+				retryAfter: response.headers.get('retry-after'),
+				retry,
+				baseRetryDelay,
+				maximumRetryDelay,
+				maximumJitter,
+				random,
+				now
+			});
+			blockRequestsFor(delay);
+			console.warn(
+				`${progress} HTTP ${response.status}; pausing all downloads for ${formatDuration(delay)} (${source}, attempt ${retry + 1}/${maxRetries}).`
+			);
+		}
+	};
 }
 
-function getRetryDelay(retryAfter) {
+export const fetchWithRateLimitRetry = createRateLimitedFetcher();
+
+function getRetryDelay({
+	retryAfter,
+	retry,
+	baseRetryDelay,
+	maximumRetryDelay,
+	maximumJitter,
+	random,
+	now
+}) {
+	const exponentialDelay = Math.min(baseRetryDelay * 2 ** retry, maximumRetryDelay);
+	const jitter = Math.floor(random() * maximumJitter);
+	const fallback = { delay: exponentialDelay + jitter, source: 'exponential backoff' };
+
 	if (retryAfter) {
 		const seconds = Number(retryAfter);
 		if (Number.isFinite(seconds) && seconds >= 0) {
-			return { delay: seconds * 1_000, source: 'server Retry-After' };
+			return {
+				delay: Math.max(seconds * 1_000, exponentialDelay) + jitter,
+				source: 'server Retry-After with backoff'
+			};
 		}
 
 		const date = Date.parse(retryAfter);
 		if (!Number.isNaN(date)) {
-			return { delay: Math.max(0, date - Date.now()), source: 'server Retry-After' };
+			return {
+				delay: Math.max(0, date - now(), exponentialDelay) + jitter,
+				source: 'server Retry-After with backoff'
+			};
 		}
 	}
 
-	return { delay: 30_000, source: 'default wait' };
+	return fallback;
 }
 
 function formatDuration(milliseconds) {
 	return `${Math.ceil(milliseconds / 1_000)}s`;
+}
+
+function getErrorMessage(error) {
+	return error instanceof Error ? error.message : String(error);
 }

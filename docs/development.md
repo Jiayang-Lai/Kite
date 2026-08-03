@@ -77,4 +77,4 @@ npm run test:e2e:install
 | `npm run download:kusto-docs`     | Download missing Markdown from the committed index    |
 | `npm run update:kusto-docs-index` | Refresh the reviewed Kusto index snapshot             |
 
-For deployment and release behavior, see the [CI/CD strategy](ci-cd.md).
+For details about the documentation index, downloader retries, and generated Markdown, see the [Kusto documentation pipeline](kusto-documentation.md). For deployment and release behavior, see the [CI/CD strategy](ci-cd.md).

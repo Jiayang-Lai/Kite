@@ -81,6 +81,7 @@ See [Development guide](docs/development.md) for translator setup, production bu
 - [Table and CSV ingestion quick start](docs/avro-emulated-quick-start.md) — create a table, load sample data, and query it
 - [Self-hosting Kite](docs/self-hosting.md) — containers, health checks, source builds, and Kustainer
 - [Development guide](docs/development.md) — local development, WASM builds, validation, and scripts
+- [Kusto documentation pipeline](docs/kusto-documentation.md) — indexing, downloads, throttling, caching, and troubleshooting
 - [CI/CD strategy](docs/ci-cd.md) — branches, preview environments, releases, and rollback
 - [Infrastructure](infra/README.md) — deployment configuration
 

@@ -5,7 +5,7 @@ secondary_workspace_name = "kite-logs-secondary"
 
 # Register every exact origin where Kite is served. Do not add paths.
 spa_redirect_uris = [
-	"https://kite.example.com",
+	"https://kite.humblehamster.com",
 	"http://localhost:5173"
 ]
 

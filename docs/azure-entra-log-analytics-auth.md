@@ -101,7 +101,7 @@ Microsoft Entra cannot safely issue a browser token to an anonymous web page. Th
 - that Kite is a single-page application using a secure browser flow; and
 - which API permission Kite may request.
 
-For self-hosted Kite, register every exact browser origin as an SPA redirect URI. Kite uses a dedicated popup callback, so register both the root URI and `/auth/callback`, such as `https://kite.example.com/` and `https://kite.example.com/auth/callback`; do the same for `http://localhost:5173`. Do not configure a client secret for the browser application: anyone using Kite could extract it. See [the connection setup guide](log-analytics-authentication.md) for the full procedure.
+For self-hosted Kite, register every exact browser origin as an SPA redirect URI. Kite uses a dedicated popup callback, so register both the root URI and `/auth/callback`, such as `https://kite.humblehamster.com/` and `https://kite.humblehamster.com/auth/callback`; do the same for `http://localhost:5173`. Do not configure a client secret for the browser application: anyone using Kite could extract it. See [the connection setup guide](log-analytics-authentication.md) for the full procedure.
 
 ## Further reading
 

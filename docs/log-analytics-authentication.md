@@ -35,8 +35,8 @@ Create or configure a **Single-page application** registration in the target Ent
 1. Under **Authentication**, add the Kite browser origin as an SPA redirect URI, including the root slash. For example, add both:
 
    ```text
-   https://kite.example.com/
-   https://kite.example.com/auth/callback
+   https://kite.humblehamster.com/
+   https://kite.humblehamster.com/auth/callback
    ```
 
    For local development, add both:

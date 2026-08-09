@@ -24,6 +24,35 @@ describe('cluster connection store', () => {
 		});
 	});
 
+	it('adds a Log Analytics connection without persisting credentials', () => {
+		const store = createClusterConnectionStore();
+		const cluster = store.add({
+			name: ' Production logs ',
+			kind: 'log-analytics',
+			workspaceId: 'A0A0A0A0-BBBB-4CCC-8DDD-E1E1E1E1E1E1',
+			workspaceResourceId:
+				'/subscriptions/011424d1-c061-4342-86be-bcf0a8b023ab/resourceGroups/rg-kite-observability/providers/Microsoft.OperationalInsights/workspaces/kite-logs',
+			tenantId: 'Contoso.OnMicrosoft.com',
+			clientId: 'B0B0B0B0-BBBB-4CCC-8DDD-E1E1E1E1E1E1',
+			defaultTimespan: 'pt24h'
+		});
+
+		expect(cluster).toMatchObject({
+			name: 'Production logs',
+			kind: 'log-analytics',
+			url: 'https://api.loganalytics.azure.com',
+			logAnalytics: {
+				workspaceId: 'a0a0a0a0-bbbb-4ccc-8ddd-e1e1e1e1e1e1',
+				workspaceResourceId:
+					'/subscriptions/011424d1-c061-4342-86be-bcf0a8b023ab/resourceGroups/rg-kite-observability/providers/Microsoft.OperationalInsights/workspaces/kite-logs',
+				tenantId: 'contoso.onmicrosoft.com',
+				clientId: 'b0b0b0b0-bbbb-4ccc-8ddd-e1e1e1e1e1e1',
+				defaultTimespan: 'PT24H'
+			}
+		});
+		expect(JSON.stringify(cluster)).not.toContain('secret');
+	});
+
 	it('adds a mock connection backed by the in-memory catalog', () => {
 		const store = createClusterConnectionStore();
 

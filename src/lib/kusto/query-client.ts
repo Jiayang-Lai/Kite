@@ -21,6 +21,32 @@ export type KustoIngestionConfiguration = {
 	maxInlineCommandBytes: number;
 };
 
+/** Browser-safe configuration for querying one Azure Log Analytics workspace. */
+export type LogAnalyticsConnectionConfiguration = {
+	/** Immutable workspace GUID shown in the Azure portal's Properties pane. */
+	workspaceId: string;
+	/** ARM resource ID of the workspace, used for resource-scoped metadata requests. */
+	workspaceResourceId?: string;
+	/** Microsoft Entra tenant ID or verified tenant domain for this workspace. */
+	tenantId: string;
+	/** Application (client) ID of a public SPA app registered in that tenant. */
+	clientId: string;
+	/** Optional ISO-8601 query window applied when the editor runs a query. */
+	defaultTimespan?: string;
+	/** Optional reusable Azure authentication profile selected for this workspace. */
+	authenticationProfileId?: string;
+	/** Account resolved from the linked Azure authentication profile at runtime; identifiers only, never tokens. */
+	account?: LogAnalyticsAccountBinding;
+};
+
+export type LogAnalyticsAccountBinding = {
+	homeAccountId: string;
+	localAccountId: string;
+	tenantId: string;
+	username: string;
+	name?: string;
+};
+
 export type KustoClusterConnection = {
 	/** Stable identifier used to select this connection independently of its endpoint. */
 	id: string;
@@ -30,8 +56,10 @@ export type KustoClusterConnection = {
 	description?: string;
 	/** Browser-accessible Kusto cluster endpoint. */
 	url: string;
-	/** Whether the connection is remote, metadata-only, or executes through browser WASM. */
-	kind: 'remote' | 'mock' | 'emulated';
+	/** Whether the connection is Kusto, Log Analytics, metadata-only, or browser WASM. */
+	kind: 'remote' | 'log-analytics' | 'mock' | 'emulated';
+	/** Authentication and workspace settings for an Azure Log Analytics connection. */
+	logAnalytics?: LogAnalyticsConnectionConfiguration;
 	/** Browser-local schema metadata owned by a custom mock connection. */
 	mockSchema?: KustoDatabaseSchema;
 	/** Optimistic concurrency token incremented after each browser-local schema mutation. */

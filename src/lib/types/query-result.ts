@@ -1,3 +1,5 @@
+import type { LogAnalyticsQueryStatistics } from './log-analytics';
+
 /** Column metadata returned by a Kusto primary result table. */
 export type QueryResultColumn = {
 	name: string;
@@ -13,6 +15,12 @@ export type QueryResult = {
 	warnings: string[];
 	elapsedMs: number;
 	clientRequestId: string;
+	/** Optional diagnostics returned by the Azure Monitor Logs Query API. */
+	statistics?: LogAnalyticsQueryStatistics;
+	/** Optional visualization metadata returned by the Azure Monitor Logs Query API. */
+	render?: unknown;
+	/** Optional workspace, cluster, and table metadata returned by the Azure Monitor Logs Query API. */
+	dataSources?: unknown;
 };
 
 /** Handle for one cancellable SDK operation. */

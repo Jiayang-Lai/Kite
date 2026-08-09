@@ -6,18 +6,24 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import ServerIcon from '@lucide/svelte/icons/server';
 	import Settings2Icon from '@lucide/svelte/icons/settings-2';
+	import { onMount } from 'svelte';
 
 	import AddClusterDialog from '$lib/components/cluster/add-cluster-dialog.svelte';
 	import EmulatedStorageBadge from '$lib/components/cluster/emulated-storage-badge.svelte';
+	import { getAzureAuthenticationProfileStore } from '$lib/azure-auth/profile-store.svelte';
 	import ManageClustersDialog from '$lib/components/cluster/manage-clusters-dialog.svelte';
 	import RemoveClusterDialog from '$lib/components/cluster/remove-cluster-dialog.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import * as Select from '$lib/components/ui/select';
+	import { Button } from '$lib/components/ui/button';
 	import * as Sidebar from '$lib/components/ui/sidebar';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import type { NewClusterConnection } from '$lib/cluster/cluster-connection-store.svelte';
 	import type { KustoClusterConnection } from '$lib/kusto/query-client';
 
 	const sidebar = Sidebar.useSidebar();
+	const azureAuthenticationProfiles = getAzureAuthenticationProfileStore();
 
 	type ClusterConnectionSelectorProps = {
 		clusters: KustoClusterConnection[];
@@ -29,6 +35,7 @@
 		onclusteradd?: (cluster: NewClusterConnection) => void;
 		onclusteredit?: (clusterId: string, cluster: NewClusterConnection) => void;
 		onclusterremove?: (clusterId: string) => Promise<void> | void;
+		onlinkauthenticationprofile?: (clusterId: string, authenticationProfileId: string) => void;
 	};
 
 	let {
@@ -40,7 +47,8 @@
 		onclusterchange,
 		onclusteradd,
 		onclusteredit,
-		onclusterremove
+		onclusterremove,
+		onlinkauthenticationprofile
 	}: ClusterConnectionSelectorProps = $props();
 
 	let connectionDialogOpen = $state(false);
@@ -49,21 +57,54 @@
 	let editingCluster = $state<KustoClusterConnection>();
 	let removingCluster = $state<KustoClusterConnection>();
 	let tooltipClusterId = $state<string>();
+	let linkProfileOpen = $state(false);
+	let linkingCluster = $state<KustoClusterConnection>();
+	let linkProfileId = $state('');
 	const selectedCluster = $derived(clusters.find((cluster) => cluster.id === selectedClusterId));
+	const selectedAzureAuthenticationProfile = $derived(
+		selectedCluster?.kind === 'log-analytics'
+			? azureAuthenticationProfiles.profiles.find(
+					(profile) => profile.id === selectedCluster.logAnalytics?.authenticationProfileId
+				)
+			: undefined
+	);
 
 	function openAddCluster() {
 		editingCluster = undefined;
 		connectionDialogOpen = true;
 	}
 
-	function openEditCluster(cluster: KustoClusterConnection) {
-		editingCluster = cluster;
-		connectionDialogOpen = true;
-	}
-
 	function openRemoveCluster(cluster: KustoClusterConnection) {
 		removingCluster = cluster;
 		removeClusterOpen = true;
+	}
+
+	function openAuthenticationProfileLink(cluster: KustoClusterConnection) {
+		linkingCluster = cluster;
+		linkProfileId = '';
+		linkProfileOpen = true;
+	}
+
+	onMount(() => {
+		function handleSessionRemoval(event: Event) {
+			const { id } = (event as CustomEvent<{ id?: string }>).detail ?? {};
+			const cluster = clusters.find(
+				(item) =>
+					item.id === selectedClusterId &&
+					item.kind === 'log-analytics' &&
+					item.logAnalytics?.authenticationProfileId === id
+			);
+			if (cluster) openAuthenticationProfileLink(cluster);
+		}
+
+		window.addEventListener('kite:azure-authentication-profile-removed', handleSessionRemoval);
+		return () => window.removeEventListener('kite:azure-authentication-profile-removed', handleSessionRemoval);
+	});
+
+	function linkAuthenticationProfile() {
+		if (!linkingCluster || !linkProfileId) return;
+		onlinkauthenticationprofile?.(linkingCluster.id, linkProfileId);
+		linkProfileOpen = false;
 	}
 
 	function saveCluster(draft: NewClusterConnection) {
@@ -77,6 +118,7 @@
 	function clusterTypeSummary(cluster?: KustoClusterConnection) {
 		if (cluster?.kind === 'mock') return 'Mock schema';
 		if (cluster?.kind === 'emulated') return 'Emulated cluster';
+		if (cluster?.kind === 'log-analytics') return 'Azure Log Analytics workspace';
 		return 'Remote Kusto';
 	}
 </script>
@@ -162,7 +204,16 @@
 										onblur={() => (tooltipClusterId = undefined)}
 										onSelect={() => {
 											tooltipClusterId = undefined;
-											if (!disabled && !locked) onclusterchange?.(cluster.id);
+											if (!disabled && !locked) {
+												if (
+													cluster.kind === 'log-analytics' &&
+												!azureAuthenticationProfiles.profiles.some(
+												(profile) => profile.id === cluster.logAnalytics?.authenticationProfileId
+													)
+												)
+											openAuthenticationProfileLink(cluster);
+												else onclusterchange?.(cluster.id);
+											}
 										}}
 									>
 										{#if cluster.kind === 'mock'}
@@ -219,6 +270,24 @@
 					{/each}
 				</DropdownMenu.Group>
 				<DropdownMenu.Separator />
+				{#if selectedCluster?.kind === 'log-analytics' && selectedCluster.logAnalytics && selectedAzureAuthenticationProfile}
+					<DropdownMenu.Group>
+						<DropdownMenu.GroupHeading
+							class="text-muted-foreground px-2 py-1.5 text-xs font-medium"
+						>
+							Authentication Status
+						</DropdownMenu.GroupHeading>
+						<div class="px-2 py-1 text-xs">
+							<p class="font-medium">Using profile {selectedAzureAuthenticationProfile.name}</p>
+							<p class="text-muted-foreground mt-0.5">
+								{selectedAzureAuthenticationProfile.account
+									? `Signed in as ${selectedAzureAuthenticationProfile.account.name ?? selectedAzureAuthenticationProfile.account.username}`
+									: 'Not signed in'}
+							</p>
+						</div>
+					</DropdownMenu.Group>
+					<DropdownMenu.Separator />
+				{/if}
 				<DropdownMenu.Item
 					class="data-highlighted:bg-accent data-highlighted:text-accent-foreground flex cursor-default items-center gap-2 rounded-sm px-2 py-2 text-sm font-medium outline-none"
 					onSelect={openAddCluster}
@@ -248,7 +317,7 @@
 	bind:open={manageClustersOpen}
 	clusters={customClusters}
 	{selectedClusterId}
-	onedit={openEditCluster}
+	onedit={onclusteredit}
 	onremove={openRemoveCluster}
 />
 <RemoveClusterDialog
@@ -257,3 +326,30 @@
 	isCurrent={removingCluster?.id === selectedClusterId}
 	onconfirm={onclusterremove}
 />
+
+<Dialog.Root bind:open={linkProfileOpen}>
+	<Dialog.Content class="gap-0 sm:max-w-md" aria-describedby="link-session-description">
+		<Dialog.Header class="border-b p-5 pr-14">
+			<Dialog.Title>Link authentication profile</Dialog.Title>
+			<Dialog.Description id="link-session-description">
+				Select the authentication profile to use before opening {linkingCluster?.name}.
+			</Dialog.Description>
+		</Dialog.Header>
+		<div class="p-5">
+			<Select.Root type="single" bind:value={linkProfileId}>
+				<Select.Trigger class="w-full"
+					><Select.Value placeholder="Choose an authentication profile" /></Select.Trigger
+				>
+				<Select.Content>
+					{#each azureAuthenticationProfiles.profiles as profile (profile.id)}
+						<Select.Item value={profile.id} label={profile.name} />
+					{/each}
+				</Select.Content>
+			</Select.Root>
+		</div>
+		<Dialog.Footer class="border-t p-4">
+			<Button variant="outline" onclick={() => (linkProfileOpen = false)}>Cancel</Button>
+			<Button disabled={!linkProfileId} onclick={linkAuthenticationProfile}>Link and continue</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

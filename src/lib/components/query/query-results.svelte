@@ -7,6 +7,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import ResultTable from '$lib/components/query/result-table.svelte';
+	import { getQueryDetails } from '$lib/query/query-details';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import * as Tabs from '$lib/components/ui/tabs';
@@ -18,6 +19,10 @@
 		result?: QueryResult;
 		/** Error produced by the most recent query execution. */
 		error?: string;
+		/** Azure request ID that correlates a failed Logs query with service diagnostics. */
+		errorRequestId?: string;
+		/** Raw Azure Logs error response retained for troubleshooting. */
+		errorRaw?: unknown;
 		/** Whether a query request is currently in flight. */
 		isRunning?: boolean;
 		/** Whether the result drawer is reduced to its tab bar. Supports `bind:collapsed`. */
@@ -33,6 +38,8 @@
 	let {
 		result,
 		error,
+		errorRequestId,
+		errorRaw,
 		isRunning = false,
 		collapsed = $bindable(false),
 		oncollapsedchange,
@@ -41,6 +48,11 @@
 	}: QueryResultsProps = $props();
 	let activeTab = $state('results');
 	let previousError = '';
+	const queryDetails = $derived(result ? getQueryDetails(result) : []);
+	const rawStatistics = $derived(
+		result?.statistics ? JSON.stringify(result.statistics, null, 2) : ''
+	);
+	const rawError = $derived(errorRaw ? JSON.stringify(errorRaw, null, 2) : '');
 
 	function setCollapsed(nextCollapsed: boolean) {
 		collapsed = nextCollapsed;
@@ -49,7 +61,7 @@
 
 	$effect(() => {
 		if (error && error !== previousError) {
-			activeTab = 'messages';
+			activeTab = 'results';
 			setCollapsed(false);
 		}
 		previousError = error ?? '';
@@ -80,9 +92,9 @@
 			<Tabs.Trigger value="messages" class={cn('px-2 text-xs', collapsed ? 'h-full' : 'h-8')}>
 				<CircleAlertIcon />
 				Messages
-				{#if error || result?.warnings.length}
+				{#if result?.warnings.length}
 					<Badge variant="outline" class="h-4 px-1 text-[9px]">
-						{(error ? 1 : 0) + (result?.warnings.length ?? 0)}
+						{result.warnings.length}
 					</Badge>
 				{/if}
 			</Tabs.Trigger>
@@ -114,7 +126,29 @@
 
 	{#if !collapsed}
 		<Tabs.Content value="results" class="relative min-h-0 overflow-hidden">
-			{#if isRunning && !result}
+			{#if error}
+				<div class="h-full min-h-0 overflow-y-auto p-3">
+					<div
+						class="border-destructive/30 bg-destructive/10 text-destructive mx-auto w-full max-w-3xl rounded-md border p-3 text-xs"
+					>
+						<p class="font-medium">{operationLabel} failed</p>
+						<p class="mt-1 whitespace-pre-wrap">{error}</p>
+						{#if errorRequestId}
+							<p class="mt-3 text-[11px]">
+								Request ID:
+								<span class="ml-1 break-all font-mono text-foreground">{errorRequestId}</span>
+							</p>
+						{/if}
+						{#if rawError}
+							<details class="mt-3 rounded border border-current/20 bg-background/50 p-2">
+								<summary class="cursor-pointer font-medium">Raw error JSON</summary>
+								<pre
+									class="mt-2 overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] text-foreground">{rawError}</pre>
+							</details>
+						{/if}
+					</div>
+				</div>
+			{:else if isRunning && !result}
 				<div class="text-muted-foreground grid h-full place-items-center text-xs">
 					<div class="flex items-center gap-2">
 						<Spinner class="size-4" /> Running {operationLabel.toLowerCase()}…
@@ -135,16 +169,7 @@
 
 		<Tabs.Content value="messages" class="min-h-0 overflow-hidden">
 			<ScrollArea class="h-full" orientation="vertical" type="auto">
-				<div class="space-y-3 p-3 text-xs">
-					{#if error}
-						<div
-							class="border-destructive/30 bg-destructive/10 text-destructive rounded-md border p-2.5"
-						>
-							<p class="font-medium">{operationLabel} failed</p>
-							<p class="mt-1 whitespace-pre-wrap">{error}</p>
-						</div>
-					{/if}
-
+				<div class="space-y-4 p-3 text-xs">
 					{#each result?.warnings ?? [] as warning, index (index)}
 						<div
 							class="rounded-md border border-amber-500/30 bg-amber-500/10 p-2.5 text-amber-700 dark:text-amber-300"
@@ -154,18 +179,29 @@
 					{/each}
 
 					{#if result && !error}
-						<dl class="text-muted-foreground grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
-							<dt>Rows returned</dt>
-							<dd>{result.totalRowCount}</dd>
-							<dt>Rows rendered</dt>
-							<dd>{result.renderedRowCount}</dd>
-							<dt>Elapsed</dt>
-							<dd>{Math.round(result.elapsedMs)} ms</dd>
-							<dt>Request ID</dt>
-							<dd class="truncate font-mono" title={result.clientRequestId}>
-								{result.clientRequestId}
-							</dd>
-						</dl>
+						<section aria-label="Query details">
+							<h2 class="mb-3 text-sm font-semibold text-foreground">Query details</h2>
+							<dl
+								class="grid grid-cols-1 gap-x-6 gap-y-3 text-muted-foreground sm:grid-cols-2 xl:grid-cols-3"
+							>
+								{#each queryDetails as detail (detail.label)}
+									<div class="min-w-0">
+										<dt>{detail.label}</dt>
+										<dd class="mt-0.5 break-words font-medium text-foreground">{detail.value}</dd>
+									</div>
+								{/each}
+							</dl>
+						</section>
+
+						{#if rawStatistics}
+							<details class="rounded-md border p-2">
+								<summary class="cursor-pointer font-medium text-foreground"
+									>Raw Azure statistics</summary
+								>
+								<pre
+									class="text-muted-foreground mt-2 overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px]">{rawStatistics}</pre>
+							</details>
+						{/if}
 					{:else if !error}
 						<p class="text-muted-foreground">No query messages.</p>
 					{/if}

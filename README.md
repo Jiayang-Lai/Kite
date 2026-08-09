@@ -34,8 +34,9 @@ Kite is built with SvelteKit, TypeScript, Tailwind CSS, Monaco Editor, DuckDB-WA
 | **Emulated** | Supported KQL subset | Browser memory or private browser storage | No | Trying Kite and working with local datasets |
 | **Mock** | No | Built-in catalog | No | Exploring the interface and editor features |
 | **Local Kustainer** | Yes | Local Kustainer instance | Yes | More complete local Kusto workflows |
+| **Azure Log Analytics** | Yes | Azure Log Analytics workspace | Yes | Querying a workspace through Microsoft Entra |
 
-Hosted Azure Data Explorer and other remote Kusto clusters are not yet supported. Internally, Kite labels executable HTTP connections as **Remote**; currently this mode supports only Kustainer running on the local machine.
+Hosted Azure Data Explorer and other remote Kusto clusters are not yet supported. Azure Log Analytics is supported as a query-only connection; Kusto management commands, schema changes, and ingestion are unavailable. When adding one, supply the workspace ID, workspace ARM resource ID, tenant, and a public SPA app registration's client ID. Register Kite's root and `/auth/callback` URLs as SPA redirect URIs, then grant the signed-in user access to the workspace. Kite uses Entra PKCE popup sign-in and never accepts or stores client secrets.
 
 ## Try Kite
 
@@ -81,7 +82,9 @@ See [Development guide](docs/development.md) for translator setup, production bu
 - [Table and CSV ingestion quick start](docs/avro-emulated-quick-start.md) — create a table, load sample data, and query it
 - [Self-hosting Kite](docs/self-hosting.md) — containers, health checks, source builds, and Kustainer
 - [Development guide](docs/development.md) — local development, WASM builds, validation, and scripts
+- [Entra authentication for Log Analytics](docs/azure-entra-log-analytics-auth.md) — users, app registrations, delegated permissions, and workspace access
 - [Kusto documentation pipeline](docs/kusto-documentation.md) — indexing, downloads, throttling, caching, and troubleshooting
+- [Azure Log Analytics browser authentication](docs/log-analytics-authentication.md) — Entra sign-in, tokens, and workspace RBAC
 - [CI/CD strategy](docs/ci-cd.md) — branches, preview environments, releases, and rollback
 - [Infrastructure](infra/README.md) — deployment configuration
 

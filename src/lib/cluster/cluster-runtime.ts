@@ -6,6 +6,7 @@ import {
 import { loadEmulatedSchema } from '$lib/emulation/cluster';
 import { registerEmulatedStorage } from '$lib/emulation/storage';
 import { loadBackendSchema } from '$lib/kusto/backend-schema';
+import { loadLogAnalyticsSchema } from '$lib/log-analytics/client';
 import type { KustoClusterConnection } from '$lib/kusto/query-client';
 import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 import { getMockClusterSchema } from './mock-cluster-schema';
@@ -36,6 +37,12 @@ export function connectClusterRuntime(
 			registerEmulatedStorage(cluster.id, cluster.emulatedStorage);
 			await disposeInactiveDuckDbSessions(cluster.id);
 			return loadEmulatedSchema(cluster.id);
+		}
+		if (cluster.kind === 'log-analytics') {
+			if (!cluster.logAnalytics) throw new Error('Log Analytics connection settings are missing.');
+			const schema = await loadLogAnalyticsSchema(cluster.logAnalytics, cluster.name);
+			await disposeInactiveDuckDbSessions();
+			return schema;
 		}
 
 		const schema =

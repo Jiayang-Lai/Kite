@@ -4,6 +4,7 @@
 ### macOS ###
 # General
 .DS_Store
+infra/azure/samples/kite-test-logs.json
 .AppleDouble
 .LSOverride
 

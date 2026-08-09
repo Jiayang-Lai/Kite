@@ -8,25 +8,59 @@
 	import { createStarterMockSchema, normalizeMockSchema } from '$lib/cluster/mock-cluster-schema';
 	import type { EmulatedStorageMode } from '$lib/emulation/storage';
 	import type { KustoClusterConnection } from '$lib/kusto/query-client';
+	import { getAzureAuthenticationProfileStore } from '$lib/azure-auth/profile-store.svelte';
+
+	const clusterKindOptions: Array<{ value: KustoClusterConnection['kind']; label: string }> = [
+		{ value: 'remote', label: 'Remote' },
+		{ value: 'log-analytics', label: 'Azure Log Analytics' },
+		{ value: 'emulated', label: 'Emulated' },
+		{ value: 'mock', label: 'Mock' }
+	];
 
 	type AddClusterDialogProps = {
 		open?: boolean;
 		cluster?: KustoClusterConnection;
 		onsubmit?: (cluster: NewClusterConnection) => void;
+		oncancel?: () => void;
+		inline?: boolean;
 	};
 
-	let { open = $bindable(false), cluster, onsubmit }: AddClusterDialogProps = $props();
+	let { open = $bindable(false), cluster, onsubmit, oncancel, inline = false }: AddClusterDialogProps = $props();
 	let name = $state('');
 	let kind = $state<KustoClusterConnection['kind']>('remote');
 	let url = $state('');
+	let workspaceId = $state('');
+	let workspaceResourceId = $state('');
+	let tenantId = $state('');
+	let clientId = $state('');
+	let authenticationProfileId = $state('');
+	const azureAuthenticationProfiles = getAzureAuthenticationProfileStore();
+	let defaultTimespan = $state('');
 	let mockSchemaText = $state('');
 	let description = $state('');
 	let storageMode = $state<EmulatedStorageMode>('opfs');
 	let error = $state('');
 	let initializedTarget = '';
+	const canSubmit = $derived(
+		Boolean(name.trim()) &&
+			(kind === 'remote'
+				? Boolean(url.trim())
+				: kind === 'log-analytics'
+					? Boolean(
+							azureAuthenticationProfiles.profiles.length &&
+							authenticationProfileId &&
+							workspaceId.trim() &&
+							workspaceResourceId.trim() &&
+							tenantId.trim() &&
+							clientId.trim()
+						)
+					: kind === 'mock'
+						? Boolean(mockSchemaText.trim())
+						: true)
+	);
 
 	$effect(() => {
-		if (!open) {
+		if (!open && !inline) {
 			initializedTarget = '';
 			return;
 		}
@@ -37,6 +71,16 @@
 		name = cluster?.name ?? '';
 		kind = cluster?.kind ?? 'remote';
 		url = cluster?.kind === 'remote' ? cluster.url : '';
+		workspaceId =
+			cluster?.kind === 'log-analytics' ? (cluster.logAnalytics?.workspaceId ?? '') : '';
+		workspaceResourceId =
+			cluster?.kind === 'log-analytics' ? (cluster.logAnalytics?.workspaceResourceId ?? '') : '';
+		tenantId = cluster?.kind === 'log-analytics' ? (cluster.logAnalytics?.tenantId ?? '') : '';
+		clientId = cluster?.kind === 'log-analytics' ? (cluster.logAnalytics?.clientId ?? '') : '';
+		authenticationProfileId =
+			cluster?.kind === 'log-analytics' ? (cluster.logAnalytics?.authenticationProfileId ?? '') : '';
+		defaultTimespan =
+			cluster?.kind === 'log-analytics' ? (cluster.logAnalytics?.defaultTimespan ?? '') : '';
 		mockSchemaText = JSON.stringify(
 			cluster?.kind === 'mock'
 				? (cluster.mockSchema ?? createStarterMockSchema())
@@ -65,9 +109,21 @@
 						}
 					: kind === 'emulated'
 						? { name, kind, description, storageMode }
-						: { name, kind, url, description };
+						: kind === 'log-analytics'
+							? {
+									name,
+									kind,
+									description,
+									workspaceId,
+									workspaceResourceId,
+									tenantId,
+									clientId,
+								authenticationProfileId: authenticationProfileId || undefined,
+									defaultTimespan
+								}
+							: { name, kind, url, description };
 			onsubmit?.(draft);
-			open = false;
+			if (!inline) open = false;
 		} catch (cause) {
 			error =
 				cause instanceof SyntaxError
@@ -77,24 +133,25 @@
 						: String(cause);
 		}
 	}
+
+	function selectAzureAuthenticationProfile(value: string) {
+		const profile = azureAuthenticationProfiles.profiles.find((item) => item.id === value);
+		if (!profile) return;
+		tenantId = profile.tenantId;
+		clientId = profile.clientId;
+	}
+
+	const selectedAzureAuthenticationProfile = $derived(
+		azureAuthenticationProfiles.profiles.find((profile) => profile.id === authenticationProfileId)
+	);
+	const azureAuthenticationProfileOptions = $derived(
+		azureAuthenticationProfiles.profiles.map((profile) => ({ value: profile.id, label: profile.name }))
+	);
 </script>
 
-<Dialog.Root bind:open>
-	<Dialog.Content
-		class="max-h-[calc(100dvh-2rem)] gap-0 overflow-y-auto sm:max-w-xl"
-		aria-describedby="add-cluster-dialog-description"
-	>
-		<Dialog.Header class="border-b p-5 pr-14">
-			<Dialog.Title>{cluster ? 'Edit cluster' : 'Add cluster'}</Dialog.Title>
-			<Dialog.Description id="add-cluster-dialog-description">
-				{cluster
-					? 'Update this browser-local Kusto connection and its schema.'
-					: 'Save a browser-local Kusto connection and connect to it.'}
-			</Dialog.Description>
-		</Dialog.Header>
-
-		<form onsubmit={addCluster}>
-			<div class="space-y-4 p-5">
+{#snippet clusterForm()}
+	<form class={inline ? 'flex min-h-0 flex-1 flex-col' : 'contents'} onsubmit={addCluster}>
+			<div class="space-y-4 overflow-y-auto p-5">
 				<div class="grid gap-1.5">
 					<label class="text-sm font-medium" for="new-cluster-name">Name</label>
 					<Input
@@ -109,14 +166,19 @@
 
 				<div class="grid gap-1.5">
 					<label class="text-sm font-medium" for="new-cluster-kind">Kind</label>
-					<Select.Root type="single" bind:value={kind} disabled={Boolean(cluster)}>
+					<Select.Root
+						type="single"
+						bind:value={kind}
+						items={clusterKindOptions}
+						disabled={Boolean(cluster)}
+					>
 						<Select.Trigger id="new-cluster-kind" class="w-full">
 							<Select.Value />
 						</Select.Trigger>
 						<Select.Content>
-							<Select.Item value="remote" label="Remote" />
-							<Select.Item value="emulated" label="Emulated" />
-							<Select.Item value="mock" label="Mock" />
+							{#each clusterKindOptions as option (option.value)}
+								<Select.Item {...option} />
+							{/each}
 						</Select.Content>
 					</Select.Root>
 					<p class="text-muted-foreground text-xs">
@@ -126,7 +188,9 @@
 								? "Use Kite's in-memory schema catalog for testing and development."
 								: kind === 'emulated'
 									? '(Memory Heavy) Translate KQL and execute it with an isolated DuckDB-Wasm backend in this browser.'
-									: 'Connect to a browser-accessible Kusto endpoint.'}
+									: kind === 'log-analytics'
+										? 'Query an Azure Log Analytics workspace with Microsoft Entra sign-in.'
+										: 'Connect to a browser-accessible Kusto endpoint.'}
 					</p>
 				</div>
 
@@ -145,6 +209,81 @@
 						<p id="new-cluster-url-help" class="text-muted-foreground text-xs">
 							Use the browser-accessible HTTP or HTTPS endpoint.
 						</p>
+					</div>
+				{:else if kind === 'log-analytics'}
+					<div class="grid gap-4">
+						{#if azureAuthenticationProfiles.profiles.length === 0}
+							<p
+								class="border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300 rounded-md border px-3 py-2 text-sm"
+								role="alert"
+							>
+								No Azure authentication profiles are available. Create one from Settings → Azure
+								authentication profiles before
+								adding this connection.
+							</p>
+						{/if}
+						<div class="grid gap-1.5">
+							<label class="text-sm font-medium" for="log-analytics-profile">Azure authentication profile</label>
+							<Select.Root
+								type="single"
+								bind:value={authenticationProfileId}
+								items={azureAuthenticationProfileOptions}
+								onValueChange={selectAzureAuthenticationProfile}
+							>
+								<Select.Trigger id="log-analytics-profile" class="w-full">
+									<Select.Value placeholder="Select an authentication profile" />
+								</Select.Trigger>
+								<Select.Content>
+									{#each azureAuthenticationProfileOptions as profile (profile.value)}
+										<Select.Item {...profile} />
+									{/each}
+								</Select.Content>
+							</Select.Root>
+							{#if selectedAzureAuthenticationProfile}
+								<p class="text-muted-foreground text-xs">
+									{selectedAzureAuthenticationProfile.tenantId} · {selectedAzureAuthenticationProfile.clientId}
+								</p>
+							{/if}
+						</div>
+						<div class="grid gap-1.5">
+							<label class="text-sm font-medium" for="log-analytics-workspace-id"
+								>Workspace ID</label
+							>
+							<Input
+								id="log-analytics-workspace-id"
+								bind:value={workspaceId}
+								placeholder="00000000-0000-0000-0000-000000000000"
+								autocomplete="off"
+								required
+							/>
+						</div>
+						<div class="grid gap-1.5">
+							<label class="text-sm font-medium" for="log-analytics-workspace-resource-id"
+								>Workspace resource ID</label
+							>
+							<Input
+								id="log-analytics-workspace-resource-id"
+								bind:value={workspaceResourceId}
+								placeholder="/subscriptions/.../resourceGroups/.../providers/Microsoft.OperationalInsights/workspaces/..."
+								autocomplete="off"
+								required
+							/>
+							<p class="text-muted-foreground text-xs">
+								Find this value in the workspace’s Azure portal JSON view or Terraform output.
+							</p>
+						</div>
+						<div class="grid gap-1.5">
+							<label class="text-sm font-medium" for="log-analytics-timespan"
+								>Default timespan <span class="text-muted-foreground font-normal">(optional)</span
+								></label
+							>
+							<Input
+								id="log-analytics-timespan"
+								bind:value={defaultTimespan}
+								placeholder="PT24H"
+								autocomplete="off"
+							/>
+						</div>
 					</div>
 				{:else if kind === 'mock'}
 					<div class="grid gap-1.5">
@@ -203,9 +342,38 @@
 			</div>
 
 			<Dialog.Footer class="border-t p-4">
-				<Button type="button" variant="outline" onclick={() => (open = false)}>Cancel</Button>
-				<Button type="submit">{cluster ? 'Save changes' : 'Add and connect'}</Button>
+				<Button
+					type="button"
+					variant="outline"
+					onclick={() => {
+						if (!inline) open = false;
+						oncancel?.();
+					}}
+				>Cancel</Button>
+				<Button type="submit" disabled={!canSubmit}
+					>{cluster ? 'Save changes' : 'Add and connect'}</Button
+				>
 			</Dialog.Footer>
-		</form>
-	</Dialog.Content>
-</Dialog.Root>
+	</form>
+{/snippet}
+
+{#if inline}
+	{@render clusterForm()}
+{:else}
+	<Dialog.Root bind:open>
+		<Dialog.Content
+			class="grid max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden sm:max-w-xl"
+			aria-describedby="add-cluster-dialog-description"
+		>
+			<Dialog.Header class="border-b p-5 pr-14">
+				<Dialog.Title>{cluster ? 'Edit cluster' : 'Add cluster'}</Dialog.Title>
+				<Dialog.Description id="add-cluster-dialog-description">
+					{cluster
+						? 'Update this browser-local Kusto connection and its schema.'
+						: 'Save a browser-local Kusto connection and connect to it.'}
+				</Dialog.Description>
+			</Dialog.Header>
+			{@render clusterForm()}
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}

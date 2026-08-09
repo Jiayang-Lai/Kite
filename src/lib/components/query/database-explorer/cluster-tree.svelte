@@ -5,9 +5,8 @@
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import SquareFunctionIcon from '@lucide/svelte/icons/square-function';
 	import TablePropertiesIcon from '@lucide/svelte/icons/table-properties';
-	import { Collapsible } from 'bits-ui';
+	import { Collapsible, Popover } from 'bits-ui';
 
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { Input } from '$lib/components/ui/input';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import * as Sidebar from '$lib/components/ui/sidebar';
@@ -28,6 +27,7 @@
 	const sidebar = Sidebar.useSidebar();
 	let databasesOpen = $state(true);
 	let dropdownOpen = $state(false);
+	const TABLE_LIST_MAX_ITEMS = 12;
 	const normalizedFilter = $derived(filter.trim().toLowerCase());
 	const isCollapsedDesktop = $derived(sidebar.state === 'collapsed' && !sidebar.isMobile);
 	const filteredDatabases = $derived.by(() =>
@@ -125,6 +125,7 @@
 		selectedFunction = functionName;
 		setDatabaseExpanded(databaseName, true);
 	}
+
 </script>
 
 {#snippet databaseTree()}
@@ -185,30 +186,37 @@
 								>
 							</Collapsible.Trigger>
 							<Collapsible.Content>
-								<Sidebar.MenuSub class="ms-1 border-s-0 px-1">
-									{#each getVisibleTables(databaseName) as table (table.name)}
-										{@const selected =
-											selectedDatabase === databaseName && selectedTable === table.name}
-										<Sidebar.MenuSubItem>
-											<button
-												type="button"
-												class={cn(
-													'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-xs outline-none focus-visible:ring-2',
-													selected && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-												)}
-												onclick={() => selectTable(databaseName, table.name)}
-												aria-pressed={selected}
-											>
-												<TablePropertiesIcon class="text-muted-foreground size-3.5 shrink-0" />
-												<span class="min-w-0 flex-1 truncate font-mono" title={table.name}
-													>{table.name}</span
+								{@const visibleTables = getVisibleTables(databaseName)}
+								<ScrollArea
+									class={visibleTables.length > TABLE_LIST_MAX_ITEMS ? 'h-72' : ''}
+									orientation="vertical"
+								>
+									<Sidebar.MenuSub class="ms-1 border-s-0 px-1">
+										{#each visibleTables as table (table.name)}
+											{@const selected =
+												selectedDatabase === databaseName && selectedTable === table.name}
+											<Sidebar.MenuSubItem>
+												<button
+													type="button"
+													class={cn(
+														'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-xs outline-none focus-visible:ring-2',
+														selected &&
+															'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+													)}
+													onclick={() => selectTable(databaseName, table.name)}
+													aria-pressed={selected}
 												>
-											</button>
-										</Sidebar.MenuSubItem>
-									{:else}
-										<p class="text-muted-foreground px-2 py-2 text-xs">No tables found.</p>
-									{/each}
-								</Sidebar.MenuSub>
+													<TablePropertiesIcon class="text-muted-foreground size-3.5 shrink-0" />
+													<span class="min-w-0 flex-1 truncate font-mono" title={table.name}
+														>{table.name}</span
+													>
+												</button>
+											</Sidebar.MenuSubItem>
+										{:else}
+											<p class="text-muted-foreground px-2 py-2 text-xs">No tables found.</p>
+										{/each}
+									</Sidebar.MenuSub>
+								</ScrollArea>
 							</Collapsible.Content>
 						</Collapsible.Root>
 
@@ -231,30 +239,37 @@
 								>
 							</Collapsible.Trigger>
 							<Collapsible.Content>
-								<Sidebar.MenuSub class="ms-1 border-s-0 px-1">
-									{#each getVisibleFunctions(databaseName) as fn (fn.name)}
-										{@const selected =
-											selectedDatabase === databaseName && selectedFunction === fn.name}
-										<Sidebar.MenuSubItem>
-											<button
-												type="button"
-												class={cn(
-													'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-xs outline-none focus-visible:ring-2',
-													selected && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-												)}
-												onclick={() => selectFunction(databaseName, fn.name)}
-												aria-pressed={selected}
-											>
-												<SquareFunctionIcon class="text-muted-foreground size-3.5 shrink-0" />
-												<span class="min-w-0 flex-1 truncate font-mono" title={fn.name}
-													>{fn.name}</span
+								{@const visibleFunctions = getVisibleFunctions(databaseName)}
+								<ScrollArea
+									class={visibleFunctions.length > TABLE_LIST_MAX_ITEMS ? 'h-72' : ''}
+									orientation="vertical"
+								>
+									<Sidebar.MenuSub class="ms-1 border-s-0 px-1">
+										{#each visibleFunctions as fn (fn.name)}
+											{@const selected =
+												selectedDatabase === databaseName && selectedFunction === fn.name}
+											<Sidebar.MenuSubItem>
+												<button
+													type="button"
+													class={cn(
+														'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-xs outline-none focus-visible:ring-2',
+														selected &&
+															'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+													)}
+													onclick={() => selectFunction(databaseName, fn.name)}
+													aria-pressed={selected}
 												>
-											</button>
-										</Sidebar.MenuSubItem>
-									{:else}
-										<p class="text-muted-foreground px-2 py-2 text-xs">No functions found.</p>
-									{/each}
-								</Sidebar.MenuSub>
+													<SquareFunctionIcon class="text-muted-foreground size-3.5 shrink-0" />
+													<span class="min-w-0 flex-1 truncate font-mono" title={fn.name}
+														>{fn.name}</span
+													>
+												</button>
+											</Sidebar.MenuSubItem>
+										{:else}
+											<p class="text-muted-foreground px-2 py-2 text-xs">No functions found.</p>
+										{/each}
+									</Sidebar.MenuSub>
+								</ScrollArea>
 							</Collapsible.Content>
 						</Collapsible.Root>
 					</div>
@@ -267,43 +282,58 @@
 {/snippet}
 
 {#if isCollapsedDesktop}
-	<DropdownMenu.Root bind:open={dropdownOpen}>
+	<Popover.Root bind:open={dropdownOpen}>
 		<Sidebar.Menu>
 			<Sidebar.MenuItem>
-				<DropdownMenu.Trigger>
+				<Popover.Trigger openOnHover openDelay={0} closeDelay={150}>
 					{#snippet child({ props })}
-						<Sidebar.MenuButton {...props} tooltipContent="Databases" aria-label="Browse databases">
-							<DatabaseSearchIcon />
-							<span>Databases</span>
+						<Sidebar.MenuButton
+							{...props}
+							isActive={dropdownOpen}
+							aria-label="Browse databases"
+						>
+							{#snippet child({ props })}
+								<a {...props} href="/explorer/query" onclick={(event) => event.stopPropagation()}>
+									<DatabaseSearchIcon />
+									<span>Databases</span>
+								</a>
+							{/snippet}
 						</Sidebar.MenuButton>
 					{/snippet}
-				</DropdownMenu.Trigger>
+				</Popover.Trigger>
 
-				<DropdownMenu.Content side="right" align="start" sideOffset={8} class="w-80 p-0">
-					<div class="flex h-[min(32rem,calc(100vh-1rem))] flex-col">
-						<div class="bg-popover shrink-0 border-b px-2 py-2">
-							<p class="px-2 text-xs font-medium">Databases</p>
-							<div class="relative mt-2">
-								<SearchIcon
-									class="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2"
-								/>
-								<Input
-									bind:value={filter}
-									class="h-8 bg-background pr-2 pl-8 text-xs"
-									placeholder="Search cluster"
-								/>
+				<Popover.Portal>
+					<Popover.Content
+						side="right"
+						align="start"
+						sideOffset={8}
+						class="z-50 w-80 rounded-md border bg-popover p-0 text-popover-foreground shadow-md"
+					>
+						<div class="flex h-[min(32rem,calc(100vh-1rem))] flex-col">
+							<div class="shrink-0 border-b px-2 py-2">
+								<p class="px-2 text-xs font-medium">Databases</p>
+								<div class="relative mt-2">
+									<SearchIcon
+										class="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2"
+									/>
+									<Input
+										bind:value={filter}
+										class="h-8 bg-background pr-2 pl-8 text-xs"
+										placeholder="Search cluster"
+									/>
+								</div>
 							</div>
+							<ScrollArea class="min-h-0 flex-1" orientation="vertical">
+								<div class="p-2">
+									{@render databaseTree()}
+								</div>
+							</ScrollArea>
 						</div>
-						<ScrollArea class="min-h-0 flex-1" orientation="vertical">
-							<div class="p-2">
-								{@render databaseTree()}
-							</div>
-						</ScrollArea>
-					</div>
-				</DropdownMenu.Content>
+					</Popover.Content>
+				</Popover.Portal>
 			</Sidebar.MenuItem>
 		</Sidebar.Menu>
-	</DropdownMenu.Root>
+	</Popover.Root>
 {:else}
 	<Collapsible.Root
 		class="group/collapsible"

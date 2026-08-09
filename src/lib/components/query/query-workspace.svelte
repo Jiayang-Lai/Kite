@@ -30,6 +30,7 @@
 	import { Spinner } from '$lib/components/ui/spinner';
 	import { deletePersistentDuckDbStorage } from '$lib/duckdb/storage';
 	import { startEmulatedQuery } from '$lib/emulation/cluster';
+	import { LogAnalyticsQueryRequestError, startLogAnalyticsQuery } from '$lib/log-analytics/client';
 	import { getClusterSession } from '$lib/cluster/cluster-session.svelte';
 	import { connectClusterRuntime, releaseClusterRuntime } from '$lib/cluster/cluster-runtime';
 	import {
@@ -83,6 +84,8 @@
 	let queryText = $state('');
 	let queryResult = $state<QueryResult>();
 	let queryError = $state('');
+	let queryErrorRequestId = $state<string>();
+	let queryErrorRaw = $state<unknown>();
 	let resultsCollapsed = $state(false);
 	let resultsPane = $state<PaneAPI>();
 	let isQueryRunning = $state(false);
@@ -98,6 +101,7 @@
 	const activeCluster = $derived(clusters.find((cluster) => cluster.id === activeClusterId));
 	const isMockCluster = $derived(activeCluster?.kind === 'mock');
 	const isEmulatedCluster = $derived(activeCluster?.kind === 'emulated');
+	const isLogAnalyticsCluster = $derived(activeCluster?.kind === 'log-analytics');
 	const hasBuiltInMockSamples = $derived(usesBuiltInMockCatalog(activeCluster));
 	let explorerExpansion = $state(clusterSession.getExplorerExpansion(initialCluster.id));
 	const isQueryable = $derived(hasCluster && !isMockCluster);
@@ -365,11 +369,15 @@
 
 		const requestId = ++queryRequestId;
 		queryError = '';
+		queryErrorRequestId = undefined;
+		queryErrorRaw = undefined;
 		resultsCollapsed = false;
 		isQueryRunning = true;
 		activeExecution = isEmulatedCluster
 			? startEmulatedQuery(activeClusterId, selectedDatabase, query)
-			: startKustoQuery(selectedDatabase, query, activeClusterUrl);
+			: isLogAnalyticsCluster && activeCluster?.logAnalytics
+				? startLogAnalyticsQuery(activeCluster.logAnalytics, query)
+				: startKustoQuery(selectedDatabase, query, activeClusterUrl);
 		recentQueryStore.record({
 			clusterId: activeClusterId,
 			database: selectedDatabase,
@@ -384,6 +392,10 @@
 			if (requestId === queryRequestId) {
 				queryResult = undefined;
 				queryError = formatQueryFailure(getKustoErrorMessage(error));
+				if (error instanceof LogAnalyticsQueryRequestError) {
+					queryErrorRequestId = error.requestId;
+					queryErrorRaw = error.response;
+				}
 			}
 		} finally {
 			if (requestId === queryRequestId) {
@@ -440,6 +452,10 @@
 		onclusteradd={addCluster}
 		onclusteredit={editCluster}
 		onclusterremove={removeCluster}
+		onlinkauthenticationprofile={(clusterId, authenticationProfileId) => {
+			clusterConnectionStore.linkLogAnalyticsAuthenticationProfile(clusterId, authenticationProfileId);
+			switchCluster(clusterId);
+		}}
 	/>
 {/snippet}
 
@@ -574,8 +590,8 @@
 													disabled={!queryText.trim() || isMockCluster}
 													title={isMockCluster
 														? 'Query execution is unavailable for the mock cluster'
-														: 'Run query (Ctrl/Cmd+Enter)'}
-													aria-keyshortcuts={isMockCluster ? undefined : 'Control+Enter Meta+Enter'}
+									: 'Run query (Shift+Enter)'}
+									aria-keyshortcuts={isMockCluster ? undefined : 'Shift+Enter'}
 												>
 													<PlayIcon />
 													Run
@@ -626,6 +642,8 @@
 									class="h-full min-h-0 rounded-none border-0"
 									result={queryResult}
 									error={queryError}
+									errorRequestId={queryErrorRequestId}
+									errorRaw={queryErrorRaw}
 									isRunning={isQueryRunning}
 									collapsed={resultsCollapsed}
 									oncollapsedchange={setResultsCollapsed}

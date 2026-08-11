@@ -1,5 +1,9 @@
 <script lang="ts">
+	import CloudCogIcon from '@lucide/svelte/icons/cloud-cog';
+	import CpuIcon from '@lucide/svelte/icons/cpu';
+	import FlaskConicalIcon from '@lucide/svelte/icons/flask-conical';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
+	import ServerIcon from '@lucide/svelte/icons/server';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 
 	import AddClusterDialog from '$lib/components/cluster/add-cluster-dialog.svelte';
@@ -64,8 +68,17 @@
 		<div class="max-h-[min(65dvh,32rem)] space-y-2 overflow-y-auto p-4">
 				{#each clusters as cluster (cluster.id)}
 					<div class="flex items-center gap-3 rounded-lg border p-3">
+						{#if cluster.kind === 'mock'}
+							<FlaskConicalIcon class="text-muted-foreground size-4 shrink-0" aria-hidden="true" />
+						{:else if cluster.kind === 'emulated'}
+							<CpuIcon class="text-muted-foreground size-4 shrink-0" aria-hidden="true" />
+						{:else if cluster.kind === 'log-analytics'}
+							<CloudCogIcon class="text-muted-foreground size-4 shrink-0" aria-hidden="true" />
+						{:else}
+							<ServerIcon class="text-muted-foreground size-4 shrink-0" aria-hidden="true" />
+						{/if}
 						<div class="min-w-0 flex-1">
-							<div class="flex items-center gap-2">
+							<div class="flex min-w-0 items-center gap-2">
 								<p class="truncate text-sm font-medium" title={cluster.name}>{cluster.name}</p>
 								{#if cluster.kind === 'emulated'}
 									<EmulatedStorageBadge
@@ -77,9 +90,11 @@
 									<span class="text-muted-foreground shrink-0 text-xs">Current</span>
 								{/if}
 							</div>
-							<p class="text-muted-foreground truncate text-xs" title={cluster.url}>
-								{cluster.url}
-							</p>
+							{#if cluster.kind !== 'mock' && cluster.kind !== 'emulated'}
+								<p class="text-muted-foreground truncate text-xs" title={cluster.url}>
+									{cluster.url}
+								</p>
+							{/if}
 							{#if cluster.description}
 								<p class="text-muted-foreground mt-1 line-clamp-2 text-xs">
 									{cluster.description}

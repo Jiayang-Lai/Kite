@@ -2,6 +2,7 @@
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
 	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert';
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
+	import CloudCogIcon from '@lucide/svelte/icons/cloud-cog';
 	import CpuIcon from '@lucide/svelte/icons/cpu';
 	import FlaskConicalIcon from '@lucide/svelte/icons/flask-conical';
 	import LockIcon from '@lucide/svelte/icons/lock';
@@ -145,6 +146,8 @@
 								<FlaskConicalIcon class="size-4" />
 							{:else if selectedCluster?.kind === 'emulated'}
 								<CpuIcon class="size-4" />
+							{:else if selectedCluster?.kind === 'log-analytics'}
+								<CloudCogIcon class="size-4" />
 							{:else}
 								<ServerIcon class="size-4" />
 							{/if}
@@ -225,6 +228,8 @@
 											<FlaskConicalIcon class="size-4" />
 										{:else if cluster.kind === 'emulated'}
 											<CpuIcon class="size-4" />
+										{:else if cluster.kind === 'log-analytics'}
+											<CloudCogIcon class="size-4" />
 										{:else}
 											<ServerIcon class="size-4" />
 										{/if}

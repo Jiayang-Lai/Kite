@@ -1,5 +1,7 @@
 <script lang="ts">
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
+	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert';
+	import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
 	import CpuIcon from '@lucide/svelte/icons/cpu';
 	import FlaskConicalIcon from '@lucide/svelte/icons/flask-conical';
 	import LockIcon from '@lucide/svelte/icons/lock';
@@ -204,16 +206,19 @@
 										onblur={() => (tooltipClusterId = undefined)}
 										onSelect={() => {
 											tooltipClusterId = undefined;
-											if (!disabled && !locked) {
-												if (
-													cluster.kind === 'log-analytics' &&
-												!azureAuthenticationProfiles.profiles.some(
-												(profile) => profile.id === cluster.logAnalytics?.authenticationProfileId
-													)
-												)
-											openAuthenticationProfileLink(cluster);
-												else onclusterchange?.(cluster.id);
+											if (disabled || locked) return;
+
+											const hasLogAnalyticsAuthenticationProfile =
+												cluster.kind !== 'log-analytics' ||
+												azureAuthenticationProfiles.profiles.some(
+													(profile) => profile.id === cluster.logAnalytics?.authenticationProfileId
+												);
+											if (!hasLogAnalyticsAuthenticationProfile) {
+												openAuthenticationProfileLink(cluster);
+												return;
 											}
+
+											onclusterchange?.(cluster.id);
 										}}
 									>
 										{#if cluster.kind === 'mock'}
@@ -279,11 +284,23 @@
 						</DropdownMenu.GroupHeading>
 						<div class="px-2 py-1 text-xs">
 							<p class="font-medium">Using profile {selectedAzureAuthenticationProfile.name}</p>
-							<p class="text-muted-foreground mt-0.5">
-								{selectedAzureAuthenticationProfile.account
-									? `Signed in as ${selectedAzureAuthenticationProfile.account.name ?? selectedAzureAuthenticationProfile.account.username}`
-									: 'Not signed in'}
-							</p>
+							{#if selectedAzureAuthenticationProfile.account}
+								<p class="mt-0.5 flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+									<CircleCheckIcon class="size-3.5 shrink-0" aria-hidden="true" />
+									<span class="truncate">
+										Signed in as {selectedAzureAuthenticationProfile.account.name ??
+											selectedAzureAuthenticationProfile.account.username}{selectedAzureAuthenticationProfile.account.name &&
+										selectedAzureAuthenticationProfile.account.username
+											? ` (${selectedAzureAuthenticationProfile.account.username})`
+											: ''}
+									</span>
+								</p>
+							{:else}
+								<p class="mt-0.5 flex items-center gap-1 text-amber-700 dark:text-amber-300">
+									<CircleAlertIcon class="size-3.5 shrink-0" aria-hidden="true" />
+									<span>Sign in required</span>
+								</p>
+							{/if}
 						</div>
 					</DropdownMenu.Group>
 					<DropdownMenu.Separator />

@@ -54,4 +54,39 @@ describe('Log Analytics authentication', () => {
 			vi.unstubAllGlobals();
 		}
 	});
+
+	it('cleans up an abandoned sign-in marker before opening a logout popup', async () => {
+		vi.stubGlobal('window', {
+			location: { origin: 'https://kite.example.test' },
+			sessionStorage: {
+				getItem: vi.fn(() => JSON.stringify({ clientId: 'another-client-id', type: 'signin' }))
+			}
+		});
+		const account = {
+			homeAccountId: 'home-account-id',
+			localAccountId: 'local-account-id',
+			tenantId: 'tenant-id',
+			username: 'alex@example.test'
+		};
+		const client = {
+			getAccount: vi.fn(() => account),
+			handleRedirectPromise: vi.fn(async () => null),
+			logoutPopup: vi.fn(async () => undefined)
+		};
+		msal.createStandardPublicClientApplication.mockResolvedValueOnce(client);
+
+		try {
+			await logoutLogAnalytics({
+				workspaceId: 'workspace-id',
+				tenantId: 'tenant-id',
+				clientId: 'another-client-id',
+				account
+			});
+
+			expect(client.handleRedirectPromise).toHaveBeenCalledOnce();
+			expect(client.logoutPopup).toHaveBeenCalledOnce();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
 });

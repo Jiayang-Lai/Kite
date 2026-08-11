@@ -1,5 +1,7 @@
 <script lang="ts">
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
+	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert';
+	import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
 	import Settings2Icon from '@lucide/svelte/icons/settings-2';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import LogInIcon from '@lucide/svelte/icons/log-in';
@@ -7,6 +9,8 @@
 
 	import { azureMsalClientManager } from '$lib/azure-auth/msal-client-manager';
 	import { getAzureAuthenticationProfileStore } from '$lib/azure-auth/profile-store.svelte';
+	import { getClusterConnectionStore } from '$lib/cluster/cluster-connection-store.svelte';
+	import { getClusterSession } from '$lib/cluster/cluster-session.svelte';
 	import ThemeToggle from '$lib/components/shared/theme-toggle.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -16,6 +20,16 @@
 
 	const sidebar = Sidebar.useSidebar();
 	const azureAuthenticationProfiles = getAzureAuthenticationProfileStore();
+	const clusterConnectionStore = getClusterConnectionStore();
+	const clusterSession = getClusterSession();
+	const activeCluster = $derived(
+		clusterConnectionStore.clusters.find((cluster) => cluster.id === clusterSession.activeClusterId)
+	);
+	const activeLogAnalyticsAuthenticationProfileId = $derived(
+		activeCluster?.kind === 'log-analytics'
+			? activeCluster.logAnalytics?.authenticationProfileId
+			: undefined
+	);
 	let authenticationProfileDialogOpen = $state(false);
 	let name = $state('');
 	let tenantId = $state('');
@@ -24,6 +38,33 @@
 	let profileToRemove = $state<(typeof azureAuthenticationProfiles.profiles)[number]>();
 	let profileAuthenticationError = $state('');
 	let signingOutProfileId = $state<string>();
+	let authenticationProfileDialog = $state<HTMLElement | null>(null);
+	let profileDialogResizeAnimation: Animation | undefined;
+
+	function setProfileView(nextView: 'current' | 'new') {
+		if (profileView === nextView) return;
+		const dialog = authenticationProfileDialog;
+		const startingHeight = dialog?.getBoundingClientRect().height;
+		profileView = nextView;
+		if (
+			!dialog ||
+			startingHeight === undefined ||
+			window.matchMedia('(prefers-reduced-motion: reduce)').matches
+		) {
+			return;
+		}
+
+		requestAnimationFrame(() => {
+			const endingHeight = dialog.getBoundingClientRect().height;
+			if (Math.abs(endingHeight - startingHeight) < 1) return;
+			profileDialogResizeAnimation?.cancel();
+			profileDialogResizeAnimation = dialog.animate(
+				[{ height: `${startingHeight}px` }, { height: `${endingHeight}px` }],
+				{ duration: 200, easing: 'ease-out' }
+			);
+		});
+	}
+
 	function addAuthenticationProfile() {
 		if (!name.trim() || !tenantId.trim() || !clientId.trim()) return;
 		azureAuthenticationProfiles.add({ name: name.trim(), tenantId: tenantId.trim(), clientId: clientId.trim() });
@@ -205,29 +246,33 @@
 </Sidebar.Menu>
 
 <Dialog.Root bind:open={authenticationProfileDialogOpen}>
-	<Dialog.Content class="gap-0 sm:max-w-3xl" aria-describedby="azure-authentication-profiles-description">
-		<Dialog.Header class="border-b p-5 pr-14">
+	<Dialog.Content
+		bind:ref={authenticationProfileDialog}
+		class="grid max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden sm:max-w-3xl"
+		aria-describedby="azure-authentication-profiles-description"
+	>
+		<Dialog.Header class="border-b p-4 pr-12 sm:p-5 sm:pr-14">
 			<Dialog.Title>Azure authentication profiles</Dialog.Title>
 			<Dialog.Description id="azure-authentication-profiles-description">
 				Create reusable Microsoft Entra authentication profiles for Analytics connections.
 			</Dialog.Description>
 		</Dialog.Header>
-		<div class="grid min-h-80 grid-cols-[11rem_minmax(0,1fr)]">
-			<nav class="border-r p-3" aria-label="Azure authentication profile views">
-				<div class="grid gap-1">
+		<div class="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] sm:grid-cols-[11rem_minmax(0,1fr)] sm:grid-rows-1">
+			<nav class="border-b p-2 sm:border-r sm:border-b-0 sm:p-3" aria-label="Azure authentication profile views">
+				<div class="flex gap-1 sm:grid">
 					<Button
 						variant={profileView === 'current' ? 'secondary' : 'ghost'}
-						class="justify-start"
-						onclick={() => (profileView = 'current')}>Current profiles</Button
+						class="flex-1 justify-center sm:justify-start"
+						onclick={() => setProfileView('current')}>Current profiles</Button
 					>
 					<Button
 						variant={profileView === 'new' ? 'secondary' : 'ghost'}
-						class="justify-start"
-						onclick={() => (profileView = 'new')}>New profile</Button
+						class="flex-1 justify-center sm:justify-start"
+						onclick={() => setProfileView('new')}>New profile</Button
 					>
 				</div>
 			</nav>
-			<section class="max-h-[min(65dvh,32rem)] overflow-y-auto p-5">
+			<section class="min-h-0 overflow-y-auto p-4 sm:max-h-[min(65dvh,32rem)] sm:p-5">
 				{#if profileView === 'current'}
 					<div class="mb-4">
 						<h3 class="text-sm font-medium">Current profiles</h3>
@@ -257,40 +302,61 @@
 					{:else}
 						<div class="divide-y rounded-md border">
 							{#each azureAuthenticationProfiles.profiles as profile (profile.id)}
-								<div class="flex items-center gap-3 p-3">
-									<div class="min-w-0 flex-1">
-										<p class="text-sm font-medium">{profile.name}</p>
-										{#if profile.account}
-											<p class="text-muted-foreground truncate text-xs">
-												Signed in as {profile.account.username}
-											</p>
-										{/if}
-										<p class="text-muted-foreground truncate text-xs">
-											Tenant ID: {profile.tenantId}
-										</p>
-										<p class="text-muted-foreground truncate text-xs">
-											Application ID: {profile.clientId}
-										</p>
+								<div class="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
+									<div class="flex min-w-0 flex-1 items-start gap-2">
+											{#if profile.account}
+												<CircleCheckIcon
+													class="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+													aria-label="Signed in"
+												/>
+											{:else}
+												<CircleAlertIcon
+													class="mt-0.5 size-3.5 shrink-0 text-amber-700 dark:text-amber-300"
+													aria-label="Sign in required"
+												/>
+											{/if}
+											<div class="min-w-0 flex-1">
+												<div class="flex min-w-0 items-center gap-2">
+													<p class="truncate text-sm font-medium">{profile.name}</p>
+													{#if activeLogAnalyticsAuthenticationProfileId === profile.id}
+														<span class="bg-primary/10 text-primary shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium">
+															Current connection
+														</span>
+													{/if}
+												</div>
+												{#if profile.account}
+													<p class="text-muted-foreground truncate text-xs">
+														Signed in as {profile.account.username}
+													</p>
+												{/if}
+												<p class="text-muted-foreground truncate text-xs">
+													Tenant ID: {profile.tenantId}
+												</p>
+												<p class="text-muted-foreground truncate text-xs">
+													Application ID: {profile.clientId}
+												</p>
+											</div>
 									</div>
 									{#if signingOutProfileId === profile.id}
-										<div class="flex items-center gap-2">
+										<div class="flex flex-wrap items-center justify-end gap-2 sm:flex-nowrap">
 											<span class="text-muted-foreground text-xs">Waiting for Entra…</span>
 											<Button variant="ghost" size="sm" onclick={() => stopWaitingForMicrosoftEntraSignOut(profile)}
 												>Stop waiting</Button
 											>
 										</div>
 									{:else if !profile.account}
-										<Button variant="ghost" size="sm" onclick={() => signIn(profile)}
+										<Button class="self-end sm:self-auto" variant="ghost" size="sm" onclick={() => signIn(profile)}
 											><LogInIcon /> Sign in</Button
 										>
 									{:else}
-										<Button variant="ghost" size="sm" onclick={() => signOutOfMicrosoftEntra(profile)}
+										<Button class="self-end sm:self-auto" variant="ghost" size="sm" onclick={() => signOutOfMicrosoftEntra(profile)}
 											><LogOutIcon /> Sign out</Button
 										>
 									{/if}
 									<Button
 										variant="ghost"
 										size="icon-sm"
+										class="self-end sm:self-auto"
 										aria-label={`Remove ${profile.name}`}
 										onclick={() => (profileToRemove = profile)}><Trash2Icon /></Button
 									>

@@ -214,7 +214,8 @@ export function startLogAnalyticsQuery(
 			};
 		})
 		.catch((error: unknown) => {
-			if (cancelled || controller.signal.aborted) throw new Error('Query cancelled.');
+			if (cancelled) throw new Error('Query cancelled.');
+			if (controller.signal.aborted) throw new Error('Query timed out.');
 			throw error;
 		})
 		.finally(() => window.clearTimeout(timeout));

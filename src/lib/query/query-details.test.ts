@@ -30,13 +30,20 @@ describe('getQueryDetails', () => {
 				}
 			}
 		});
+		const numberFormat = new Intl.NumberFormat();
 
 		expect(details).toEqual(
 			expect.arrayContaining([
 				{ label: 'Execution time', value: '220 ms' },
 				{ label: 'Engine execution time', value: '21 ms' },
-				{ label: 'Memory peak', value: '4.2 MB (4,195,488 bytes)' },
-				{ label: 'Response size (uncompressed)', value: '0.0 MB (41,729 bytes)' },
+				{
+					label: 'Memory peak',
+					value: `4.2 MB (${numberFormat.format(4195488)} bytes)`
+				},
+				{
+					label: 'Response size (uncompressed)',
+					value: `0.0 MB (${numberFormat.format(41729)} bytes)`
+				},
 				{ label: 'Request ID', value: 'request-id' }
 			])
 		);

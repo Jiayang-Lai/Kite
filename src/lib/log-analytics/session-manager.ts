@@ -75,7 +75,7 @@ export class LogAnalyticsSessionManager {
 		if (existing) return existing;
 		const request = this.runInteractive(config, async () => {
 			const client = await this.getClient(config);
-			await this.clearAbandonedSignOut(client, config);
+			await this.clearAbandonedPopupInteraction(client, config, 'signout');
 			const result = await client.loginPopup({
 				scopes: [LOG_ANALYTICS_SCOPE],
 				prompt: 'select_account'
@@ -92,21 +92,19 @@ export class LogAnalyticsSessionManager {
 	}
 
 	/**
-	 * MSAL writes one browser-wide interaction marker. Older Kite versions used
-	 * logoutPopup; closing that popup could leave a `signout` marker behind until
-	 * MSAL's popup monitor timed out. `handleRedirectPromise` is MSAL's public
-	 * cleanup path for that marker. Never clear a `signin` marker here: it may
-	 * represent a real sign-in in another Kite view.
+	 * MSAL writes one interaction marker in session storage. `handleRedirectPromise`
+	 * is its public cleanup path when a popup interaction has been abandoned.
 	 */
-	private async clearAbandonedSignOut(
+	private async clearAbandonedPopupInteraction(
 		client: IPublicClientApplication,
-		config: LogAnalyticsConnectionConfiguration
+		config: LogAnalyticsConnectionConfiguration,
+		type: 'signin' | 'signout'
 	) {
 		const raw = window.sessionStorage?.getItem('msal.interaction.status');
 		if (!raw) return;
 		try {
 			const interaction = JSON.parse(raw) as { clientId?: string; type?: string };
-			if (interaction.clientId === config.clientId && interaction.type === 'signout') {
+			if (interaction.clientId === config.clientId && interaction.type === type) {
 				await client.handleRedirectPromise();
 			}
 		} catch {
@@ -133,6 +131,10 @@ export class LogAnalyticsSessionManager {
 		const key = this.clientKey(config);
 		return this.runInteractive(config, async () => {
 			const client = await this.getClient(config);
+			// A parent-page reload can orphan a completed sign-in popup while its
+			// session-storage marker remains. Resolve that stale marker before the
+			// logout popup asks MSAL to begin another interaction.
+			await this.clearAbandonedPopupInteraction(client, config, 'signin');
 			const account = this.getAccount(client, config);
 			try {
 				if (!account) return;

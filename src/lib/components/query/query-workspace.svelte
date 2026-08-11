@@ -1,6 +1,7 @@
 <script lang="ts">
 	import CircleStopIcon from '@lucide/svelte/icons/circle-stop';
 	import BookmarkPlusIcon from '@lucide/svelte/icons/bookmark-plus';
+	import LightbulbIcon from '@lucide/svelte/icons/lightbulb';
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import ServerIcon from '@lucide/svelte/icons/server';
@@ -30,6 +31,7 @@
 	import { Spinner } from '$lib/components/ui/spinner';
 	import { deletePersistentDuckDbStorage } from '$lib/duckdb/storage';
 	import { startEmulatedQuery } from '$lib/emulation/cluster';
+	import { LogAnalyticsQueryRequestError, startLogAnalyticsQuery } from '$lib/log-analytics/client';
 	import { getClusterSession } from '$lib/cluster/cluster-session.svelte';
 	import { connectClusterRuntime, releaseClusterRuntime } from '$lib/cluster/cluster-runtime';
 	import {
@@ -52,6 +54,7 @@
 
 	type ConnectionState = 'loading' | 'ready' | 'error';
 	type QueryWorkspaceView = 'overview' | 'editor' | 'saved-queries';
+	const LOG_ANALYTICS_SIGN_IN_TIP_DELAY_MS = 5_000;
 
 	type QueryWorkspaceProps = {
 		view?: QueryWorkspaceView;
@@ -74,6 +77,7 @@
 	let databaseSchema = $state.raw<KustoDatabaseSchema | undefined>(clusterSession.databaseSchema);
 	let connectionStatus = $state<ConnectionState>('loading');
 	let isClusterSwitching = $state(false);
+	let showLogAnalyticsSignInTip = $state(false);
 	let connectionError = $state('');
 	let failedClusterId = $state<string>();
 	let explorerFilter = $state('');
@@ -83,6 +87,8 @@
 	let queryText = $state('');
 	let queryResult = $state<QueryResult>();
 	let queryError = $state('');
+	let queryErrorRequestId = $state<string>();
+	let queryErrorRaw = $state<unknown>();
 	let resultsCollapsed = $state(false);
 	let resultsPane = $state<PaneAPI>();
 	let isQueryRunning = $state(false);
@@ -90,6 +96,7 @@
 	let editorComponent = $state<{ getDiagnostics: () => EditorDiagnostic[] }>();
 	let schemaRequestId = 0;
 	let queryRequestId = 0;
+	let logAnalyticsSignInTipTimeout: number | undefined;
 
 	let activeClusterId = $state(initialCluster.id);
 	let activeClusterUrl = $state(initialCluster.url);
@@ -98,6 +105,10 @@
 	const activeCluster = $derived(clusters.find((cluster) => cluster.id === activeClusterId));
 	const isMockCluster = $derived(activeCluster?.kind === 'mock');
 	const isEmulatedCluster = $derived(activeCluster?.kind === 'emulated');
+	const isLogAnalyticsCluster = $derived(activeCluster?.kind === 'log-analytics');
+	const isSelectedLogAnalyticsCluster = $derived(
+		clusters.find((cluster) => cluster.id === selectedClusterId)?.kind === 'log-analytics'
+	);
 	const hasBuiltInMockSamples = $derived(usesBuiltInMockCatalog(activeCluster));
 	let explorerExpansion = $state(clusterSession.getExplorerExpansion(initialCluster.id));
 	const isQueryable = $derived(hasCluster && !isMockCluster);
@@ -172,6 +183,28 @@
 			: 'print Message = "Connected"';
 	}
 
+	function clearLogAnalyticsSignInTip() {
+		if (logAnalyticsSignInTipTimeout !== undefined) {
+			window.clearTimeout(logAnalyticsSignInTipTimeout);
+			logAnalyticsSignInTipTimeout = undefined;
+		}
+		showLogAnalyticsSignInTip = false;
+	}
+
+	function scheduleLogAnalyticsSignInTip(requestId: number, clusterId: string) {
+		clearLogAnalyticsSignInTip();
+		logAnalyticsSignInTipTimeout = window.setTimeout(() => {
+			logAnalyticsSignInTipTimeout = undefined;
+			if (
+				requestId === schemaRequestId &&
+				clusterId === selectedClusterId &&
+				connectionStatus === 'loading'
+			) {
+				showLogAnalyticsSignInTip = true;
+			}
+		}, LOG_ANALYTICS_SIGN_IN_TIP_DELAY_MS);
+	}
+
 	async function refreshSchema() {
 		const requestId = ++schemaRequestId;
 		const requestedCluster = clusterConnectionStore.clusters.find(
@@ -184,6 +217,11 @@
 		connectionStatus = 'loading';
 		isClusterSwitching = isChangingCluster && Boolean(databaseSchema);
 		connectionError = '';
+		if (requestedCluster.kind === 'log-analytics') {
+			scheduleLogAnalyticsSignInTip(requestId, requestedClusterId);
+		} else {
+			clearLogAnalyticsSignInTip();
+		}
 
 		try {
 			const schema = await connectClusterRuntime(requestedCluster);
@@ -214,11 +252,13 @@
 			clusterSession.pendingQuery = undefined;
 			queryResult = undefined;
 			queryError = '';
+			clearLogAnalyticsSignInTip();
 			connectionStatus = 'ready';
 			isClusterSwitching = false;
 			failedClusterId = undefined;
 		} catch (error) {
 			if (requestId !== schemaRequestId) return;
+			clearLogAnalyticsSignInTip();
 			connectionError = getKustoErrorMessage(error);
 			failedClusterId = requestedClusterId;
 			isClusterSwitching = false;
@@ -365,11 +405,15 @@
 
 		const requestId = ++queryRequestId;
 		queryError = '';
+		queryErrorRequestId = undefined;
+		queryErrorRaw = undefined;
 		resultsCollapsed = false;
 		isQueryRunning = true;
 		activeExecution = isEmulatedCluster
 			? startEmulatedQuery(activeClusterId, selectedDatabase, query)
-			: startKustoQuery(selectedDatabase, query, activeClusterUrl);
+			: isLogAnalyticsCluster && activeCluster?.logAnalytics
+				? startLogAnalyticsQuery(activeCluster.logAnalytics, query)
+				: startKustoQuery(selectedDatabase, query, activeClusterUrl);
 		recentQueryStore.record({
 			clusterId: activeClusterId,
 			database: selectedDatabase,
@@ -384,6 +428,10 @@
 			if (requestId === queryRequestId) {
 				queryResult = undefined;
 				queryError = formatQueryFailure(getKustoErrorMessage(error));
+				if (error instanceof LogAnalyticsQueryRequestError) {
+					queryErrorRequestId = error.requestId;
+					queryErrorRaw = error.response;
+				}
 			}
 		} finally {
 			if (requestId === queryRequestId) {
@@ -420,6 +468,7 @@
 		return () => {
 			schemaRequestId += 1;
 			queryRequestId += 1;
+			clearLogAnalyticsSignInTip();
 			activeExecution?.cancel();
 			disposeKqlTranslator();
 		};
@@ -440,6 +489,10 @@
 		onclusteradd={addCluster}
 		onclusteredit={editCluster}
 		onclusterremove={removeCluster}
+		onlinkauthenticationprofile={(clusterId, authenticationProfileId) => {
+			clusterConnectionStore.linkLogAnalyticsAuthenticationProfile(clusterId, authenticationProfileId);
+			switchCluster(clusterId);
+		}}
 	/>
 {/snippet}
 
@@ -574,8 +627,8 @@
 													disabled={!queryText.trim() || isMockCluster}
 													title={isMockCluster
 														? 'Query execution is unavailable for the mock cluster'
-														: 'Run query (Ctrl/Cmd+Enter)'}
-													aria-keyshortcuts={isMockCluster ? undefined : 'Control+Enter Meta+Enter'}
+									: 'Run query (Shift+Enter)'}
+									aria-keyshortcuts={isMockCluster ? undefined : 'Shift+Enter'}
 												>
 													<PlayIcon />
 													Run
@@ -601,10 +654,21 @@
 											class="absolute inset-0 z-20 grid place-items-center bg-background/70 backdrop-blur-[1px]"
 										>
 											<div
-												class="text-muted-foreground flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-xs shadow-sm"
+												class="text-muted-foreground flex flex-col items-center gap-2 rounded-md border bg-background px-3 py-2 text-xs shadow-sm"
 											>
 												<Spinner class="size-4" />
 												<span>Switching to {selectedClusterName}…</span>
+												{#if isSelectedLogAnalyticsCluster && showLogAnalyticsSignInTip}
+													<div
+														class="flex max-w-xs items-start gap-2 rounded-md border bg-muted/50 px-3 py-2 text-left text-xs"
+													>
+														<LightbulbIcon class="mt-0.5 size-3.5 shrink-0 text-primary" />
+														<p>
+															<span class="font-medium">Tip:</span> Check for the Microsoft Entra sign-in pop-up to
+															continue.
+														</p>
+													</div>
+												{/if}
 											</div>
 										</div>
 									{/if}
@@ -626,6 +690,8 @@
 									class="h-full min-h-0 rounded-none border-0"
 									result={queryResult}
 									error={queryError}
+									errorRequestId={queryErrorRequestId}
+									errorRaw={queryErrorRaw}
 									isRunning={isQueryRunning}
 									collapsed={resultsCollapsed}
 									oncollapsedchange={setResultsCollapsed}
@@ -660,6 +726,16 @@
 							<div class="text-muted-foreground flex flex-col items-center gap-3 text-sm">
 								<Spinner class="size-6" />
 								<p>Connecting to the selected cluster…</p>
+								{#if isSelectedLogAnalyticsCluster && showLogAnalyticsSignInTip}
+									<div
+										class="flex max-w-sm items-start gap-2 rounded-md border bg-muted/50 px-3 py-2 text-left text-xs"
+									>
+										<LightbulbIcon class="mt-0.5 size-4 shrink-0 text-primary" />
+										<p>
+											<span class="font-medium">Tip:</span> Check for potential Microsoft Entra sign-in pop-up to continue.
+										</p>
+									</div>
+								{/if}
 							</div>
 						{:else}
 							<div class="max-w-md text-center">

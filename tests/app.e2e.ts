@@ -77,6 +77,17 @@ test('places the cluster switcher below its trigger on smaller displays', async 
 	);
 });
 
+test('opens the folded database explorer on hover and links to Query', async ({ page }) => {
+	await page.goto('/explorer/query');
+	await expect(page.getByRole('button', { name: 'Databases' })).toBeVisible();
+	await page.getByRole('button', { name: 'Toggle cluster explorer' }).click();
+
+	const databasesLink = page.getByRole('link', { name: 'Browse databases' });
+	await expect(databasesLink).toHaveAttribute('href', '/explorer/query');
+	await databasesLink.hover();
+	await expect(page.getByPlaceholder('Search cluster')).toBeVisible();
+});
+
 test('shows cluster switch failures from the Explorer overview', async ({ page }) => {
 	await page.route('http://localhost:8080/**', (route) => route.abort('connectionrefused'));
 	await page.goto('/explorer');
@@ -225,6 +236,7 @@ test('releases inactive DuckDB workers and keeps at most one emulated session', 
 	await clusterDialog.getByLabel('Name').fill('Second emulated cluster');
 	await clusterDialog.locator('#new-cluster-kind').click();
 	await page.getByRole('option', { name: 'Emulated' }).click();
+	await expect(clusterDialog.locator('#new-cluster-kind')).toHaveText('Emulated');
 	await clusterDialog.getByRole('button', { name: 'Add and connect' }).click();
 
 	await expect(

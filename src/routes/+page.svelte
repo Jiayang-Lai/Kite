@@ -1,7 +1,10 @@
 <script lang="ts">
 	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
+	import CloudCogIcon from '@lucide/svelte/icons/cloud-cog';
 	import CompassIcon from '@lucide/svelte/icons/compass';
+	import CpuIcon from '@lucide/svelte/icons/cpu';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
+	import FlaskConicalIcon from '@lucide/svelte/icons/flask-conical';
 	import HeartIcon from '@lucide/svelte/icons/heart';
 	import ServerIcon from '@lucide/svelte/icons/server';
 	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
@@ -70,8 +73,16 @@
 				<Card.Root class="bg-card/70">
 					<Card.Header class="gap-3">
 						<div class="flex items-center justify-between gap-3">
-							<div class="flex items-center gap-2 text-sm font-medium">
-								<ServerIcon class="size-4 text-primary" />
+						<div class="flex items-center gap-2 text-sm font-medium">
+								{#if activeCluster.kind === 'mock'}
+									<FlaskConicalIcon class="size-4 text-primary" />
+								{:else if activeCluster.kind === 'emulated'}
+									<CpuIcon class="size-4 text-primary" />
+								{:else if activeCluster.kind === 'log-analytics'}
+									<CloudCogIcon class="size-4 text-primary" />
+								{:else}
+									<ServerIcon class="size-4 text-primary" />
+								{/if}
 								Current cluster
 							</div>
 							<Badge variant="outline">

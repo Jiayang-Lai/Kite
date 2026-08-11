@@ -76,6 +76,7 @@
 	);
 	const isMockCluster = $derived(activeCluster?.kind === 'mock');
 	const isEmulatedCluster = $derived(activeCluster?.kind === 'emulated');
+	const isLogAnalyticsCluster = $derived(activeCluster?.kind === 'log-analytics');
 	const hasBuiltInMockSamples = $derived(usesBuiltInMockCatalog(activeCluster));
 	const activeClusterName = $derived(activeCluster?.name ?? 'current cluster');
 	const failedClusterName = $derived(
@@ -276,6 +277,10 @@
 		onclusteradd={addCluster}
 		onclusteredit={editCluster}
 		onclusterremove={removeCluster}
+		onlinkauthenticationprofile={(clusterId, authenticationProfileId) => {
+			clusterConnectionStore.linkLogAnalyticsAuthenticationProfile(clusterId, authenticationProfileId);
+			switchCluster(clusterId);
+		}}
 	/>
 {/snippet}
 
@@ -340,6 +345,7 @@
 			clusterName={activeClusterName}
 			{isMockCluster}
 			{isEmulatedCluster}
+			{isLogAnalyticsCluster}
 			isLoading={connectionStatus === 'loading'}
 			onrefreshschema={async (clusterId) => {
 				if (!(await connectCluster(clusterId))) {
@@ -360,6 +366,7 @@
 			clusterName={activeClusterName}
 			{isMockCluster}
 			{isEmulatedCluster}
+			{isLogAnalyticsCluster}
 			onrefreshschema={async () => {
 				await connectCluster(clusterSession.activeClusterId);
 			}}

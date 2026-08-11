@@ -8,6 +8,10 @@
 		setClusterConnectionStore
 	} from '$lib/cluster/cluster-connection-store.svelte';
 	import { releaseAllClusterRuntimes } from '$lib/cluster/cluster-runtime';
+	import {
+		createAzureAuthenticationProfileStore,
+		setAzureAuthenticationProfileStore
+	} from '$lib/azure-auth/profile-store.svelte';
 	import { createClusterSession, setClusterSession } from '$lib/cluster/cluster-session.svelte';
 	import { SIDEBAR_COOKIE_NAME } from '$lib/components/ui/sidebar/constants.js';
 	import { getKustoClusters } from '$lib/kusto/query-client';
@@ -28,6 +32,8 @@
 	setClusterSession(createClusterSession(initialClusterId));
 	const clusterConnectionStore = createClusterConnectionStore();
 	setClusterConnectionStore(clusterConnectionStore);
+	const azureAuthenticationProfileStore = createAzureAuthenticationProfileStore();
+	setAzureAuthenticationProfileStore(azureAuthenticationProfileStore);
 	const recentQueryStore = createRecentQueryStore();
 	setRecentQueryStore(recentQueryStore);
 	const savedQueryStore = createSavedQueryStore();
@@ -42,6 +48,7 @@
 		}
 
 		clusterConnectionStore.hydrate();
+		azureAuthenticationProfileStore.hydrate();
 		recentQueryStore.hydrate();
 		savedQueryStore.hydrate();
 

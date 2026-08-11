@@ -35,6 +35,16 @@ export type NewClusterConnection =
 			url: string;
 	  })
 	| (ClusterConnectionDraft & {
+			kind: 'log-analytics';
+			workspaceId: string;
+			workspaceResourceId: string;
+			tenantId: string;
+			clientId: string;
+			defaultTimespan?: string;
+			authenticationProfileId?: string;
+			sessionId?: string;
+	  })
+	| (ClusterConnectionDraft & {
 			kind: 'mock';
 			url?: never;
 			mockSchema: KustoDatabaseSchema;
@@ -56,6 +66,7 @@ export type ClusterConnectionStore = {
 		expectedRevision: number,
 		mutation: (schema: KustoDatabaseSchema) => KustoDatabaseSchema
 	) => KustoClusterConnection;
+	linkLogAnalyticsAuthenticationProfile: (clusterId: string, authenticationProfileId: string) => void;
 	remove: (clusterId: string) => void;
 };
 
@@ -81,6 +92,43 @@ function normalizeClusterUrl(value: string) {
 	return url.toString().replace(/\/$/, '');
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const TENANT_PATTERN =
+	/^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+)$/i;
+
+function normalizeGuid(value: string, label: string) {
+	const normalized = value.trim();
+	if (!UUID_PATTERN.test(normalized)) throw new Error(`Enter a valid ${label}.`);
+	return normalized.toLowerCase();
+}
+
+function normalizeTenant(value: string) {
+	const normalized = value.trim();
+	if (!TENANT_PATTERN.test(normalized)) throw new Error('Enter a valid Entra tenant ID or domain.');
+	return normalized.toLowerCase();
+}
+
+function normalizeWorkspaceResourceId(value: string) {
+	const normalized = value.trim().replace(/\/$/, '');
+	if (
+		!/^\/subscriptions\/[0-9a-f-]+\/resourcegroups\/[^/]+\/providers\/microsoft\.operationalinsights\/workspaces\/[^/]+$/i.test(
+			normalized
+		)
+	) {
+		throw new Error('Enter the Log Analytics workspace ARM resource ID.');
+	}
+	return normalized;
+}
+
+function normalizeTimespan(value: string | undefined) {
+	const normalized = value?.trim();
+	if (!normalized) return undefined;
+	if (!/^P(?!$)(?:\d+D)?(?:T(?=\d)(?:\d+H)?(?:\d+M)?(?:\d+S)?)?$/i.test(normalized)) {
+		throw new Error('Enter an ISO 8601 duration such as PT24H.');
+	}
+	return normalized.toUpperCase();
+}
+
 function parseStoredCluster(value: unknown): KustoClusterConnection | undefined {
 	if (!value || typeof value !== 'object') return undefined;
 	const cluster = value as Record<string, unknown>;
@@ -88,7 +136,10 @@ function parseStoredCluster(value: unknown): KustoClusterConnection | undefined 
 	if (
 		typeof cluster.id !== 'string' ||
 		typeof cluster.name !== 'string' ||
-		(cluster.kind !== 'remote' && cluster.kind !== 'mock' && cluster.kind !== 'emulated')
+		(cluster.kind !== 'remote' &&
+			cluster.kind !== 'log-analytics' &&
+			cluster.kind !== 'mock' &&
+			cluster.kind !== 'emulated')
 	) {
 		return undefined;
 	}
@@ -123,6 +174,41 @@ function parseStoredCluster(value: unknown): KustoClusterConnection | undefined 
 				url: createEmulatedClusterUrl(cluster.id),
 				kind: 'emulated',
 				emulatedStorage: normalizeEmulatedStorage(cluster.emulatedStorage, cluster.id)
+			};
+		}
+		if (cluster.kind === 'log-analytics') {
+			if (!cluster.logAnalytics || typeof cluster.logAnalytics !== 'object') return undefined;
+			const config = cluster.logAnalytics as Record<string, unknown>;
+			if (
+				typeof config.workspaceId !== 'string' ||
+				typeof config.tenantId !== 'string' ||
+				typeof config.clientId !== 'string'
+			)
+				return undefined;
+			return {
+				id: cluster.id,
+				name,
+				description,
+				url: 'https://api.loganalytics.azure.com',
+				kind: 'log-analytics',
+				logAnalytics: {
+					workspaceId: normalizeGuid(config.workspaceId, 'workspace ID'),
+					workspaceResourceId:
+						typeof config.workspaceResourceId === 'string'
+							? normalizeWorkspaceResourceId(config.workspaceResourceId)
+							: undefined,
+					tenantId: normalizeTenant(config.tenantId),
+					clientId: normalizeGuid(config.clientId, 'application (client) ID'),
+					defaultTimespan: normalizeTimespan(
+						typeof config.defaultTimespan === 'string' ? config.defaultTimespan : undefined
+					),
+					authenticationProfileId:
+						typeof config.authenticationProfileId === 'string'
+							? config.authenticationProfileId
+							: typeof config.sessionId === 'string'
+								? config.sessionId
+								: undefined
+				}
 			};
 		}
 		return {
@@ -208,6 +294,23 @@ export function createClusterConnectionStore(): ClusterConnectionStore {
 				url: createEmulatedClusterUrl(id),
 				kind: 'emulated' as const,
 				emulatedStorage: createEmulatedStorage(draft.storageMode ?? 'opfs', id)
+			};
+		}
+		if (draft.kind === 'log-analytics') {
+			return {
+				id,
+				name,
+				description: draft.description?.trim() || undefined,
+				url: 'https://api.loganalytics.azure.com',
+				kind: 'log-analytics' as const,
+				logAnalytics: {
+					workspaceId: normalizeGuid(draft.workspaceId, 'workspace ID'),
+					workspaceResourceId: normalizeWorkspaceResourceId(draft.workspaceResourceId),
+					tenantId: normalizeTenant(draft.tenantId),
+					clientId: normalizeGuid(draft.clientId, 'application (client) ID'),
+					defaultTimespan: normalizeTimespan(draft.defaultTimespan),
+					authenticationProfileId: draft.authenticationProfileId
+				}
 			};
 		}
 
@@ -337,6 +440,20 @@ export function createClusterConnectionStore(): ClusterConnectionStore {
 		return updatedCluster;
 	}
 
+	function linkLogAnalyticsAuthenticationProfile(clusterId: string, authenticationProfileId: string) {
+		const cluster = clusters.find((item) => item.id === clusterId);
+		if (cluster?.kind !== 'log-analytics' || !cluster.logAnalytics) {
+			throw new Error('This cluster is not an Azure Log Analytics connection.');
+		}
+		const updatedCluster = {
+			...cluster,
+			logAnalytics: { ...cluster.logAnalytics, authenticationProfileId }
+		};
+		const nextClusters = clusters.map((item) => (item.id === clusterId ? updatedCluster : item));
+		persist(nextClusters);
+		clusters = nextClusters;
+	}
+
 	function remove(clusterId: string) {
 		if (builtInIds.has(clusterId)) throw new Error('Built-in clusters cannot be removed.');
 		if (!clusters.some((cluster) => cluster.id === clusterId)) return;
@@ -358,6 +475,7 @@ export function createClusterConnectionStore(): ClusterConnectionStore {
 		add,
 		update,
 		updateMockSchema,
+		linkLogAnalyticsAuthenticationProfile,
 		remove
 	};
 }

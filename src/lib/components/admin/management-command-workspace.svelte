@@ -33,6 +33,7 @@
 		clusterName: string;
 		isMockCluster?: boolean;
 		isEmulatedCluster?: boolean;
+		isLogAnalyticsCluster?: boolean;
 		onrefreshschema?: () => Promise<void> | void;
 	};
 
@@ -43,6 +44,7 @@
 		clusterName,
 		isMockCluster = false,
 		isEmulatedCluster = false,
+		isLogAnalyticsCluster = false,
 		onrefreshschema
 	}: ManagementCommandWorkspaceProps = $props();
 
@@ -80,7 +82,12 @@
 	const databaseNames = $derived(Object.values(databases ?? {}).map((database) => database.name));
 	const canRun = $derived(
 		Boolean(
-			commandText.trim() && selectedDatabase && !isMockCluster && !isEmulatedCluster && !isRunning
+			commandText.trim() &&
+			selectedDatabase &&
+			!isMockCluster &&
+			!isEmulatedCluster &&
+			!isLogAnalyticsCluster &&
+			!isRunning
 		)
 	);
 	const changesClusterState = $derived(
@@ -100,7 +107,15 @@
 
 	function requestRun() {
 		const command = commandText.trim();
-		if (!command || !selectedDatabase || isMockCluster || isEmulatedCluster || isRunning) return;
+		if (
+			!command ||
+			!selectedDatabase ||
+			isMockCluster ||
+			isEmulatedCluster ||
+			isLogAnalyticsCluster ||
+			isRunning
+		)
+			return;
 		if (!isManagementCommand(command)) {
 			commandError = 'Management commands must start with a period, for example .show tables.';
 			return;
@@ -169,20 +184,24 @@
 </script>
 
 <section class="relative flex min-h-0 flex-1 flex-col gap-2">
-	{#if isMockCluster || isEmulatedCluster}
+	{#if isMockCluster || isEmulatedCluster || isLogAnalyticsCluster}
 		<Card.Root class="min-h-0 flex-1">
 			<Card.Content class="grid h-full place-items-center p-6 text-center">
 				<div class="max-w-md">
 					<ServerIcon class="text-muted-foreground mx-auto mb-3 size-7" />
 					<h2 class="font-semibold">
-						{isEmulatedCluster
-							? 'Management commands are not supported for emulated clusters'
-							: 'Management commands need a connected cluster'}
+						{isLogAnalyticsCluster
+							? 'Management commands are not supported for Log Analytics workspaces'
+							: isEmulatedCluster
+								? 'Management commands are not supported for emulated clusters'
+								: 'Management commands need a connected cluster'}
 					</h2>
 					<p class="text-muted-foreground mt-2 text-sm leading-6">
-						{isEmulatedCluster
-							? 'Use the Databases & tables page for supported DuckDB-backed schema operations, or select a remote Kusto connection to run administrative commands.'
-							: 'The Mock cluster supplies local schema data only. Select a remote Kusto connection to run administrative commands.'}
+						{isLogAnalyticsCluster
+							? 'Log Analytics exposes a query API rather than the Kusto management endpoint. Use the Query Explorer to run KQL.'
+							: isEmulatedCluster
+								? 'Use the Databases & tables page for supported DuckDB-backed schema operations, or select a remote Kusto connection to run administrative commands.'
+								: 'The Mock cluster supplies local schema data only. Select a remote Kusto connection to run administrative commands.'}
 					</p>
 					<code class="bg-muted mt-4 inline-block rounded-md px-3 py-2 text-sm">.show tables</code>
 				</div>

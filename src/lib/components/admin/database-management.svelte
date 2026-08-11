@@ -78,6 +78,7 @@
 		clusterName: string;
 		isMockCluster?: boolean;
 		isEmulatedCluster?: boolean;
+		isLogAnalyticsCluster?: boolean;
 		isLoading?: boolean;
 		onopenquery?: (databaseName: string) => void;
 		onrefreshschema?: (clusterId: string) => Promise<void> | void;
@@ -94,6 +95,7 @@
 		clusterName,
 		isMockCluster = false,
 		isEmulatedCluster = false,
+		isLogAnalyticsCluster = false,
 		isLoading = false,
 		onopenquery,
 		onrefreshschema,
@@ -789,16 +791,18 @@
 </script>
 
 {#snippet schemaActions()}
-	<Button
-		size="sm"
-		variant="outline"
-		disabled={isBusy}
-		onclick={openCreateTableDialog}
-		title={`Create a table in ${activeDatabase?.name}`}
-	>
-		<PlusIcon />
-		New table
-	</Button>
+	{#if databaseCapabilities.create}
+		<Button
+			size="sm"
+			variant="outline"
+			disabled={isBusy}
+			onclick={openCreateTableDialog}
+			title={`Create a table in ${activeDatabase?.name}`}
+		>
+			<PlusIcon />
+			New table
+		</Button>
+	{/if}
 	<Button
 		size="sm"
 		variant="outline"
@@ -811,46 +815,48 @@
 
 {#snippet tableActions(table: KustoTable)}
 	<div class="flex flex-wrap items-center justify-end gap-1">
-		<Button
-			size="xs"
-			variant="outline"
-			onclick={() => exportTableSchema(table)}
-			title={`Download ${table.name}'s schema as an Avro record`}
-		>
-			<FileDownIcon />
-			Export Avro
-		</Button>
-		<Button
-			size="xs"
-			variant="outline"
-			disabled={isBusy}
-			onclick={() => openTableEditor(table)}
-			title={`Edit ${table.name} without replacing existing columns`}
-		>
-			<PencilIcon />
-			Edit table
-		</Button>
-		<Button
-			size="xs"
-			variant="outline"
-			disabled={isBusy}
-			onclick={() => openColumnOrderEditor(table)}
-			title={`Change the column order for ${table.name}`}
-		>
-			<TablePropertiesIcon />
-			Reorder columns
-		</Button>
-		<Button
-			size="xs"
-			variant="outline"
-			class="text-destructive hover:text-destructive"
-			disabled={isBusy}
-			onclick={() => openDropTableDialog(table)}
-			title={`Remove ${table.name} and all data stored in it`}
-		>
-			<Trash2Icon />
-			Remove table
-		</Button>
+		{#if !isLogAnalyticsCluster}
+			<Button
+				size="xs"
+				variant="outline"
+				onclick={() => exportTableSchema(table)}
+				title={`Download ${table.name}'s schema as an Avro record`}
+			>
+				<FileDownIcon />
+				Export Avro
+			</Button>
+			<Button
+				size="xs"
+				variant="outline"
+				disabled={isBusy}
+				onclick={() => openTableEditor(table)}
+				title={`Edit ${table.name} without replacing existing columns`}
+			>
+				<PencilIcon />
+				Edit table
+			</Button>
+			<Button
+				size="xs"
+				variant="outline"
+				disabled={isBusy}
+				onclick={() => openColumnOrderEditor(table)}
+				title={`Change the column order for ${table.name}`}
+			>
+				<TablePropertiesIcon />
+				Reorder columns
+			</Button>
+			<Button
+				size="xs"
+				variant="outline"
+				class="text-destructive hover:text-destructive"
+				disabled={isBusy}
+				onclick={() => openDropTableDialog(table)}
+				title={`Remove ${table.name} and all data stored in it`}
+			>
+				<Trash2Icon />
+				Remove table
+			</Button>
+		{/if}
 	</div>
 {/snippet}
 
@@ -859,12 +865,14 @@
 		activeDatabase?.tables.find((candidate) => candidate.name === table.name) ?? table}
 	{@const canonicalColumn =
 		canonicalTable.columns.find((candidate) => candidate.name === column.name) ?? column}
-	<ColumnActionsMenu
-		table={canonicalTable}
-		column={canonicalColumn}
-		disabled={isBusy}
-		onaction={(action) => openColumnEditor(canonicalTable, canonicalColumn, action)}
-	/>
+	{#if !isLogAnalyticsCluster}
+		<ColumnActionsMenu
+			table={canonicalTable}
+			column={canonicalColumn}
+			disabled={isBusy}
+			onaction={(action) => openColumnEditor(canonicalTable, canonicalColumn, action)}
+		/>
+	{/if}
 {/snippet}
 
 <section class="flex min-h-0 flex-1 flex-col gap-2 lg:flex-row">
@@ -947,11 +955,13 @@
 
 	<div class="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
 		{#if activeDatabase}
-			{#if isMockCluster || isEmulatedCluster}
+			{#if isMockCluster || isEmulatedCluster || isLogAnalyticsCluster}
 				<p class="text-muted-foreground rounded-lg border bg-muted/20 px-3 py-2 text-xs">
-					{isEmulatedCluster
-						? 'Changes execute against this connection’s browser DuckDB database.'
-						: 'Mock changes update this browser-local schema only; no backend data is created.'}
+					{isLogAnalyticsCluster
+						? 'Log Analytics workspace schema is read-only. Use Query Explorer to run KQL.'
+						: isEmulatedCluster
+							? 'Changes execute against this connection’s browser DuckDB database.'
+							: 'Mock changes update this browser-local schema only; no backend data is created.'}
 				</p>
 			{/if}
 			{#if mutationSuccess}

@@ -60,7 +60,7 @@
 		databaseSchema: KustoDatabaseSchema;
 		/** Connection string used to identify the active cluster in Monaco-Kusto. */
 		clusterUrl?: string;
-		/** Called by the editor's Ctrl/Cmd+Enter command to execute the current query. */
+		/** Called by the editor's Shift+Enter command to execute the current query. */
 		onexecute?: () => void;
 	};
 
@@ -246,7 +246,7 @@
 				padding: { top: 16, bottom: 16 },
 				wordWrap: 'on'
 			});
-			editor.addCommand(runtime.monaco.KeyMod.CtrlCmd | runtime.monaco.KeyCode.Enter, () => {
+			editor.addCommand(runtime.monaco.KeyMod.Shift | runtime.monaco.KeyCode.Enter, () => {
 				onexecute?.();
 			});
 			editor.addAction({

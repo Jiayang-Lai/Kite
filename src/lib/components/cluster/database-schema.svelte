@@ -12,6 +12,7 @@
 	} from '$lib/cluster/cluster-session.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import type {
@@ -58,6 +59,10 @@
 		onexpansionchange
 	}: DatabaseSchemaProps = $props();
 	let filter = $state('');
+	let debouncedFilter = $state('');
+	let expandAllWarningOpen = $state(false);
+	const SEARCH_DEBOUNCE_MS = 300;
+	const EXPAND_ALL_WARNING_THRESHOLD = 50;
 	const expandedTables = $derived(expansionState.schemaTables[database.name] ?? {});
 	const focusedFunction = $derived(
 		(database.functions ?? []).find((fn) => fn.name === selectedFunction)
@@ -68,7 +73,7 @@
 	);
 
 	const filteredTables = $derived.by(() => {
-		const query = filter.trim().toLowerCase();
+		const query = debouncedFilter.trim().toLowerCase();
 		const visibleTables = selectedTable
 			? database.tables.filter((table) => table.name === selectedTable)
 			: database.tables;
@@ -91,6 +96,19 @@
 	});
 
 	$effect(() => {
+		if (!filter.trim()) {
+			debouncedFilter = '';
+			return;
+		}
+
+		const timeout = setTimeout(() => {
+			debouncedFilter = filter;
+		}, SEARCH_DEBOUNCE_MS);
+
+		return () => clearTimeout(timeout);
+	});
+
+	$effect(() => {
 		if (selectedTable && !database.tables.some((table) => table.name === selectedTable)) {
 			selectedTable = undefined;
 		}
@@ -107,7 +125,9 @@
 
 	function isTableExpanded(tableName: string) {
 		return (
-			selectedTable === tableName || Boolean(filter.trim()) || Boolean(expandedTables[tableName])
+			selectedTable === tableName ||
+			Boolean(debouncedFilter.trim()) ||
+			Boolean(expandedTables[tableName])
 		);
 	}
 
@@ -132,6 +152,19 @@
 		}
 	}
 
+	function requestToggleAllTables() {
+		if (!allTablesExpanded && database.tables.length > EXPAND_ALL_WARNING_THRESHOLD) {
+			expandAllWarningOpen = true;
+			return;
+		}
+		toggleAllTables();
+	}
+
+	function confirmExpandAllTables() {
+		expandAllWarningOpen = false;
+		toggleAllTables();
+	}
+
 	function showAllObjects() {
 		selectedTable = undefined;
 		selectedFunction = undefined;
@@ -148,7 +181,7 @@
 	}
 
 	function getHighlightedSegments(text: string) {
-		const query = filter.trim();
+		const query = debouncedFilter.trim();
 		if (!query) {
 			return [{ text, highlighted: false }];
 		}
@@ -203,12 +236,12 @@
 			</div>
 			<div class="flex shrink-0 items-center gap-1.5">
 				{@render headerActions?.()}
-				{#if filter.trim() && !focusedFunction}
+				{#if debouncedFilter.trim() && !focusedFunction}
 					<Badge variant="outline">Matches expanded</Badge>
 				{:else if selectedTable || selectedFunction}
 					<Button variant="ghost" size="sm" onclick={showAllObjects}>Show all</Button>
 				{:else}
-					<Button variant="ghost" size="sm" onclick={toggleAllTables}>
+					<Button variant="ghost" size="sm" onclick={requestToggleAllTables}>
 						{allTablesExpanded ? 'Collapse all' : 'Expand all'}
 					</Button>
 				{/if}
@@ -322,7 +355,7 @@
 							type="button"
 							class="hover:bg-muted/60 focus-visible:ring-ring/50 flex w-full min-w-0 items-center gap-2 p-2.5 text-left transition-colors outline-none focus-visible:ring-[3px] disabled:cursor-default disabled:hover:bg-transparent sm:p-3"
 							aria-expanded={expanded}
-							disabled={Boolean(filter.trim())}
+							disabled={Boolean(debouncedFilter.trim())}
 							onclick={() => toggleTable(table.name)}
 						>
 							<ChevronRightIcon
@@ -387,8 +420,8 @@
 					</article>
 				{:else}
 					<p class="text-muted-foreground py-8 text-center text-sm">
-						{#if filter.trim()}
-							No tables or columns match “{filter}”.
+						{#if debouncedFilter.trim()}
+							No tables or columns match “{debouncedFilter}”.
 						{:else}
 							This database has no tables.
 						{/if}
@@ -398,3 +431,19 @@
 		</div>
 	</ScrollArea>
 </section>
+
+<Dialog.Root bind:open={expandAllWarningOpen}>
+	<Dialog.Content class="gap-0 sm:max-w-md" aria-describedby="expand-all-tables-description">
+		<Dialog.Header class="border-b p-5 pr-14">
+			<Dialog.Title>Expand all tables?</Dialog.Title>
+			<Dialog.Description id="expand-all-tables-description">
+				This database has {database.tables.length} tables. Expanding every table can make the schema explorer
+				slow and difficult to navigate.
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer class="border-t p-4">
+			<Button variant="outline" onclick={() => (expandAllWarningOpen = false)}>Cancel</Button>
+			<Button onclick={confirmExpandAllTables}>Expand {database.tables.length} tables</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

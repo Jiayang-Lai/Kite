@@ -1,6 +1,7 @@
 import { getContext, setContext } from 'svelte';
 
 import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
+import type { QueryResult } from '$lib/types/query-result';
 
 const CLUSTER_SESSION = Symbol('cluster-session');
 
@@ -17,6 +18,19 @@ export type ExplorerExpansionChange =
 	| { type: 'schema-table'; database: string; table: string; open: boolean }
 	| { type: 'section'; section: 'saved-queries' | 'recent-queries'; open: boolean };
 
+export type QueryTab = {
+	id: string;
+	database: string;
+	query: string;
+	savedQueryId?: string;
+	savedQueryName?: string;
+	result?: QueryResult;
+	error?: string;
+	errorRequestId?: string;
+	errorRaw?: unknown;
+	isRunning: boolean;
+};
+
 export type ClusterSession = {
 	activeClusterId: string;
 	databaseSchema?: KustoDatabaseSchema;
@@ -24,18 +38,39 @@ export type ClusterSession = {
 	selectedTable?: string;
 	selectedFunction?: string;
 	pendingQuery?: string;
+	readonly queryTabs: QueryTab[];
+	activeQueryTabId: string;
+	getQueryTab: (id: string) => QueryTab | undefined;
+	createQueryTab: (
+		database: string,
+		query?: string,
+		savedQuery?: Pick<QueryTab, 'savedQueryId' | 'savedQueryName'>
+	) => QueryTab;
+	updateQueryTab: (id: string, update: Partial<Omit<QueryTab, 'id'>>) => void;
+	closeQueryTab: (id: string) => void;
+	resetQueryTabs: (database?: string) => void;
 	getExplorerExpansion: (clusterId: string) => ExplorerExpansionState;
 	setExplorerExpansion: (clusterId: string, change: ExplorerExpansionChange) => void;
 };
 
 /** Creates the app-wide, confirmed cluster selection shared by feature pages. */
 export function createClusterSession(initialClusterId: string): ClusterSession {
+	let nextQueryTabId = 0;
+	const createQueryTabId = () => `query-tab-${++nextQueryTabId}`;
 	let activeClusterId = $state(initialClusterId);
 	let databaseSchema = $state.raw<KustoDatabaseSchema>();
 	let selectedDatabase = $state('');
 	let selectedTable = $state<string>();
 	let selectedFunction = $state<string>();
 	let pendingQuery = $state<string>();
+	const initialQueryTab: QueryTab = {
+		id: createQueryTabId(),
+		database: '',
+		query: '',
+		isRunning: false
+	};
+	let queryTabs = $state<QueryTab[]>([initialQueryTab]);
+	let activeQueryTabId = $state(initialQueryTab.id);
 	let explorerExpansionByCluster = $state<Record<string, ExplorerExpansionState>>({
 		[initialClusterId]: {
 			databases: {},
@@ -77,6 +112,60 @@ export function createClusterSession(initialClusterId: string): ClusterSession {
 		}
 	}
 
+	function getQueryTab(id: string) {
+		return queryTabs.find((tab) => tab.id === id);
+	}
+
+	function createQueryTab(
+		database: string,
+		query = '',
+		savedQuery: Pick<QueryTab, 'savedQueryId' | 'savedQueryName'> = {}
+	) {
+		const tab: QueryTab = {
+			id: createQueryTabId(),
+			database,
+			query,
+			isRunning: false,
+			...savedQuery
+		};
+		queryTabs = [...queryTabs, tab];
+		activeQueryTabId = tab.id;
+		return tab;
+	}
+
+	function updateQueryTab(id: string, update: Partial<Omit<QueryTab, 'id'>>) {
+		const tab = getQueryTab(id);
+		if (tab) Object.assign(tab, update);
+	}
+
+	function closeQueryTab(id: string) {
+		if (queryTabs.length === 1) {
+			const tab = queryTabs[0];
+			tab.database = '';
+			tab.query = '';
+			tab.result = undefined;
+			tab.error = undefined;
+			tab.errorRequestId = undefined;
+			tab.errorRaw = undefined;
+			tab.savedQueryId = undefined;
+			tab.savedQueryName = undefined;
+			return;
+		}
+
+		const index = queryTabs.findIndex((tab) => tab.id === id);
+		if (index === -1) return;
+		queryTabs = queryTabs.filter((tab) => tab.id !== id);
+		if (activeQueryTabId === id) {
+			activeQueryTabId = queryTabs[Math.max(0, index - 1)].id;
+		}
+	}
+
+	function resetQueryTabs(database = '') {
+		const tab: QueryTab = { id: createQueryTabId(), database, query: '', isRunning: false };
+		queryTabs = [tab];
+		activeQueryTabId = tab.id;
+	}
+
 	return {
 		get activeClusterId() {
 			return activeClusterId;
@@ -114,6 +203,20 @@ export function createClusterSession(initialClusterId: string): ClusterSession {
 		set pendingQuery(value: string | undefined) {
 			pendingQuery = value;
 		},
+		get queryTabs() {
+			return queryTabs;
+		},
+		get activeQueryTabId() {
+			return activeQueryTabId;
+		},
+		set activeQueryTabId(value: string) {
+			if (getQueryTab(value)) activeQueryTabId = value;
+		},
+		getQueryTab,
+		createQueryTab,
+		updateQueryTab,
+		closeQueryTab,
+		resetQueryTabs,
 		getExplorerExpansion,
 		setExplorerExpansion
 	};

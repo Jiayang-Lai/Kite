@@ -21,6 +21,7 @@ export type SavedQueryStore = {
 	readonly storageError: string | undefined;
 	hydrate: () => void;
 	save: (draft: SavedQueryDraft) => SavedQuery;
+	update: (id: string, draft: SavedQueryDraft) => SavedQuery | undefined;
 	remove: (id: string) => void;
 	forCluster: (clusterId: string) => SavedQuery[];
 };
@@ -98,6 +99,23 @@ export function createSavedQueryStore(): SavedQueryStore {
 		persist();
 	}
 
+	function update(id: string, draft: SavedQueryDraft) {
+		const existing = queries.find((query) => query.id === id);
+		if (!existing) return undefined;
+
+		const updatedQuery: SavedQuery = {
+			...existing,
+			clusterId: draft.clusterId,
+			database: draft.database,
+			name: draft.name.trim(),
+			query: draft.query.trim(),
+			updatedAt: new Date().toISOString()
+		};
+		queries = queries.map((query) => (query.id === id ? updatedQuery : query));
+		persist();
+		return updatedQuery;
+	}
+
 	return {
 		get queries() {
 			return queries;
@@ -107,6 +125,7 @@ export function createSavedQueryStore(): SavedQueryStore {
 		},
 		hydrate,
 		save,
+		update,
 		remove,
 		forCluster(clusterId) {
 			return queries

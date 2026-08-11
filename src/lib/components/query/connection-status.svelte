@@ -1,9 +1,11 @@
 <script lang="ts">
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
 	import CircleXIcon from '@lucide/svelte/icons/circle-x';
+	import BinocularsIcon from '@lucide/svelte/icons/binoculars';
 
 	import EmulatedStorageBadge from '$lib/components/cluster/emulated-storage-badge.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { Spinner } from '$lib/components/ui/spinner';
 	import type { EmulatedStorage } from '$lib/emulation/storage';
 
 	type ConnectionStatusProps = {
@@ -11,6 +13,8 @@
 		databaseCount: number;
 		tableCount: number;
 		functionCount: number;
+		database?: string;
+		languageServiceStatus?: 'idle' | 'loading' | 'ready';
 		isQueryable: boolean;
 		emulatedStorage?: EmulatedStorage;
 		onretry?: () => void;
@@ -21,6 +25,8 @@
 		databaseCount,
 		tableCount,
 		functionCount,
+		database,
+		languageServiceStatus = 'idle',
 		isQueryable,
 		emulatedStorage,
 		onretry
@@ -47,11 +53,7 @@
 			aria-hidden="true"
 		></span>
 		<span class="truncate">{statusText}</span>
-	</div>
-	<div class="text-muted-foreground ml-auto flex items-center gap-3">
-		{#if emulatedStorage}
-			<EmulatedStorageBadge storage={emulatedStorage} class="hidden sm:inline-flex" />
-		{/if}
+		<span class="bg-border hidden h-4 w-px sm:block" aria-hidden="true"></span>
 		<div class="flex items-center gap-1.5">
 			{#if isQueryable}
 				<CircleCheckIcon
@@ -64,10 +66,34 @@
 				<span>Query execution unavailable</span>
 			{/if}
 		</div>
+	</div>
+	<div class="text-muted-foreground ml-auto flex items-center gap-3">
+		{#if database}
+			<span class="max-w-48 truncate" title={database}>Database: {database}</span>
+		{/if}
+		{#if emulatedStorage}
+			<EmulatedStorageBadge storage={emulatedStorage} class="hidden sm:inline-flex" />
+		{/if}
+		<span class="bg-border hidden h-4 w-px sm:block" aria-hidden="true"></span>
+		<span
+			class="inline-flex shrink-0"
+			title={`Kusto language service: ${languageServiceStatus}`}
+			aria-label={`Kusto language service: ${languageServiceStatus}`}
+		>
+			{#if languageServiceStatus === 'loading'}
+				<Spinner class="size-3.5" />
+			{:else}
+				<BinocularsIcon
+					class={`size-3.5 ${languageServiceStatus === 'ready' ? 'text-emerald-600 dark:text-emerald-400' : ''}`}
+				/>
+			{/if}
+		</span>
 		{#if databaseCount || tableCount || functionCount}
-			<div class="hidden items-center gap-3 sm:flex">
+			<div class="hidden items-center gap-1.5 sm:flex">
 				<span>{databaseCount} {databaseCount === 1 ? 'database' : 'databases'}</span>
+				<span aria-hidden="true">·</span>
 				<span>{tableCount} {tableCount === 1 ? 'table' : 'tables'}</span>
+				<span aria-hidden="true">·</span>
 				<span>{functionCount} {functionCount === 1 ? 'function' : 'functions'}</span>
 			</div>
 		{/if}

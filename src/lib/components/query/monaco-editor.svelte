@@ -62,6 +62,10 @@
 		clusterUrl?: string;
 		/** Called by the editor's Shift+Enter command to execute the current query. */
 		onexecute?: () => void;
+		/** Called whenever the user changes the editor contents. */
+		onvaluechange?: (value: string) => void;
+		/** Reports the lazy Kusto language-service worker state to the parent workspace. */
+		onlanguagestatuschange?: (status: 'idle' | 'loading' | 'ready') => void;
 	};
 
 	let {
@@ -73,7 +77,9 @@
 		database,
 		databaseSchema,
 		clusterUrl = 'https://help.kusto.windows.net',
-		onexecute
+		onexecute,
+		onvaluechange,
+		onlanguagestatuschange
 	}: MonacoEditorProps = $props();
 
 	let container = $state<HTMLDivElement | null>(null);
@@ -107,11 +113,13 @@
 
 		const requestId = ++schemaRequestId;
 		const targetModel = model;
+		onlanguagestatuschange?.('loading');
 		const workerAccessor = await kusto.getKustoWorker();
 		const worker = await workerAccessor(targetModel.uri);
 		if (requestId !== schemaRequestId || model !== targetModel) return;
 
 		await worker.setSchema(createKustoSchema(schema, databaseName, targetClusterUrl));
+		if (requestId === schemaRequestId && model === targetModel) onlanguagestatuschange?.('ready');
 	}
 
 	function applySchemaSafely(
@@ -141,6 +149,7 @@
 		changeDisposable = nextModel.onDidChangeContent(() => {
 			syncingFromEditor = true;
 			value = nextModel.getValue();
+			onvaluechange?.(value);
 			syncingFromEditor = false;
 		});
 	}

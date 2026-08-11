@@ -38,10 +38,6 @@
 	);
 	const visibleQueries = $derived(filteredQueries.slice(0, MAX_VISIBLE_SAVED_QUERIES));
 	const hasMoreQueries = $derived(filteredQueries.length > MAX_VISIBLE_SAVED_QUERIES);
-
-	function getQueryPreview(query: ExplorerQuery) {
-		return query.query.replace(/\s+/g, ' ').trim() || query.name;
-	}
 </script>
 
 <Collapsible.Root {open} onOpenChange={onopenchange} class="group/collapsible">
@@ -83,8 +79,7 @@
 					>
 						<FileCode2Icon class="text-muted-foreground size-4 shrink-0" />
 						<span class="min-w-0">
-							<span class="block truncate text-xs" title={query.name}>{getQueryPreview(query)}</span
-							>
+							<span class="block truncate text-xs" title={query.name}>{query.name}</span>
 							<span class="text-muted-foreground block truncate text-[10px]">{query.database}</span>
 						</span>
 					</button>
@@ -93,6 +88,12 @@
 							label={query.name}
 							header="Actions"
 							actions={[
+								{
+									id: 'load-to-tab',
+									label: 'Load to tab',
+									icon: FileCode2Icon,
+									onSelect: () => onselect?.(query)
+								},
 								{
 									id: 'delete',
 									label: 'Delete',

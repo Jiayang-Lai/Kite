@@ -193,6 +193,8 @@ test('runs KQL through the emulated cluster and disables Kusto commands', async 
 	await expect(page.getByText('memory', { exact: true }).first()).toBeVisible({
 		timeout: 30_000
 	});
+	await page.locator('.monaco-editor').click();
+	await page.keyboard.insertText('print Message = "Connected"');
 	await page.getByRole('button', { name: 'Run' }).click();
 	await expect(page.getByRole('cell', { name: 'Connected' })).toBeVisible({
 		timeout: 30_000
@@ -206,6 +208,62 @@ test('runs KQL through the emulated cluster and disables Kusto commands', async 
 		})
 	).toBeVisible({ timeout: 30_000 });
 	await expectKqlTranslatorWorkerCount(page, 0);
+});
+
+test('compares, edits, and runs either side of two query tabs', async ({ page }) => {
+	test.setTimeout(60_000);
+	await page.goto('/explorer/query');
+
+	await page.getByRole('button', { name: /Mock cluster/ }).click();
+	await page.getByRole('menuitem').filter({ hasText: 'Emulated cluster' }).click();
+	await expect(page.getByText('memory', { exact: true }).first()).toBeVisible({
+		timeout: 30_000
+	});
+
+	const editorSurface = page.locator('.monaco-editor').first();
+	await expect(editorSurface).toBeVisible({ timeout: 30_000 });
+	await editorSurface.click();
+	await page.keyboard.insertText('print Message = "Left query"');
+	const leftTab = page.getByRole('tab', { name: /print Message = "Left query"/ });
+
+	await page.getByRole('button', { name: 'New query tab' }).click();
+	await editorSurface.click();
+	await page.keyboard.insertText('print Message = "Right query"');
+	await expect(page.getByRole('tab', { name: /print Message = "Right query"/ })).toBeVisible();
+
+	await leftTab
+		.locator('button')
+		.first()
+		.click({ modifiers: ['Shift'] });
+	const comparison = page.getByLabel('Query comparison');
+	await expect(comparison).toBeVisible();
+	await expect(comparison).toContainText('Left query');
+	await expect(comparison).toContainText('Right query');
+
+	const leftEditorSurface = comparison.locator('.monaco-diff-editor .editor.original');
+	const rightEditorSurface = comparison.locator('.monaco-diff-editor .editor.modified');
+	await expect(leftEditorSurface).toBeVisible();
+	await expect(rightEditorSurface).toBeVisible();
+
+	await leftEditorSurface.click();
+	await page.keyboard.press('Control+A');
+	await page.keyboard.insertText('print Message = "Left edited"');
+	await page.getByRole('button', { name: 'Run' }).click();
+	await expect(page.getByRole('cell', { name: 'Left edited' })).toBeVisible({ timeout: 30_000 });
+	await page.locator('button[title="Save query locally"]').click();
+	const saveQueryDialog = page.getByRole('dialog', { name: 'Save query' });
+	await saveQueryDialog.getByLabel('Query name').fill('Saved left query');
+	await saveQueryDialog.getByRole('button', { name: 'Save query' }).click();
+	await expect(page.getByRole('tab', { name: /Saved left query/ })).toBeVisible();
+
+	await rightEditorSurface.click();
+	await page.keyboard.press('Control+A');
+	await page.keyboard.insertText('print Message = "Right edited"');
+	await page.getByRole('button', { name: 'Run' }).click();
+	await expect(page.getByRole('cell', { name: 'Right edited' })).toBeVisible({ timeout: 30_000 });
+
+	await page.getByRole('button', { name: 'Close diff' }).click();
+	await expect(comparison).toHaveCount(0);
 });
 
 test('releases inactive DuckDB workers and keeps at most one emulated session', async ({

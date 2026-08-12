@@ -1,14 +1,18 @@
 <script lang="ts">
 	import CircleStopIcon from '@lucide/svelte/icons/circle-stop';
 	import BookmarkPlusIcon from '@lucide/svelte/icons/bookmark-plus';
+	import ArrowLeftRightIcon from '@lucide/svelte/icons/arrow-left-right';
 	import LightbulbIcon from '@lucide/svelte/icons/lightbulb';
+	import PlusIcon from '@lucide/svelte/icons/plus';
 	import PlayIcon from '@lucide/svelte/icons/play';
+	import PanelRightCloseIcon from '@lucide/svelte/icons/panel-right-close';
+	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import ServerIcon from '@lucide/svelte/icons/server';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
+	import XIcon from '@lucide/svelte/icons/x';
 	import { mode } from 'mode-watcher';
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 
 	import AppHeader from '$lib/components/app/app-header.svelte';
 	import AppShell from '$lib/components/app/app-shell.svelte';
@@ -27,12 +31,16 @@
 	import SavedQueriesPage from '$lib/components/query/saved-queries-page.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import { Input } from '$lib/components/ui/input';
 	import * as Resizable from '$lib/components/ui/resizable';
+	import * as Select from '$lib/components/ui/select';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import { deletePersistentDuckDbStorage } from '$lib/duckdb/storage';
 	import { startEmulatedQuery } from '$lib/emulation/cluster';
 	import { LogAnalyticsQueryRequestError, startLogAnalyticsQuery } from '$lib/log-analytics/client';
 	import { getClusterSession } from '$lib/cluster/cluster-session.svelte';
+	import type { QueryTab } from '$lib/cluster/cluster-session.svelte';
 	import { connectClusterRuntime, releaseClusterRuntime } from '$lib/cluster/cluster-runtime';
 	import {
 		getPersistedActiveClusterId,
@@ -48,13 +56,14 @@
 	import { disposeKqlTranslator } from '$lib/kql/wasm-translator';
 	import { getRecentQueryStore } from '$lib/query/recent-query-store.svelte';
 	import { getSavedQueryStore } from '$lib/query/saved-query-store.svelte';
-	import type { KustoDatabase, KustoDatabaseSchema } from '$lib/types/kusto-schema';
+	import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 	import type { QueryExecution, QueryResult } from '$lib/types/query-result';
 	import type { PaneAPI } from 'paneforge';
 
 	type ConnectionState = 'loading' | 'ready' | 'error';
 	type QueryWorkspaceView = 'overview' | 'editor' | 'saved-queries';
-	const LOG_ANALYTICS_SIGN_IN_TIP_DELAY_MS = 5_000;
+	type ComparisonSide = 'left' | 'right';
+	const LOG_ANALYTICS_SIGN_IN_TIP_DELAY_MS = 10_000;
 
 	type QueryWorkspaceProps = {
 		view?: QueryWorkspaceView;
@@ -89,11 +98,30 @@
 	let queryError = $state('');
 	let queryErrorRequestId = $state<string>();
 	let queryErrorRaw = $state<unknown>();
+	let languageServiceStatus = $state<'idle' | 'loading' | 'ready'>('idle');
+	let saveQueryDialogOpen = $state(false);
+	let savedQueryName = $state('');
+	let savedQueryNameError = $state('');
+	let pendingSaveTabId = $state<string>();
 	let resultsCollapsed = $state(false);
 	let resultsPane = $state<PaneAPI>();
+	let databaseSchemaPane = $state<PaneAPI>();
+	let databaseSchemaCollapsed = $state(false);
 	let isQueryRunning = $state(false);
 	let activeExecution: QueryExecution | undefined;
+	let activeExecutionTabId: string | undefined;
+	let resetTabsAfterConnection = false;
 	let editorComponent = $state<{ getDiagnostics: () => EditorDiagnostic[] }>();
+	let queryTabList = $state<HTMLDivElement>();
+	let queryTabListCanScrollLeft = $state(false);
+	let queryTabListCanScrollRight = $state(false);
+	let queryTabDragPointerId = $state<number>();
+	let queryTabDragStartX = 0;
+	let queryTabDragStartScrollLeft = 0;
+	let ignoreQueryTabClick = false;
+	let compareOriginalTabId = $state<string>();
+	let compareModifiedTabId = $state<string>();
+	let focusedComparisonSide = $state<ComparisonSide>('right');
 	let schemaRequestId = 0;
 	let queryRequestId = 0;
 	let logAnalyticsSignInTipTimeout: number | undefined;
@@ -102,6 +130,49 @@
 	let activeClusterUrl = $state(initialCluster.url);
 	let selectedClusterId = $state(initialCluster.id);
 	const hasCluster = $derived(Boolean(databaseSchema));
+	const queryTabs = $derived(clusterSession.queryTabs);
+	const activeQueryTabId = $derived(clusterSession.activeQueryTabId);
+	const activeQueryTab = $derived(clusterSession.getQueryTab(activeQueryTabId));
+	const comparisonModifiedTab = $derived(
+		compareModifiedTabId ? queryTabs.find((tab) => tab.id === compareModifiedTabId) : activeQueryTab
+	);
+	const compareCandidates = $derived(
+		comparisonModifiedTab
+			? queryTabs.filter(
+					(tab) =>
+						tab.id !== comparisonModifiedTab.id &&
+						tab.database.trim().toLowerCase() ===
+							comparisonModifiedTab.database.trim().toLowerCase()
+				)
+			: []
+	);
+	const comparisonOriginalTab = $derived(
+		compareOriginalTabId
+			? compareCandidates.find((tab) => tab.id === compareOriginalTabId)
+			: undefined
+	);
+	const saveTargetTab = $derived(
+		pendingSaveTabId
+			? queryTabs.find((tab) => tab.id === pendingSaveTabId)
+			: comparisonOriginalTab && comparisonModifiedTab
+				? focusedComparisonSide === 'left'
+					? comparisonOriginalTab
+					: comparisonModifiedTab
+				: activeQueryTab
+	);
+	const saveTargetSavedQuery = $derived(
+		saveTargetTab?.savedQueryId
+			? savedQueryStore.queries.find((query) => query.id === saveTargetTab.savedQueryId)
+			: undefined
+	);
+	const isSaveTargetSavedQueryDirty = $derived(
+		Boolean(
+			saveTargetTab &&
+			saveTargetSavedQuery &&
+			(saveTargetTab.database !== saveTargetSavedQuery.database ||
+				saveTargetTab.query.trim() !== saveTargetSavedQuery.query)
+		)
+	);
 	const activeCluster = $derived(clusters.find((cluster) => cluster.id === activeClusterId));
 	const isMockCluster = $derived(activeCluster?.kind === 'mock');
 	const isEmulatedCluster = $derived(activeCluster?.kind === 'emulated');
@@ -112,7 +183,9 @@
 	const hasBuiltInMockSamples = $derived(usesBuiltInMockCatalog(activeCluster));
 	let explorerExpansion = $state(clusterSession.getExplorerExpansion(initialCluster.id));
 	const isQueryable = $derived(hasCluster && !isMockCluster);
-	const canSaveQuery = $derived(Boolean(queryText.trim() && selectedDatabase));
+	const canSaveTargetQuery = $derived(
+		Boolean(saveTargetTab?.query.trim() && saveTargetTab.database)
+	);
 	const selectedClusterName = $derived(
 		clusters.find((cluster) => cluster.id === selectedClusterId)?.name ?? 'selected cluster'
 	);
@@ -155,6 +228,48 @@
 		clusterSession.selectedFunction = selectedFunction;
 	});
 
+	$effect(() => {
+		const tab = activeQueryTab;
+		if (tab && tab.database !== selectedDatabase) {
+			clusterSession.updateQueryTab(tab.id, { database: selectedDatabase });
+		}
+	});
+
+	$effect(() => {
+		if (
+			compareOriginalTabId &&
+			(!comparisonOriginalTab || !compareModifiedTabId || !comparisonModifiedTab)
+		) {
+			stopQueryComparison();
+		}
+	});
+
+	$effect(() => {
+		if (!saveQueryDialogOpen) pendingSaveTabId = undefined;
+	});
+
+	$effect(() => {
+		const tabCount = queryTabs.length;
+		const tabList = queryTabList;
+		if (!tabList) return;
+		void tabCount;
+
+		const updateOverflow = () => {
+			queryTabListCanScrollLeft = tabList.scrollLeft > 0;
+			queryTabListCanScrollRight =
+				tabList.scrollLeft + tabList.clientWidth < tabList.scrollWidth - 1;
+		};
+		const resizeObserver = new ResizeObserver(updateOverflow);
+		resizeObserver.observe(tabList);
+		tabList.addEventListener('scroll', updateOverflow);
+		updateOverflow();
+
+		return () => {
+			resizeObserver.disconnect();
+			tabList.removeEventListener('scroll', updateOverflow);
+		};
+	});
+
 	// Schema mutations can be made from the Admin workspace while this editor is
 	// mounted. Keep the local snapshot (and therefore Monaco's schema prop) in
 	// sync with the app-wide session so completion never uses stale table metadata.
@@ -171,24 +286,181 @@
 		if (!isEmulatedCluster) disposeKqlTranslator();
 	});
 
-	function quoteEntity(name: string) {
-		return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? name : `['${name.replaceAll("'", "''")}']`;
-	}
-
-	function createDefaultQuery(database: KustoDatabase) {
-		const preferredTable =
-			database.tables.find((table) => table.name.toLowerCase() === 'metrics') ?? database.tables[0];
-		return preferredTable
-			? `${quoteEntity(preferredTable.name)}\n| getschema`
-			: 'print Message = "Connected"';
-	}
-
 	function clearLogAnalyticsSignInTip() {
 		if (logAnalyticsSignInTipTimeout !== undefined) {
 			window.clearTimeout(logAnalyticsSignInTipTimeout);
 			logAnalyticsSignInTipTimeout = undefined;
 		}
 		showLogAnalyticsSignInTip = false;
+	}
+
+	function getQueryTabTitle(tab: QueryTab) {
+		if (tab.savedQueryName) return tab.savedQueryName;
+		const firstLine = tab.query
+			.split('\n')
+			.find((line) => line.trim())
+			?.trim();
+		return firstLine?.replaceAll(/\s+/g, ' ').slice(0, 32) || 'Untitled query';
+	}
+
+	function loadQueryTab(tab: QueryTab) {
+		clusterSession.activeQueryTabId = tab.id;
+		if (tab.database && databaseSchema?.[tab.database]) selectedDatabase = tab.database;
+		selectedTable = undefined;
+		selectedFunction = undefined;
+		queryText = tab.query;
+		queryResult = tab.result;
+		queryError = tab.error ?? '';
+		queryErrorRequestId = tab.errorRequestId;
+		queryErrorRaw = tab.errorRaw;
+		isQueryRunning = tab.isRunning;
+		requestAnimationFrame(() => {
+			queryTabList
+				?.querySelector<HTMLElement>(`[data-query-tab-id="${tab.id}"]`)
+				?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+		});
+	}
+
+	function createQueryTab(
+		database = selectedDatabase,
+		query = '',
+		savedQuery?: Pick<QueryTab, 'savedQueryId' | 'savedQueryName'>
+	) {
+		const activeTabIdBeforeCreate = activeQueryTabId;
+		const keepActiveTab = Boolean(comparisonOriginalTab && comparisonModifiedTab);
+		const tab = clusterSession.createQueryTab(database, query, savedQuery);
+		if (keepActiveTab) {
+			clusterSession.activeQueryTabId = activeTabIdBeforeCreate;
+			return;
+		}
+		loadQueryTab(tab);
+	}
+
+	function startQueryComparison() {
+		if (!activeQueryTab) return;
+		compareModifiedTabId = activeQueryTab.id;
+		const candidates = queryTabs.filter(
+			(tab) =>
+				tab.id !== activeQueryTab.id &&
+				tab.database.trim().toLowerCase() === activeQueryTab.database.trim().toLowerCase()
+		);
+		if (!candidates.length) {
+			compareModifiedTabId = undefined;
+			return;
+		}
+		compareOriginalTabId = candidates[0].id;
+		focusedComparisonSide = 'right';
+	}
+
+	function compareWithQueryTab(tab: QueryTab) {
+		if (!activeQueryTab || tab.id === activeQueryTab.id) return;
+		if (tab.database.trim().toLowerCase() !== activeQueryTab.database.trim().toLowerCase()) return;
+		compareModifiedTabId = activeQueryTab.id;
+		compareOriginalTabId = tab.id;
+		focusedComparisonSide = 'right';
+	}
+
+	function stopQueryComparison() {
+		compareOriginalTabId = undefined;
+		compareModifiedTabId = undefined;
+		focusedComparisonSide = 'right';
+	}
+
+	function updateActiveQuery(value: string) {
+		queryText = value;
+		if (activeQueryTab) clusterSession.updateQueryTab(activeQueryTab.id, { query: value });
+	}
+
+	function updateComparisonModifiedQuery(value: string) {
+		if (!comparisonModifiedTab) return;
+		clusterSession.updateQueryTab(comparisonModifiedTab.id, { query: value });
+		if (comparisonModifiedTab.id === activeQueryTabId) queryText = value;
+	}
+
+	function updateComparisonOriginalQuery(value: string) {
+		if (!comparisonOriginalTab) return;
+		clusterSession.updateQueryTab(comparisonOriginalTab.id, { query: value });
+		if (comparisonOriginalTab.id === activeQueryTabId) queryText = value;
+	}
+
+	async function runComparisonQuery(side = focusedComparisonSide) {
+		const tab = side === 'left' ? comparisonOriginalTab : comparisonModifiedTab;
+		if (!tab) return;
+		if (tab.id !== activeQueryTabId) {
+			loadQueryTab(tab);
+			await tick();
+		}
+		await runQuery();
+	}
+
+	function isQueryTabDirty(tab: QueryTab) {
+		if (!tab.query.trim()) return false;
+		if (!tab.savedQueryId) return true;
+
+		const savedQuery = savedQueryStore.queries.find((query) => query.id === tab.savedQueryId);
+		return (
+			!savedQuery || tab.database !== savedQuery.database || tab.query.trim() !== savedQuery.query
+		);
+	}
+
+	function closeQueryTab(tab: QueryTab) {
+		if (
+			tab.isRunning &&
+			!window.confirm(`Cancel the running query in “${getQueryTabTitle(tab)}” and close its tab?`)
+		) {
+			return;
+		}
+		if (
+			isQueryTabDirty(tab) &&
+			!window.confirm(`Close “${getQueryTabTitle(tab)}”? Its query text will be lost.`)
+		) {
+			return;
+		}
+		if (activeExecutionTabId === tab.id) activeExecution?.cancel();
+		clusterSession.closeQueryTab(tab.id);
+		if (compareOriginalTabId === tab.id || compareModifiedTabId === tab.id) stopQueryComparison();
+		const nextTab = clusterSession.getQueryTab(clusterSession.activeQueryTabId);
+		if (nextTab) loadQueryTab(nextTab);
+	}
+
+	function scrollQueryTabsWithWheel(event: WheelEvent) {
+		if (!queryTabList || queryTabList.scrollWidth <= queryTabList.clientWidth) return;
+		const distance = event.deltaX || event.deltaY;
+		if (!distance) return;
+		event.preventDefault();
+		queryTabList.scrollBy({ left: distance });
+	}
+
+	function startQueryTabDrag(event: PointerEvent) {
+		if (
+			event.button !== 0 ||
+			!queryTabList ||
+			queryTabList.scrollWidth <= queryTabList.clientWidth
+		) {
+			return;
+		}
+		queryTabDragPointerId = event.pointerId;
+		queryTabDragStartX = event.clientX;
+		queryTabDragStartScrollLeft = queryTabList.scrollLeft;
+		queryTabList.setPointerCapture(event.pointerId);
+	}
+
+	function dragQueryTabs(event: PointerEvent) {
+		if (event.pointerId !== queryTabDragPointerId || !queryTabList) return;
+		const distance = event.clientX - queryTabDragStartX;
+		if (Math.abs(distance) > 3) ignoreQueryTabClick = true;
+		queryTabList.scrollLeft = queryTabDragStartScrollLeft - distance;
+	}
+
+	function stopQueryTabDrag(event: PointerEvent) {
+		if (event.pointerId !== queryTabDragPointerId || !queryTabList) return;
+		queryTabList.releasePointerCapture(event.pointerId);
+		queryTabDragPointerId = undefined;
+		if (ignoreQueryTabClick) {
+			window.setTimeout(() => {
+				ignoreQueryTabClick = false;
+			});
+		}
 	}
 
 	function scheduleLogAnalyticsSignInTip(requestId: number, clusterId: string) {
@@ -248,7 +520,14 @@
 			selectedDatabase = activeDatabase.name;
 			selectedTable = restoredTable;
 			selectedFunction = restoredFunction;
-			queryText = pendingQuery ?? createDefaultQuery(activeDatabase);
+			if (resetTabsAfterConnection) {
+				clusterSession.resetQueryTabs(activeDatabase.name);
+				resetTabsAfterConnection = false;
+			}
+			const tab = activeQueryTab ?? clusterSession.createQueryTab(activeDatabase.name);
+			const tabQuery = pendingQuery ?? tab.query;
+			clusterSession.updateQueryTab(tab.id, { database: activeDatabase.name, query: tabQuery });
+			loadQueryTab(clusterSession.getQueryTab(tab.id) ?? tab);
 			clusterSession.pendingQuery = undefined;
 			queryResult = undefined;
 			queryError = '';
@@ -258,6 +537,7 @@
 			failedClusterId = undefined;
 		} catch (error) {
 			if (requestId !== schemaRequestId) return;
+			resetTabsAfterConnection = false;
 			clearLogAnalyticsSignInTip();
 			connectionError = getKustoErrorMessage(error);
 			failedClusterId = requestedClusterId;
@@ -273,11 +553,19 @@
 
 	function switchCluster(clusterId: string) {
 		if (clusterId === selectedClusterId) return;
+		if (
+			queryTabs.some((tab) => tab.query.trim()) &&
+			!window.confirm('Switching connections will close all query tabs. Continue?')
+		) {
+			return;
+		}
 
 		queryRequestId += 1;
 		activeExecution?.cancel();
 		activeExecution = undefined;
+		activeExecutionTabId = undefined;
 		isQueryRunning = false;
+		resetTabsAfterConnection = true;
 		selectedClusterId = clusterId;
 		void refreshSchema();
 	}
@@ -324,10 +612,23 @@
 	}
 
 	function loadRecentQuery(query: ExplorerQuery) {
-		selectedDatabase = query.database;
-		selectedTable = undefined;
-		selectedFunction = undefined;
-		queryText = query.query;
+		const savedQuery = query.id
+			? savedQueryStore.queries.find(
+					(candidate) => candidate.id === query.id && candidate.clusterId === activeClusterId
+				)
+			: undefined;
+		const existingTab = savedQuery
+			? queryTabs.find((tab) => tab.savedQueryId === savedQuery.id)
+			: undefined;
+		if (existingTab) {
+			loadQueryTab(existingTab);
+			return;
+		}
+		createQueryTab(
+			query.database,
+			query.query,
+			savedQuery ? { savedQueryId: savedQuery.id, savedQueryName: savedQuery.name } : undefined
+		);
 	}
 
 	function openQuery(query: ExplorerQuery) {
@@ -339,7 +640,25 @@
 		clusterSession.selectedDatabase = query.database;
 		clusterSession.selectedTable = undefined;
 		clusterSession.selectedFunction = undefined;
-		clusterSession.pendingQuery = query.query;
+		const savedQuery = query.id
+			? savedQueryStore.queries.find(
+					(candidate) => candidate.id === query.id && candidate.clusterId === activeClusterId
+				)
+			: undefined;
+		const existingTab = savedQuery
+			? queryTabs.find((tab) => tab.savedQueryId === savedQuery.id)
+			: undefined;
+		if (existingTab) {
+			clusterSession.activeQueryTabId = existingTab.id;
+			clusterSession.pendingQuery = undefined;
+		} else {
+			clusterSession.pendingQuery = query.query;
+			clusterSession.createQueryTab(
+				query.database,
+				query.query,
+				savedQuery ? { savedQueryId: savedQuery.id, savedQueryName: savedQuery.name } : undefined
+			);
+		}
 		void goto('/explorer/query');
 	}
 
@@ -365,19 +684,74 @@
 		clusterSession.setExplorerExpansion(activeClusterId, change);
 	}
 
-	function saveCurrentQuery() {
-		const query = queryText.trim();
-		if (!query || !selectedDatabase) return;
+	function openSaveQueryDialog(tab: QueryTab) {
+		if (!tab.query.trim() || !tab.database) return;
+		pendingSaveTabId = tab.id;
+		savedQueryName = '';
+		savedQueryNameError = '';
+		saveQueryDialogOpen = true;
+	}
 
-		const name = window.prompt('Name this saved query');
-		if (!name?.trim()) return;
+	function saveQuery(tab = saveTargetTab) {
+		if (!tab) return;
+		const query = tab.query.trim();
+		if (!query || !tab.database) return;
+		const savedQuery = tab.savedQueryId
+			? savedQueryStore.queries.find((candidate) => candidate.id === tab.savedQueryId)
+			: undefined;
+		if (!savedQuery) {
+			openSaveQueryDialog(tab);
+			return;
+		}
 
-		savedQueryStore.save({
+		const updatedQuery = savedQueryStore.update(savedQuery.id, {
 			clusterId: activeClusterId,
-			database: selectedDatabase,
+			database: tab.database,
+			name: savedQuery.name,
+			query
+		});
+		if (!updatedQuery) return;
+
+		clusterSession.updateQueryTab(tab.id, {
+			savedQueryName: updatedQuery.name,
+			query: updatedQuery.query,
+			database: updatedQuery.database
+		});
+		if (tab.id === activeQueryTabId) queryText = updatedQuery.query;
+	}
+
+	function saveCurrentQuery() {
+		const tab = saveTargetTab;
+		if (!tab) return;
+		const query = tab.query.trim();
+		if (!query || !tab.database) return;
+
+		const name = savedQueryName.trim();
+		if (!name) {
+			savedQueryNameError = 'Enter a name for this query.';
+			return;
+		}
+
+		const savedQuery = savedQueryStore.save({
+			clusterId: activeClusterId,
+			database: tab.database,
 			name,
 			query
 		});
+		clusterSession.updateQueryTab(tab.id, {
+			savedQueryId: savedQuery.id,
+			savedQueryName: savedQuery.name,
+			query: savedQuery.query
+		});
+		if (tab.id === activeQueryTabId) queryText = savedQuery.query;
+		saveQueryDialogOpen = false;
+		pendingSaveTabId = undefined;
+	}
+
+	function preventRefreshWithQuery(event: BeforeUnloadEvent) {
+		if (!queryTabs.some(isQueryTabDirty)) return;
+		event.preventDefault();
+		event.returnValue = '';
 	}
 
 	function getRecentQueryName(query: string) {
@@ -400,8 +774,9 @@
 	}
 
 	async function runQuery() {
+		const tab = activeQueryTab;
 		const query = queryText.trim();
-		if (!query || !selectedDatabase || isQueryRunning || isMockCluster) return;
+		if (!tab || !query || !selectedDatabase || tab.isRunning || isMockCluster) return;
 
 		const requestId = ++queryRequestId;
 		queryError = '';
@@ -409,11 +784,19 @@
 		queryErrorRaw = undefined;
 		resultsCollapsed = false;
 		isQueryRunning = true;
+		clusterSession.updateQueryTab(tab.id, {
+			isRunning: true,
+			result: undefined,
+			error: undefined,
+			errorRequestId: undefined,
+			errorRaw: undefined
+		});
 		activeExecution = isEmulatedCluster
 			? startEmulatedQuery(activeClusterId, selectedDatabase, query)
 			: isLogAnalyticsCluster && activeCluster?.logAnalytics
 				? startLogAnalyticsQuery(activeCluster.logAnalytics, query)
 				: startKustoQuery(selectedDatabase, query, activeClusterUrl);
+		activeExecutionTabId = tab.id;
 		recentQueryStore.record({
 			clusterId: activeClusterId,
 			database: selectedDatabase,
@@ -423,26 +806,41 @@
 
 		try {
 			const result = await activeExecution.promise;
-			if (requestId === queryRequestId) queryResult = result;
+			if (requestId === queryRequestId) {
+				clusterSession.updateQueryTab(tab.id, { result });
+				if (activeQueryTabId === tab.id) queryResult = result;
+			}
 		} catch (error) {
 			if (requestId === queryRequestId) {
-				queryResult = undefined;
-				queryError = formatQueryFailure(getKustoErrorMessage(error));
+				const message = formatQueryFailure(getKustoErrorMessage(error));
+				const errorUpdate: Partial<Omit<QueryTab, 'id'>> = {
+					result: undefined,
+					error: message
+				};
 				if (error instanceof LogAnalyticsQueryRequestError) {
-					queryErrorRequestId = error.requestId;
-					queryErrorRaw = error.response;
+					errorUpdate.errorRequestId = error.requestId;
+					errorUpdate.errorRaw = error.response;
+				}
+				clusterSession.updateQueryTab(tab.id, errorUpdate);
+				if (activeQueryTabId === tab.id) {
+					queryResult = undefined;
+					queryError = message;
+					queryErrorRequestId = errorUpdate.errorRequestId;
+					queryErrorRaw = errorUpdate.errorRaw;
 				}
 			}
 		} finally {
 			if (requestId === queryRequestId) {
 				activeExecution = undefined;
-				isQueryRunning = false;
+				activeExecutionTabId = undefined;
+				clusterSession.updateQueryTab(tab.id, { isRunning: false });
+				if (activeQueryTabId === tab.id) isQueryRunning = false;
 			}
 		}
 	}
 
 	function cancelQuery() {
-		activeExecution?.cancel();
+		if (activeExecutionTabId === activeQueryTabId) activeExecution?.cancel();
 	}
 
 	function setResultsCollapsed(collapsed: boolean) {
@@ -451,6 +849,14 @@
 			resultsPane?.collapse();
 		} else {
 			resultsPane?.expand();
+		}
+	}
+
+	function toggleDatabaseSchema() {
+		if (databaseSchemaCollapsed) {
+			databaseSchemaPane?.expand();
+		} else {
+			databaseSchemaPane?.collapse();
 		}
 	}
 
@@ -465,12 +871,15 @@
 			selectedClusterId = persistedClusterId;
 		}
 		void refreshSchema();
+		window.addEventListener('beforeunload', preventRefreshWithQuery);
 		return () => {
 			schemaRequestId += 1;
 			queryRequestId += 1;
 			clearLogAnalyticsSignInTip();
 			activeExecution?.cancel();
+			activeExecutionTabId = undefined;
 			disposeKqlTranslator();
+			window.removeEventListener('beforeunload', preventRefreshWithQuery);
 		};
 	});
 </script>
@@ -490,7 +899,10 @@
 		onclusteredit={editCluster}
 		onclusterremove={removeCluster}
 		onlinkauthenticationprofile={(clusterId, authenticationProfileId) => {
-			clusterConnectionStore.linkLogAnalyticsAuthenticationProfile(clusterId, authenticationProfileId);
+			clusterConnectionStore.linkLogAnalyticsAuthenticationProfile(
+				clusterId,
+				authenticationProfileId
+			);
 			switchCluster(clusterId);
 		}}
 	/>
@@ -599,18 +1011,152 @@
 									aria-busy={isClusterSwitching}
 								>
 									<div class="flex h-8 shrink-0 items-center justify-between gap-2">
-										<div class="flex min-w-0 items-center gap-2">
-											<ServerIcon class="text-muted-foreground size-4 shrink-0" />
-											<span class="truncate text-xs font-medium">{selectedDatabase}</span>
+										<div class="relative min-w-0 flex-1">
+											<div
+												bind:this={queryTabList}
+												class:cursor-grabbing={queryTabDragPointerId !== undefined}
+												class="flex h-8 min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+												role="tablist"
+												aria-label="Query tabs"
+												tabindex="0"
+												onwheel={scrollQueryTabsWithWheel}
+												onpointerdown={startQueryTabDrag}
+												onpointermove={dragQueryTabs}
+												onpointerup={stopQueryTabDrag}
+												onpointercancel={stopQueryTabDrag}
+											>
+												{#each queryTabs as tab (tab.id)}
+													{@const isComparedTab = Boolean(
+														comparisonOriginalTab && tab.id === comparisonOriginalTab.id
+													)}
+													{@const isComparisonModifiedTab = Boolean(
+														comparisonOriginalTab && tab.id === comparisonModifiedTab?.id
+													)}
+													<div
+														data-query-tab-id={tab.id}
+														class="group flex min-w-0 shrink-0 items-center rounded-md border px-2 text-xs transition-colors {tab.id ===
+														activeQueryTabId
+															? 'border-primary/40 bg-primary/10 text-foreground'
+															: isComparisonModifiedTab
+																? 'border-primary/50 bg-primary/10 text-foreground ring-1 ring-primary/50'
+																: isComparedTab
+																	? 'border-amber-500/60 bg-amber-500/10 text-foreground ring-1 ring-amber-500/35'
+																	: 'border-transparent text-muted-foreground hover:bg-muted'}"
+														role="tab"
+														aria-selected={tab.id === activeQueryTabId}
+														aria-label={`${getQueryTabTitle(tab)}${isComparedTab ? ', comparison original' : isComparisonModifiedTab ? ', comparison modified' : ''}`}
+													>
+														<button
+															type="button"
+															class="max-w-32 truncate py-1.5 text-left outline-none"
+															onclick={(event) => {
+																if (ignoreQueryTabClick) return;
+																if (event.shiftKey) {
+																	compareWithQueryTab(tab);
+																	return;
+																}
+																loadQueryTab(tab);
+															}}
+															title={`${getQueryTabTitle(tab)}${
+																activeQueryTab &&
+																tab.id !== activeQueryTab.id &&
+																tab.database.trim().toLowerCase() ===
+																	activeQueryTab.database.trim().toLowerCase()
+																	? ' (Shift-click to compare)'
+																	: ''
+															}`}
+														>
+															{#if isQueryTabDirty(tab)}
+																<span
+																	class="bg-primary mr-1 inline-block size-1.5 rounded-full"
+																	aria-hidden="true"
+																></span>
+																<span class="sr-only">Unsaved changes </span>
+															{/if}
+															{getQueryTabTitle(tab)}
+														</button>
+														<Button
+															variant="ghost"
+															size="icon-xs"
+															class="-mr-1 size-5 opacity-60 group-hover:opacity-100"
+															aria-label={`Close ${getQueryTabTitle(tab)}`}
+															onpointerdown={(event) => event.stopPropagation()}
+															onclick={(event) => {
+																event.stopPropagation();
+																closeQueryTab(tab);
+															}}
+														>
+															<XIcon />
+														</Button>
+													</div>
+												{/each}
+											</div>
+											{#if queryTabListCanScrollLeft}
+												<div
+													class="pointer-events-none absolute inset-y-0 left-0 w-5 bg-gradient-to-r from-background to-transparent"
+													aria-hidden="true"
+												></div>
+											{/if}
+											{#if queryTabListCanScrollRight}
+												<div
+													class="pointer-events-none absolute inset-y-0 right-0 w-5 bg-gradient-to-l from-background to-transparent"
+													aria-hidden="true"
+												></div>
+											{/if}
 										</div>
+										<Button
+											variant="ghost"
+											size="icon-sm"
+											class="shrink-0"
+											aria-label="New query tab"
+											onclick={() => createQueryTab()}
+										>
+											<PlusIcon />
+										</Button>
+										<Button
+											variant="ghost"
+											size="icon-sm"
+											aria-label={databaseSchemaCollapsed
+												? 'Show database schema'
+												: 'Hide database schema'}
+											title={databaseSchemaCollapsed
+												? 'Show database schema'
+												: 'Hide database schema'}
+											onclick={toggleDatabaseSchema}
+										>
+											{#if databaseSchemaCollapsed}
+												<PanelRightOpenIcon />
+											{:else}
+												<PanelRightCloseIcon />
+											{/if}
+										</Button>
 
 										<div class="flex shrink-0 items-center gap-2">
 											<Button
 												variant="outline"
 												size="sm"
-												disabled={!canSaveQuery}
-												onclick={saveCurrentQuery}
-												title="Save query locally"
+												disabled={!comparisonOriginalTab && !compareCandidates.length}
+												onclick={comparisonOriginalTab ? stopQueryComparison : startQueryComparison}
+												title={comparisonOriginalTab
+													? 'Close query comparison'
+													: compareCandidates.length
+														? 'Compare with another query in this database'
+														: 'Open another query tab for this database to compare queries'}
+											>
+												<ArrowLeftRightIcon />
+												{comparisonOriginalTab ? 'Close diff' : 'Compare'}
+											</Button>
+											<Button
+												variant="outline"
+												size="sm"
+												disabled={!canSaveTargetQuery ||
+													Boolean(saveTargetSavedQuery && !isSaveTargetSavedQueryDirty)}
+												onclick={() => saveQuery()}
+												title={saveTargetSavedQuery
+													? isSaveTargetSavedQueryDirty
+														? `Update ${saveTargetSavedQuery.name}`
+														: 'No saved-query changes'
+													: 'Save query locally'}
 											>
 												<BookmarkPlusIcon />
 												Save
@@ -623,12 +1169,19 @@
 											{:else}
 												<Button
 													size="sm"
-													onclick={() => void runQuery()}
-													disabled={!queryText.trim() || isMockCluster}
+													onclick={() =>
+														void (comparisonOriginalTab && comparisonModifiedTab
+															? runComparisonQuery()
+															: runQuery())}
+													disabled={!(comparisonOriginalTab && comparisonModifiedTab
+														? focusedComparisonSide === 'left'
+															? comparisonOriginalTab.query.trim()
+															: comparisonModifiedTab.query.trim()
+														: queryText.trim()) || isMockCluster}
 													title={isMockCluster
 														? 'Query execution is unavailable for the mock cluster'
-									: 'Run query (Shift+Enter)'}
-									aria-keyshortcuts={isMockCluster ? undefined : 'Shift+Enter'}
+														: 'Run query (Shift+Enter)'}
+													aria-keyshortcuts={isMockCluster ? undefined : 'Shift+Enter'}
 												>
 													<PlayIcon />
 													Run
@@ -637,17 +1190,84 @@
 										</div>
 									</div>
 
-									<MonacoEditor
-										bind:this={editorComponent}
-										bind:value={queryText}
-										class="min-h-0 flex-1 border"
-										database={selectedDatabase}
-										height="100%"
-										{databaseSchema}
-										clusterUrl={activeClusterUrl}
-										theme={editorTheme}
-										onexecute={() => void runQuery()}
-									/>
+									{#if comparisonOriginalTab && comparisonModifiedTab}
+										<section
+											class="flex min-h-0 flex-1 flex-col gap-2"
+											aria-label="Query comparison"
+										>
+											<div
+												class="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs"
+											>
+												<p class="min-w-0 text-muted-foreground">
+													Comparing <span
+														class="rounded-sm bg-amber-500/10 px-1.5 py-0.5 font-medium text-foreground ring-1 ring-amber-500/35"
+														>{getQueryTabTitle(comparisonOriginalTab)}</span
+													>
+													with
+													<span
+														class="rounded-sm bg-primary/10 px-1.5 py-0.5 font-medium text-foreground ring-1 ring-primary/35"
+														>{getQueryTabTitle(comparisonModifiedTab)}</span
+													>
+													in
+													<span class="font-mono text-foreground"
+														>{comparisonModifiedTab.database}</span
+													>
+												</p>
+												<div class="flex items-center gap-2">
+													<label class="sr-only" for="comparison-original-tab">Original query</label
+													>
+													<Select.Root type="single" bind:value={compareOriginalTabId}>
+														<Select.Trigger id="comparison-original-tab" size="sm" class="max-w-52">
+															<Select.Value placeholder="Choose original query" />
+														</Select.Trigger>
+														<Select.Content>
+															<Select.Group>
+																{#each compareCandidates as tab (tab.id)}
+																	<Select.Item value={tab.id} label={getQueryTabTitle(tab)} />
+																{/each}
+															</Select.Group>
+														</Select.Content>
+													</Select.Root>
+												</div>
+											</div>
+											{#key `${comparisonModifiedTab.id}:${comparisonOriginalTab.id}`}
+												<MonacoEditor
+													bind:this={editorComponent}
+													value={comparisonModifiedTab.query}
+													originalValue={comparisonOriginalTab.query}
+													class="min-h-0 flex-1 border"
+													database={comparisonModifiedTab.database}
+													height="100%"
+													{databaseSchema}
+													clusterUrl={activeClusterUrl}
+													theme={editorTheme}
+													syncValue={false}
+													onexecute={(side) => void runComparisonQuery(side)}
+													onvaluechange={updateComparisonModifiedQuery}
+													onoriginalvaluechange={updateComparisonOriginalQuery}
+													onactivesidechange={(side) => (focusedComparisonSide = side)}
+													onlanguagestatuschange={(status) => (languageServiceStatus = status)}
+												/>
+											{/key}
+										</section>
+									{:else}
+										{#key activeQueryTabId}
+											<MonacoEditor
+												bind:this={editorComponent}
+												value={queryText}
+												class="min-h-0 flex-1 border"
+												database={selectedDatabase}
+												height="100%"
+												{databaseSchema}
+												clusterUrl={activeClusterUrl}
+												theme={editorTheme}
+												syncValue={false}
+												onexecute={() => void runQuery()}
+												onvaluechange={updateActiveQuery}
+												onlanguagestatuschange={(status) => (languageServiceStatus = status)}
+											/>
+										{/key}
+									{/if}
 
 									{#if isClusterSwitching}
 										<div
@@ -664,8 +1284,8 @@
 													>
 														<LightbulbIcon class="mt-0.5 size-3.5 shrink-0 text-primary" />
 														<p>
-															<span class="font-medium">Tip:</span> Check for the Microsoft Entra sign-in pop-up to
-															continue.
+															<span class="font-medium">Tip:</span> Check for the Microsoft Entra sign-in
+															pop-up to continue.
 														</p>
 													</div>
 												{/if}
@@ -703,7 +1323,16 @@
 
 				<Resizable.Handle />
 
-				<Resizable.Pane defaultSize={25} minSize={15} maxSize={40}>
+				<Resizable.Pane
+					bind:this={databaseSchemaPane}
+					defaultSize={25}
+					minSize={15}
+					maxSize={40}
+					collapsible
+					collapsedSize={0}
+					onCollapse={() => (databaseSchemaCollapsed = true)}
+					onExpand={() => (databaseSchemaCollapsed = false)}
+				>
 					<DatabaseSchema
 						class={isClusterSwitching
 							? 'pointer-events-none h-full min-h-0 rounded-none border-0 opacity-60 shadow-none'
@@ -732,7 +1361,8 @@
 									>
 										<LightbulbIcon class="mt-0.5 size-4 shrink-0 text-primary" />
 										<p>
-											<span class="font-medium">Tip:</span> Check for potential Microsoft Entra sign-in pop-up to continue.
+											<span class="font-medium">Tip:</span> Check for potential Microsoft Entra sign-in
+											pop-up to continue.
 										</p>
 									</div>
 								{/if}
@@ -755,6 +1385,8 @@
 		<ConnectionStatus
 			status={connectionStatus}
 			{...connectionStatistics}
+			database={selectedDatabase}
+			{languageServiceStatus}
 			{isQueryable}
 			emulatedStorage={activeCluster?.emulatedStorage}
 			onretry={failedClusterId ? retryFailedCluster : undefined}
@@ -770,4 +1402,45 @@
 			onretry={retryFailedCluster}
 		/>
 	{/if}
+
+	<Dialog.Root bind:open={saveQueryDialogOpen}>
+		<Dialog.Content class="gap-0 overflow-hidden" aria-describedby="save-query-dialog-description">
+			<form
+				onsubmit={(event) => {
+					event.preventDefault();
+					saveCurrentQuery();
+				}}
+			>
+				<Dialog.Header class="border-b p-5 pr-14">
+					<Dialog.Title>Save query</Dialog.Title>
+					<Dialog.Description id="save-query-dialog-description">
+						Save this query locally for {saveTargetTab?.database} on the current cluster.
+					</Dialog.Description>
+				</Dialog.Header>
+
+				<div class="p-5">
+					<label class="text-sm font-medium" for="saved-query-name">Query name</label>
+					<Input
+						id="saved-query-name"
+						class="mt-2"
+						bind:value={savedQueryName}
+						aria-invalid={Boolean(savedQueryNameError)}
+						aria-describedby={savedQueryNameError ? 'saved-query-name-error' : undefined}
+						placeholder="Name for this query"
+						autocomplete="off"
+					/>
+					{#if savedQueryNameError}
+						<p id="saved-query-name-error" class="text-destructive mt-2 text-sm" role="alert">
+							{savedQueryNameError}
+						</p>
+					{/if}
+				</div>
+
+				<Dialog.Footer class="border-t p-4">
+					<Button variant="outline" onclick={() => (saveQueryDialogOpen = false)}>Cancel</Button>
+					<Button type="submit">Save query</Button>
+				</Dialog.Footer>
+			</form>
+		</Dialog.Content>
+	</Dialog.Root>
 </AppShell>

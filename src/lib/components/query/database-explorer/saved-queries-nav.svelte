@@ -40,7 +40,7 @@
 	const hasMoreQueries = $derived(filteredQueries.length > MAX_VISIBLE_SAVED_QUERIES);
 
 	function getQueryPreview(query: ExplorerQuery) {
-		return query.query.replace(/\s+/g, ' ').trim() || query.name;
+		return query.query.replace(/\s+/g, ' ').trim().slice(0, 50) || query.name;
 	}
 </script>
 
@@ -80,11 +80,11 @@
 						type="button"
 						class={`text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring flex h-10 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left outline-none focus-visible:ring-2 ${query.id ? 'pr-8' : ''}`}
 						onclick={() => onselect?.(query)}
+						title={getQueryPreview(query)}
 					>
 						<FileCode2Icon class="text-muted-foreground size-4 shrink-0" />
 						<span class="min-w-0">
-							<span class="block truncate text-xs" title={query.name}>{getQueryPreview(query)}</span
-							>
+							<span class="block truncate text-xs">{query.name}</span>
 							<span class="text-muted-foreground block truncate text-[10px]">{query.database}</span>
 						</span>
 					</button>
@@ -93,6 +93,12 @@
 							label={query.name}
 							header="Actions"
 							actions={[
+								{
+									id: 'load-to-tab',
+									label: 'Load to tab',
+									icon: FileCode2Icon,
+									onSelect: () => onselect?.(query)
+								},
 								{
 									id: 'delete',
 									label: 'Delete',

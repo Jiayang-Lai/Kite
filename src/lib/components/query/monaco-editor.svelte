@@ -39,13 +39,18 @@
 
 	type MonacoEditor =
 		import('monaco-editor/esm/vs/editor/editor.api.js').editor.IStandaloneCodeEditor;
+	type MonacoDiffEditor =
+		import('monaco-editor/esm/vs/editor/editor.api.js').editor.IStandaloneDiffEditor;
 	type MonacoModel = import('monaco-editor/esm/vs/editor/editor.api.js').editor.ITextModel;
 	type MonacoDisposable = import('monaco-editor/esm/vs/editor/editor.api.js').IDisposable;
 	const KUSTO_LANGUAGE_ID = 'kusto';
+	type DiffSide = 'left' | 'right';
 
 	type MonacoEditorProps = {
 		/** The editor contents. Supports two-way binding with `bind:value`. */
 		value?: string;
+		/** When supplied, renders Monaco's diff editor with this text on the read-only original side. */
+		originalValue?: string;
 		/** Monaco theme identifier, such as `vs` or `vs-dark`. */
 		theme?: string;
 		/** CSS height assigned to the editor container. */
@@ -54,6 +59,8 @@
 		class?: string;
 		/** Whether editing is disabled while retaining editor navigation and selection. */
 		readOnly?: boolean;
+		/** Whether later value prop changes should replace the Monaco model contents. */
+		syncValue?: boolean;
 		/** Name of the database from `databaseSchema` to use as the active database. */
 		database: string;
 		/** Available Kusto databases and their tables/columns for IntelliSense. */
@@ -61,36 +68,48 @@
 		/** Connection string used to identify the active cluster in Monaco-Kusto. */
 		clusterUrl?: string;
 		/** Called by the editor's Shift+Enter command to execute the current query. */
-		onexecute?: () => void;
+		onexecute?: (side: DiffSide) => void;
 		/** Called whenever the user changes the editor contents. */
 		onvaluechange?: (value: string) => void;
+		/** Called whenever the original side of a diff editor changes. */
+		onoriginalvaluechange?: (value: string) => void;
+		/** Reports which side of a diff editor most recently received focus. */
+		onactivesidechange?: (side: DiffSide) => void;
 		/** Reports the lazy Kusto language-service worker state to the parent workspace. */
 		onlanguagestatuschange?: (status: 'idle' | 'loading' | 'ready') => void;
 	};
 
 	let {
 		value = $bindable(''),
+		originalValue,
 		theme = 'vs',
 		height = '320px',
 		class: className = '',
 		readOnly = false,
+		syncValue = true,
 		database,
 		databaseSchema,
 		clusterUrl = 'https://help.kusto.windows.net',
 		onexecute,
 		onvaluechange,
+		onoriginalvaluechange,
+		onactivesidechange,
 		onlanguagestatuschange
 	}: MonacoEditorProps = $props();
 
 	let container = $state<HTMLDivElement | null>(null);
 	let editor = $state<MonacoEditor | null>(null);
+	let diffEditor = $state<MonacoDiffEditor | null>(null);
 	let model = $state<MonacoModel | null>(null);
+	let originalModel = $state<MonacoModel | null>(null);
 	let monaco = $state<MonacoApi | null>(null);
 	let kusto = $state<KustoApi | null>(null);
 	let changeDisposable = $state<MonacoDisposable | null>(null);
+	let originalChangeDisposable = $state<MonacoDisposable | null>(null);
 	let documentationHoverDisposable = $state<MonacoDisposable | null>(null);
 	let findWidgetFocusGuardDisposable = $state<MonacoDisposable | null>(null);
 	let intelliSenseActivationDisposable = $state<MonacoDisposable | null>(null);
+	let originalIntelliSenseActivationDisposable = $state<MonacoDisposable | null>(null);
 	let initializationError = $state<string | null>(null);
 	let isLoading = $state(true);
 	let syncingFromEditor = false;
@@ -98,9 +117,9 @@
 	let isIntelliSenseActive = $state(false);
 	const editorInstanceId = createEditorInstanceId();
 
-	function createModelUri(monacoApi: MonacoApi, databaseName: string) {
+	function createModelUri(monacoApi: MonacoApi, databaseName: string, role: 'editor' | 'original') {
 		return monacoApi.Uri.parse(
-			`inmemory://kite/${editorInstanceId}/${encodeURIComponent(clusterUrl)}/${encodeURIComponent(databaseName.toLowerCase())}.kql`
+			`inmemory://kite/${editorInstanceId}/${role}/${encodeURIComponent(clusterUrl)}/${encodeURIComponent(databaseName.toLowerCase())}.kql`
 		);
 	}
 
@@ -151,6 +170,13 @@
 			value = nextModel.getValue();
 			onvaluechange?.(value);
 			syncingFromEditor = false;
+		});
+	}
+
+	function bindOriginalModel(nextModel: MonacoModel) {
+		originalChangeDisposable?.dispose();
+		originalChangeDisposable = nextModel.onDidChangeContent(() => {
+			onoriginalvaluechange?.(nextModel.getValue());
 		});
 	}
 
@@ -234,15 +260,14 @@
 			documentationHoverDisposable = registerDocumentationHoverProvider(runtime.monaco);
 
 			const activeDatabase = getKustoDatabase(databaseSchema, database);
-			const modelUri = createModelUri(runtime.monaco, activeDatabase.name);
+			const modelUri = createModelUri(runtime.monaco, activeDatabase.name, 'editor');
 			const existingModel = runtime.monaco.editor.getModel(modelUri);
 			const editorModel =
 				existingModel ?? runtime.monaco.editor.createModel(value, KUSTO_LANGUAGE_ID, modelUri);
 			if (existingModel && existingModel.getValue() !== value) editorModel.setValue(value);
 
 			model = editorModel;
-			editor = runtime.monaco.editor.create(container, {
-				model: editorModel,
+			const sharedEditorOptions = {
 				theme,
 				automaticLayout: true,
 				fixedOverflowWidgets: true,
@@ -253,10 +278,45 @@
 				fontSize: 14,
 				scrollBeyondLastLine: false,
 				padding: { top: 16, bottom: 16 },
-				wordWrap: 'on'
-			});
+				wordWrap: 'on' as const
+			};
+			if (originalValue !== undefined) {
+				const originalUri = createModelUri(runtime.monaco, activeDatabase.name, 'original');
+				const existingOriginalModel = runtime.monaco.editor.getModel(originalUri);
+				const nextOriginalModel =
+					existingOriginalModel ??
+					runtime.monaco.editor.createModel(originalValue, KUSTO_LANGUAGE_ID, originalUri);
+				if (existingOriginalModel && existingOriginalModel.getValue() !== originalValue) {
+					nextOriginalModel.setValue(originalValue);
+				}
+				originalModel = nextOriginalModel;
+				diffEditor = runtime.monaco.editor.createDiffEditor(container, {
+					...sharedEditorOptions,
+					originalEditable: !readOnly,
+					renderSideBySide: true
+				});
+				diffEditor.setModel({ original: nextOriginalModel, modified: editorModel });
+				editor = diffEditor.getModifiedEditor();
+				const originalEditor = diffEditor.getOriginalEditor();
+				originalEditor.addCommand(
+					runtime.monaco.KeyMod.Shift | runtime.monaco.KeyCode.Enter,
+					() => {
+						if (!readOnly) onexecute?.('left');
+					}
+				);
+				originalIntelliSenseActivationDisposable = originalEditor.onDidFocusEditorText(() => {
+					onactivesidechange?.('left');
+					activateIntelliSense();
+				});
+				if (!readOnly) bindOriginalModel(nextOriginalModel);
+			} else {
+				editor = runtime.monaco.editor.create(container, {
+					...sharedEditorOptions,
+					model: editorModel
+				});
+			}
 			editor.addCommand(runtime.monaco.KeyMod.Shift | runtime.monaco.KeyCode.Enter, () => {
-				onexecute?.();
+				if (!readOnly) onexecute?.('right');
 			});
 			editor.addAction({
 				id: 'kite.toggleWordWrap',
@@ -268,9 +328,12 @@
 				}
 			});
 			findWidgetFocusGuardDisposable = registerFindWidgetFocusGuard(container, editor);
-			intelliSenseActivationDisposable = editor.onDidFocusEditorText(activateIntelliSense);
+			intelliSenseActivationDisposable = editor.onDidFocusEditorText(() => {
+				onactivesidechange?.('right');
+				activateIntelliSense();
+			});
 
-			bindModel(editorModel);
+			if (!readOnly) bindModel(editorModel);
 			isLoading = false;
 		};
 
@@ -285,18 +348,30 @@
 			disposed = true;
 			schemaRequestId += 1;
 			changeDisposable?.dispose();
+			originalChangeDisposable?.dispose();
 			documentationHoverDisposable?.dispose();
 			findWidgetFocusGuardDisposable?.dispose();
 			intelliSenseActivationDisposable?.dispose();
+			originalIntelliSenseActivationDisposable?.dispose();
 			if (container?.contains(document.activeElement)) editor?.focus();
-			editor?.dispose();
+			if (diffEditor) diffEditor.dispose();
+			else editor?.dispose();
 			model?.dispose();
+			originalModel?.dispose();
 			releaseKustoWorker?.();
 		};
 	});
 
 	$effect(() => {
-		if (model && !syncingFromEditor && model.getValue() !== value) model.setValue(value);
+		if (
+			syncValue &&
+			originalValue === undefined &&
+			model &&
+			!syncingFromEditor &&
+			model.getValue() !== value
+		) {
+			model.setValue(value);
+		}
 	});
 
 	$effect(() => {

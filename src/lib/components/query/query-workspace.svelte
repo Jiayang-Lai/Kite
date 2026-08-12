@@ -1,6 +1,7 @@
 <script lang="ts">
 	import CircleStopIcon from '@lucide/svelte/icons/circle-stop';
 	import BookmarkPlusIcon from '@lucide/svelte/icons/bookmark-plus';
+	import ArrowLeftRightIcon from '@lucide/svelte/icons/arrow-left-right';
 	import LightbulbIcon from '@lucide/svelte/icons/lightbulb';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import PlayIcon from '@lucide/svelte/icons/play';
@@ -11,7 +12,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import { mode } from 'mode-watcher';
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 
 	import AppHeader from '$lib/components/app/app-header.svelte';
 	import AppShell from '$lib/components/app/app-shell.svelte';
@@ -33,6 +34,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import * as Resizable from '$lib/components/ui/resizable';
+	import * as Select from '$lib/components/ui/select';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import { deletePersistentDuckDbStorage } from '$lib/duckdb/storage';
 	import { startEmulatedQuery } from '$lib/emulation/cluster';
@@ -60,7 +62,8 @@
 
 	type ConnectionState = 'loading' | 'ready' | 'error';
 	type QueryWorkspaceView = 'overview' | 'editor' | 'saved-queries';
-	const LOG_ANALYTICS_SIGN_IN_TIP_DELAY_MS = 5_000;
+	type ComparisonSide = 'left' | 'right';
+	const LOG_ANALYTICS_SIGN_IN_TIP_DELAY_MS = 10_000;
 
 	type QueryWorkspaceProps = {
 		view?: QueryWorkspaceView;
@@ -99,6 +102,7 @@
 	let saveQueryDialogOpen = $state(false);
 	let savedQueryName = $state('');
 	let savedQueryNameError = $state('');
+	let pendingSaveTabId = $state<string>();
 	let resultsCollapsed = $state(false);
 	let resultsPane = $state<PaneAPI>();
 	let databaseSchemaPane = $state<PaneAPI>();
@@ -115,6 +119,9 @@
 	let queryTabDragStartX = 0;
 	let queryTabDragStartScrollLeft = 0;
 	let ignoreQueryTabClick = false;
+	let compareOriginalTabId = $state<string>();
+	let compareModifiedTabId = $state<string>();
+	let focusedComparisonSide = $state<ComparisonSide>('right');
 	let schemaRequestId = 0;
 	let queryRequestId = 0;
 	let logAnalyticsSignInTipTimeout: number | undefined;
@@ -126,17 +133,44 @@
 	const queryTabs = $derived(clusterSession.queryTabs);
 	const activeQueryTabId = $derived(clusterSession.activeQueryTabId);
 	const activeQueryTab = $derived(clusterSession.getQueryTab(activeQueryTabId));
-	const activeSavedQuery = $derived(
-		activeQueryTab?.savedQueryId
-			? savedQueryStore.queries.find((query) => query.id === activeQueryTab.savedQueryId)
+	const comparisonModifiedTab = $derived(
+		compareModifiedTabId ? queryTabs.find((tab) => tab.id === compareModifiedTabId) : activeQueryTab
+	);
+	const compareCandidates = $derived(
+		comparisonModifiedTab
+			? queryTabs.filter(
+					(tab) =>
+						tab.id !== comparisonModifiedTab.id &&
+						tab.database.trim().toLowerCase() ===
+							comparisonModifiedTab.database.trim().toLowerCase()
+				)
+			: []
+	);
+	const comparisonOriginalTab = $derived(
+		compareOriginalTabId
+			? compareCandidates.find((tab) => tab.id === compareOriginalTabId)
 			: undefined
 	);
-	const isActiveSavedQueryDirty = $derived(
+	const saveTargetTab = $derived(
+		pendingSaveTabId
+			? queryTabs.find((tab) => tab.id === pendingSaveTabId)
+			: comparisonOriginalTab && comparisonModifiedTab
+				? focusedComparisonSide === 'left'
+					? comparisonOriginalTab
+					: comparisonModifiedTab
+				: activeQueryTab
+	);
+	const saveTargetSavedQuery = $derived(
+		saveTargetTab?.savedQueryId
+			? savedQueryStore.queries.find((query) => query.id === saveTargetTab.savedQueryId)
+			: undefined
+	);
+	const isSaveTargetSavedQueryDirty = $derived(
 		Boolean(
-			activeQueryTab &&
-			activeSavedQuery &&
-			(activeQueryTab.database !== activeSavedQuery.database ||
-				activeQueryTab.query.trim() !== activeSavedQuery.query)
+			saveTargetTab &&
+			saveTargetSavedQuery &&
+			(saveTargetTab.database !== saveTargetSavedQuery.database ||
+				saveTargetTab.query.trim() !== saveTargetSavedQuery.query)
 		)
 	);
 	const activeCluster = $derived(clusters.find((cluster) => cluster.id === activeClusterId));
@@ -149,7 +183,9 @@
 	const hasBuiltInMockSamples = $derived(usesBuiltInMockCatalog(activeCluster));
 	let explorerExpansion = $state(clusterSession.getExplorerExpansion(initialCluster.id));
 	const isQueryable = $derived(hasCluster && !isMockCluster);
-	const canSaveQuery = $derived(Boolean(queryText.trim() && selectedDatabase));
+	const canSaveTargetQuery = $derived(
+		Boolean(saveTargetTab?.query.trim() && saveTargetTab.database)
+	);
 	const selectedClusterName = $derived(
 		clusters.find((cluster) => cluster.id === selectedClusterId)?.name ?? 'selected cluster'
 	);
@@ -197,6 +233,19 @@
 		if (tab && tab.database !== selectedDatabase) {
 			clusterSession.updateQueryTab(tab.id, { database: selectedDatabase });
 		}
+	});
+
+	$effect(() => {
+		if (
+			compareOriginalTabId &&
+			(!comparisonOriginalTab || !compareModifiedTabId || !comparisonModifiedTab)
+		) {
+			stopQueryComparison();
+		}
+	});
+
+	$effect(() => {
+		if (!saveQueryDialogOpen) pendingSaveTabId = undefined;
 	});
 
 	$effect(() => {
@@ -277,13 +326,71 @@
 		query = '',
 		savedQuery?: Pick<QueryTab, 'savedQueryId' | 'savedQueryName'>
 	) {
+		const activeTabIdBeforeCreate = activeQueryTabId;
+		const keepActiveTab = Boolean(comparisonOriginalTab && comparisonModifiedTab);
 		const tab = clusterSession.createQueryTab(database, query, savedQuery);
+		if (keepActiveTab) {
+			clusterSession.activeQueryTabId = activeTabIdBeforeCreate;
+			return;
+		}
 		loadQueryTab(tab);
+	}
+
+	function startQueryComparison() {
+		if (!activeQueryTab) return;
+		compareModifiedTabId = activeQueryTab.id;
+		const candidates = queryTabs.filter(
+			(tab) =>
+				tab.id !== activeQueryTab.id &&
+				tab.database.trim().toLowerCase() === activeQueryTab.database.trim().toLowerCase()
+		);
+		if (!candidates.length) {
+			compareModifiedTabId = undefined;
+			return;
+		}
+		compareOriginalTabId = candidates[0].id;
+		focusedComparisonSide = 'right';
+	}
+
+	function compareWithQueryTab(tab: QueryTab) {
+		if (!activeQueryTab || tab.id === activeQueryTab.id) return;
+		if (tab.database.trim().toLowerCase() !== activeQueryTab.database.trim().toLowerCase()) return;
+		compareModifiedTabId = activeQueryTab.id;
+		compareOriginalTabId = tab.id;
+		focusedComparisonSide = 'right';
+	}
+
+	function stopQueryComparison() {
+		compareOriginalTabId = undefined;
+		compareModifiedTabId = undefined;
+		focusedComparisonSide = 'right';
 	}
 
 	function updateActiveQuery(value: string) {
 		queryText = value;
 		if (activeQueryTab) clusterSession.updateQueryTab(activeQueryTab.id, { query: value });
+	}
+
+	function updateComparisonModifiedQuery(value: string) {
+		if (!comparisonModifiedTab) return;
+		clusterSession.updateQueryTab(comparisonModifiedTab.id, { query: value });
+		if (comparisonModifiedTab.id === activeQueryTabId) queryText = value;
+	}
+
+	function updateComparisonOriginalQuery(value: string) {
+		if (!comparisonOriginalTab) return;
+		clusterSession.updateQueryTab(comparisonOriginalTab.id, { query: value });
+		if (comparisonOriginalTab.id === activeQueryTabId) queryText = value;
+	}
+
+	async function runComparisonQuery(side = focusedComparisonSide) {
+		const tab = side === 'left' ? comparisonOriginalTab : comparisonModifiedTab;
+		if (!tab) return;
+		if (tab.id !== activeQueryTabId) {
+			loadQueryTab(tab);
+			await tick();
+		}
+		await runQuery();
 	}
 
 	function isQueryTabDirty(tab: QueryTab) {
@@ -311,6 +418,7 @@
 		}
 		if (activeExecutionTabId === tab.id) activeExecution?.cancel();
 		clusterSession.closeQueryTab(tab.id);
+		if (compareOriginalTabId === tab.id || compareModifiedTabId === tab.id) stopQueryComparison();
 		const nextTab = clusterSession.getQueryTab(clusterSession.activeQueryTabId);
 		if (nextTab) loadQueryTab(nextTab);
 	}
@@ -576,40 +684,47 @@
 		clusterSession.setExplorerExpansion(activeClusterId, change);
 	}
 
-	function openSaveQueryDialog() {
-		if (!canSaveQuery) return;
+	function openSaveQueryDialog(tab: QueryTab) {
+		if (!tab.query.trim() || !tab.database) return;
+		pendingSaveTabId = tab.id;
 		savedQueryName = '';
 		savedQueryNameError = '';
 		saveQueryDialogOpen = true;
 	}
 
-	function saveActiveQuery() {
-		const query = queryText.trim();
-		if (!query || !selectedDatabase) return;
-		if (!activeQueryTab?.savedQueryId || !activeSavedQuery) {
-			openSaveQueryDialog();
+	function saveQuery(tab = saveTargetTab) {
+		if (!tab) return;
+		const query = tab.query.trim();
+		if (!query || !tab.database) return;
+		const savedQuery = tab.savedQueryId
+			? savedQueryStore.queries.find((candidate) => candidate.id === tab.savedQueryId)
+			: undefined;
+		if (!savedQuery) {
+			openSaveQueryDialog(tab);
 			return;
 		}
 
-		const savedQuery = savedQueryStore.update(activeSavedQuery.id, {
+		const updatedQuery = savedQueryStore.update(savedQuery.id, {
 			clusterId: activeClusterId,
-			database: selectedDatabase,
-			name: activeSavedQuery.name,
+			database: tab.database,
+			name: savedQuery.name,
 			query
 		});
-		if (!savedQuery) return;
+		if (!updatedQuery) return;
 
-		clusterSession.updateQueryTab(activeQueryTab.id, {
-			savedQueryName: savedQuery.name,
-			query: savedQuery.query,
-			database: savedQuery.database
+		clusterSession.updateQueryTab(tab.id, {
+			savedQueryName: updatedQuery.name,
+			query: updatedQuery.query,
+			database: updatedQuery.database
 		});
-		queryText = savedQuery.query;
+		if (tab.id === activeQueryTabId) queryText = updatedQuery.query;
 	}
 
 	function saveCurrentQuery() {
-		const query = queryText.trim();
-		if (!query || !selectedDatabase) return;
+		const tab = saveTargetTab;
+		if (!tab) return;
+		const query = tab.query.trim();
+		if (!query || !tab.database) return;
 
 		const name = savedQueryName.trim();
 		if (!name) {
@@ -619,23 +734,22 @@
 
 		const savedQuery = savedQueryStore.save({
 			clusterId: activeClusterId,
-			database: selectedDatabase,
+			database: tab.database,
 			name,
 			query
 		});
-		if (activeQueryTab) {
-			clusterSession.updateQueryTab(activeQueryTab.id, {
-				savedQueryId: savedQuery.id,
-				savedQueryName: savedQuery.name,
-				query: savedQuery.query
-			});
-			queryText = savedQuery.query;
-		}
+		clusterSession.updateQueryTab(tab.id, {
+			savedQueryId: savedQuery.id,
+			savedQueryName: savedQuery.name,
+			query: savedQuery.query
+		});
+		if (tab.id === activeQueryTabId) queryText = savedQuery.query;
 		saveQueryDialogOpen = false;
+		pendingSaveTabId = undefined;
 	}
 
 	function preventRefreshWithQuery(event: BeforeUnloadEvent) {
-		if (!queryTabs.some((tab) => tab.query.trim())) return;
+		if (!queryTabs.some(isQueryTabDirty)) return;
 		event.preventDefault();
 		event.returnValue = '';
 	}
@@ -912,22 +1026,45 @@
 												onpointercancel={stopQueryTabDrag}
 											>
 												{#each queryTabs as tab (tab.id)}
+													{@const isComparedTab = Boolean(
+														comparisonOriginalTab && tab.id === comparisonOriginalTab.id
+													)}
+													{@const isComparisonModifiedTab = Boolean(
+														comparisonOriginalTab && tab.id === comparisonModifiedTab?.id
+													)}
 													<div
 														data-query-tab-id={tab.id}
 														class="group flex min-w-0 shrink-0 items-center rounded-md border px-2 text-xs transition-colors {tab.id ===
 														activeQueryTabId
 															? 'border-primary/40 bg-primary/10 text-foreground'
-															: 'border-transparent text-muted-foreground hover:bg-muted'}"
+															: isComparisonModifiedTab
+																? 'border-primary/50 bg-primary/10 text-foreground ring-1 ring-primary/50'
+																: isComparedTab
+																	? 'border-amber-500/60 bg-amber-500/10 text-foreground ring-1 ring-amber-500/35'
+																	: 'border-transparent text-muted-foreground hover:bg-muted'}"
 														role="tab"
 														aria-selected={tab.id === activeQueryTabId}
+														aria-label={`${getQueryTabTitle(tab)}${isComparedTab ? ', comparison original' : isComparisonModifiedTab ? ', comparison modified' : ''}`}
 													>
 														<button
 															type="button"
 															class="max-w-32 truncate py-1.5 text-left outline-none"
-															onclick={() => {
-																if (!ignoreQueryTabClick) loadQueryTab(tab);
+															onclick={(event) => {
+																if (ignoreQueryTabClick) return;
+																if (event.shiftKey) {
+																	compareWithQueryTab(tab);
+																	return;
+																}
+																loadQueryTab(tab);
 															}}
-															title={getQueryTabTitle(tab)}
+															title={`${getQueryTabTitle(tab)}${
+																activeQueryTab &&
+																tab.id !== activeQueryTab.id &&
+																tab.database.trim().toLowerCase() ===
+																	activeQueryTab.database.trim().toLowerCase()
+																	? ' (Shift-click to compare)'
+																	: ''
+															}`}
 														>
 															{#if isQueryTabDirty(tab)}
 																<span
@@ -943,7 +1080,11 @@
 															size="icon-xs"
 															class="-mr-1 size-5 opacity-60 group-hover:opacity-100"
 															aria-label={`Close ${getQueryTabTitle(tab)}`}
-															onclick={() => closeQueryTab(tab)}
+															onpointerdown={(event) => event.stopPropagation()}
+															onclick={(event) => {
+																event.stopPropagation();
+																closeQueryTab(tab);
+															}}
 														>
 															<XIcon />
 														</Button>
@@ -994,12 +1135,26 @@
 											<Button
 												variant="outline"
 												size="sm"
-												disabled={!canSaveQuery ||
-													Boolean(activeSavedQuery && !isActiveSavedQueryDirty)}
-												onclick={saveActiveQuery}
-												title={activeSavedQuery
-													? isActiveSavedQueryDirty
-														? `Update ${activeSavedQuery.name}`
+												disabled={!comparisonOriginalTab && !compareCandidates.length}
+												onclick={comparisonOriginalTab ? stopQueryComparison : startQueryComparison}
+												title={comparisonOriginalTab
+													? 'Close query comparison'
+													: compareCandidates.length
+														? 'Compare with another query in this database'
+														: 'Open another query tab for this database to compare queries'}
+											>
+												<ArrowLeftRightIcon />
+												{comparisonOriginalTab ? 'Close diff' : 'Compare'}
+											</Button>
+											<Button
+												variant="outline"
+												size="sm"
+												disabled={!canSaveTargetQuery ||
+													Boolean(saveTargetSavedQuery && !isSaveTargetSavedQueryDirty)}
+												onclick={() => saveQuery()}
+												title={saveTargetSavedQuery
+													? isSaveTargetSavedQueryDirty
+														? `Update ${saveTargetSavedQuery.name}`
 														: 'No saved-query changes'
 													: 'Save query locally'}
 											>
@@ -1014,8 +1169,15 @@
 											{:else}
 												<Button
 													size="sm"
-													onclick={() => void runQuery()}
-													disabled={!queryText.trim() || isMockCluster}
+													onclick={() =>
+														void (comparisonOriginalTab && comparisonModifiedTab
+															? runComparisonQuery()
+															: runQuery())}
+													disabled={!(comparisonOriginalTab && comparisonModifiedTab
+														? focusedComparisonSide === 'left'
+															? comparisonOriginalTab.query.trim()
+															: comparisonModifiedTab.query.trim()
+														: queryText.trim()) || isMockCluster}
 													title={isMockCluster
 														? 'Query execution is unavailable for the mock cluster'
 														: 'Run query (Shift+Enter)'}
@@ -1028,19 +1190,84 @@
 										</div>
 									</div>
 
-									<MonacoEditor
-										bind:this={editorComponent}
-										value={queryText}
-										class="min-h-0 flex-1 border"
-										database={selectedDatabase}
-										height="100%"
-										{databaseSchema}
-										clusterUrl={activeClusterUrl}
-										theme={editorTheme}
-										onexecute={() => void runQuery()}
-										onvaluechange={updateActiveQuery}
-										onlanguagestatuschange={(status) => (languageServiceStatus = status)}
-									/>
+									{#if comparisonOriginalTab && comparisonModifiedTab}
+										<section
+											class="flex min-h-0 flex-1 flex-col gap-2"
+											aria-label="Query comparison"
+										>
+											<div
+												class="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs"
+											>
+												<p class="min-w-0 text-muted-foreground">
+													Comparing <span
+														class="rounded-sm bg-amber-500/10 px-1.5 py-0.5 font-medium text-foreground ring-1 ring-amber-500/35"
+														>{getQueryTabTitle(comparisonOriginalTab)}</span
+													>
+													with
+													<span
+														class="rounded-sm bg-primary/10 px-1.5 py-0.5 font-medium text-foreground ring-1 ring-primary/35"
+														>{getQueryTabTitle(comparisonModifiedTab)}</span
+													>
+													in
+													<span class="font-mono text-foreground"
+														>{comparisonModifiedTab.database}</span
+													>
+												</p>
+												<div class="flex items-center gap-2">
+													<label class="sr-only" for="comparison-original-tab">Original query</label
+													>
+													<Select.Root type="single" bind:value={compareOriginalTabId}>
+														<Select.Trigger id="comparison-original-tab" size="sm" class="max-w-52">
+															<Select.Value placeholder="Choose original query" />
+														</Select.Trigger>
+														<Select.Content>
+															<Select.Group>
+																{#each compareCandidates as tab (tab.id)}
+																	<Select.Item value={tab.id} label={getQueryTabTitle(tab)} />
+																{/each}
+															</Select.Group>
+														</Select.Content>
+													</Select.Root>
+												</div>
+											</div>
+											{#key `${comparisonModifiedTab.id}:${comparisonOriginalTab.id}`}
+												<MonacoEditor
+													bind:this={editorComponent}
+													value={comparisonModifiedTab.query}
+													originalValue={comparisonOriginalTab.query}
+													class="min-h-0 flex-1 border"
+													database={comparisonModifiedTab.database}
+													height="100%"
+													{databaseSchema}
+													clusterUrl={activeClusterUrl}
+													theme={editorTheme}
+													syncValue={false}
+													onexecute={(side) => void runComparisonQuery(side)}
+													onvaluechange={updateComparisonModifiedQuery}
+													onoriginalvaluechange={updateComparisonOriginalQuery}
+													onactivesidechange={(side) => (focusedComparisonSide = side)}
+													onlanguagestatuschange={(status) => (languageServiceStatus = status)}
+												/>
+											{/key}
+										</section>
+									{:else}
+										{#key activeQueryTabId}
+											<MonacoEditor
+												bind:this={editorComponent}
+												value={queryText}
+												class="min-h-0 flex-1 border"
+												database={selectedDatabase}
+												height="100%"
+												{databaseSchema}
+												clusterUrl={activeClusterUrl}
+												theme={editorTheme}
+												syncValue={false}
+												onexecute={() => void runQuery()}
+												onvaluechange={updateActiveQuery}
+												onlanguagestatuschange={(status) => (languageServiceStatus = status)}
+											/>
+										{/key}
+									{/if}
 
 									{#if isClusterSwitching}
 										<div
@@ -1187,7 +1414,7 @@
 				<Dialog.Header class="border-b p-5 pr-14">
 					<Dialog.Title>Save query</Dialog.Title>
 					<Dialog.Description id="save-query-dialog-description">
-						Save this query locally for {selectedDatabase} on the current cluster.
+						Save this query locally for {saveTargetTab?.database} on the current cluster.
 					</Dialog.Description>
 				</Dialog.Header>
 

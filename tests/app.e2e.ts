@@ -193,6 +193,8 @@ test('runs KQL through the emulated cluster and disables Kusto commands', async 
 	await expect(page.getByText('memory', { exact: true }).first()).toBeVisible({
 		timeout: 30_000
 	});
+	await page.locator('.monaco-editor').click();
+	await page.keyboard.insertText('print Message = "Connected"');
 	await page.getByRole('button', { name: 'Run' }).click();
 	await expect(page.getByRole('cell', { name: 'Connected' })).toBeVisible({
 		timeout: 30_000

@@ -220,13 +220,14 @@ test('compares, edits, and runs either side of two query tabs', async ({ page })
 		timeout: 30_000
 	});
 
-	const editorInput = page.locator('.monaco-editor textarea.inputarea');
-	await editorInput.click();
+	const editorSurface = page.locator('.monaco-editor').first();
+	await expect(editorSurface).toBeVisible({ timeout: 30_000 });
+	await editorSurface.click();
 	await page.keyboard.insertText('print Message = "Left query"');
 	const leftTab = page.getByRole('tab', { name: /print Message = "Left query"/ });
 
 	await page.getByRole('button', { name: 'New query tab' }).click();
-	await editorInput.click();
+	await editorSurface.click();
 	await page.keyboard.insertText('print Message = "Right query"');
 	await expect(page.getByRole('tab', { name: /print Message = "Right query"/ })).toBeVisible();
 
@@ -239,27 +240,23 @@ test('compares, edits, and runs either side of two query tabs', async ({ page })
 	await expect(comparison).toContainText('Left query');
 	await expect(comparison).toContainText('Right query');
 
-	const leftEditorInput = comparison.locator(
-		'.monaco-diff-editor .editor.original textarea.inputarea'
-	);
-	const rightEditorInput = comparison.locator(
-		'.monaco-diff-editor .editor.modified textarea.inputarea'
-	);
-	await expect(leftEditorInput).toBeVisible();
-	await expect(rightEditorInput).toBeVisible();
+	const leftEditorSurface = comparison.locator('.monaco-diff-editor .editor.original');
+	const rightEditorSurface = comparison.locator('.monaco-diff-editor .editor.modified');
+	await expect(leftEditorSurface).toBeVisible();
+	await expect(rightEditorSurface).toBeVisible();
 
-	await leftEditorInput.click();
+	await leftEditorSurface.click();
 	await page.keyboard.press('Control+A');
 	await page.keyboard.insertText('print Message = "Left edited"');
 	await page.getByRole('button', { name: 'Run' }).click();
 	await expect(page.getByRole('cell', { name: 'Left edited' })).toBeVisible({ timeout: 30_000 });
-	await page.getByRole('button', { name: 'Save' }).click();
+	await page.locator('button[title="Save query locally"]').click();
 	const saveQueryDialog = page.getByRole('dialog', { name: 'Save query' });
 	await saveQueryDialog.getByLabel('Query name').fill('Saved left query');
 	await saveQueryDialog.getByRole('button', { name: 'Save query' }).click();
 	await expect(page.getByRole('tab', { name: /Saved left query/ })).toBeVisible();
 
-	await rightEditorInput.click();
+	await rightEditorSurface.click();
 	await page.keyboard.press('Control+A');
 	await page.keyboard.insertText('print Message = "Right edited"');
 	await page.getByRole('button', { name: 'Run' }).click();

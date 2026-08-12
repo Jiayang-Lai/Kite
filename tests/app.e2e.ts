@@ -239,6 +239,9 @@ test('compares, edits, and runs either side of two query tabs', async ({ page })
 	await expect(comparison).toBeVisible();
 	await expect(comparison).toContainText('Left query');
 	await expect(comparison).toContainText('Right query');
+	await expect(comparison.locator('#comparison-original-tab')).toHaveText(
+		'print Message = "Left query"'
+	);
 
 	const leftEditorSurface = comparison.locator('.monaco-diff-editor .editor.original');
 	const rightEditorSurface = comparison.locator('.monaco-diff-editor .editor.modified');
@@ -248,7 +251,7 @@ test('compares, edits, and runs either side of two query tabs', async ({ page })
 	await leftEditorSurface.click();
 	await page.keyboard.press('Control+A');
 	await page.keyboard.insertText('print Message = "Left edited"');
-	await page.getByRole('button', { name: 'Run' }).click();
+	await page.keyboard.press('Shift+Enter');
 	await expect(page.getByRole('cell', { name: 'Left edited' })).toBeVisible({ timeout: 30_000 });
 	await page.locator('button[title="Save query locally"]').click();
 	const saveQueryDialog = page.getByRole('dialog', { name: 'Save query' });

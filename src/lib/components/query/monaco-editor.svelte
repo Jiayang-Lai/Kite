@@ -99,6 +99,7 @@
 
 	let container = $state<HTMLDivElement | null>(null);
 	let editor = $state<MonacoEditor | null>(null);
+	let originalEditor = $state<MonacoEditor | null>(null);
 	let diffEditor = $state<MonacoDiffEditor | null>(null);
 	let model = $state<MonacoModel | null>(null);
 	let originalModel = $state<MonacoModel | null>(null);
@@ -297,13 +298,7 @@
 				});
 				diffEditor.setModel({ original: nextOriginalModel, modified: editorModel });
 				editor = diffEditor.getModifiedEditor();
-				const originalEditor = diffEditor.getOriginalEditor();
-				originalEditor.addCommand(
-					runtime.monaco.KeyMod.Shift | runtime.monaco.KeyCode.Enter,
-					() => {
-						if (!readOnly) onexecute?.('left');
-					}
-				);
+				originalEditor = diffEditor.getOriginalEditor();
 				originalIntelliSenseActivationDisposable = originalEditor.onDidFocusEditorText(() => {
 					onactivesidechange?.('left');
 					activateIntelliSense();
@@ -315,9 +310,13 @@
 					model: editorModel
 				});
 			}
-			editor.addCommand(runtime.monaco.KeyMod.Shift | runtime.monaco.KeyCode.Enter, () => {
-				if (!readOnly) onexecute?.('right');
-			});
+			editor.addCommand(
+				runtime.monaco.KeyMod.Shift | runtime.monaco.KeyCode.Enter,
+				() => {
+					if (!readOnly) onexecute?.(originalEditor?.hasTextFocus() ? 'left' : 'right');
+				},
+				'editorTextFocus'
+			);
 			editor.addAction({
 				id: 'kite.toggleWordWrap',
 				label: 'Toggle Word Wrap',

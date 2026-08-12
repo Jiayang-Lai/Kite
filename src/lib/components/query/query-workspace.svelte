@@ -1218,7 +1218,11 @@
 													>
 													<Select.Root type="single" bind:value={compareOriginalTabId}>
 														<Select.Trigger id="comparison-original-tab" size="sm" class="max-w-52">
-															<Select.Value placeholder="Choose original query" />
+															<span data-slot="select-value" class="min-w-0 truncate">
+																{comparisonOriginalTab
+																	? getQueryTabTitle(comparisonOriginalTab)
+																	: 'Choose original query'}
+															</span>
 														</Select.Trigger>
 														<Select.Content>
 															<Select.Group>

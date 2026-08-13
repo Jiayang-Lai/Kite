@@ -682,7 +682,7 @@
 	}
 
 	function openExplorerSelection(selection: ExplorerSelection) {
-		if (view !== 'overview') return;
+		if (view === 'editor') return;
 		clusterSession.selectedDatabase = selection.database;
 		clusterSession.selectedTable = selection.table;
 		clusterSession.selectedFunction = selection.function;
@@ -950,7 +950,7 @@
 		{savedQueries}
 		bind:filter={explorerFilter}
 		onqueryselect={openQuery}
-		onselectionchange={view === 'overview' ? openExplorerSelection : undefined}
+		onselectionchange={view === 'editor' ? undefined : openExplorerSelection}
 		onsavedquerydelete={deleteSavedQuery}
 		onrecentquerydelete={deleteRecentQuery}
 	/>

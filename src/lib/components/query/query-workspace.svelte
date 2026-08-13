@@ -67,6 +67,7 @@
 	type QueryWorkspaceView = 'overview' | 'editor' | 'saved-queries';
 	type ComparisonSide = 'left' | 'right';
 	const LOG_ANALYTICS_SIGN_IN_TIP_DELAY_MS = 10_000;
+	const LOG_ANALYTICS_SCHEMA_TTL_MS = 5 * 60_000;
 
 	type QueryWorkspaceProps = {
 		view?: QueryWorkspaceView;
@@ -888,7 +889,14 @@
 		) {
 			selectedClusterId = persistedClusterId;
 		}
-		void refreshSchema();
+		if (
+			!clusterSession.isSchemaFresh(
+				selectedClusterId,
+				isSelectedLogAnalyticsCluster ? LOG_ANALYTICS_SCHEMA_TTL_MS : Number.POSITIVE_INFINITY
+			)
+		) {
+			void refreshSchema();
+		}
 		window.addEventListener('beforeunload', preventRefreshWithQuery);
 		return () => {
 			schemaRequestId += 1;

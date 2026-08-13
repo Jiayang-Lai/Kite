@@ -360,6 +360,13 @@
 		focusedComparisonSide = 'right';
 	}
 
+	function selectQueryTab(tab: QueryTab) {
+		const isComparedTab =
+			tab.id === comparisonOriginalTab?.id || tab.id === comparisonModifiedTab?.id;
+		if (comparisonOriginalTab && comparisonModifiedTab && !isComparedTab) return;
+		loadQueryTab(tab);
+	}
+
 	function stopQueryComparison() {
 		compareOriginalTabId = undefined;
 		compareModifiedTabId = undefined;
@@ -946,20 +953,10 @@
 						{ label: 'Query', href: '/explorer/query' },
 						{ label: 'Saved queries' }
 					]}
-		title={view === 'overview' ? '' : view === 'editor' ? 'Kite KQL Editor' : 'Saved queries'}
-		badge={view === 'editor' ? 'Alpha' : undefined}
+		title={view === 'saved-queries' ? 'Saved queries' : ''}
 		sidebarToggleLabel="Toggle cluster explorer"
 	>
-		{#if view === 'editor'}
-			<p class="text-muted-foreground mt-1 text-sm">
-				Query, explore, and inspect the connected Kusto cluster. For setting up local Kusto cluster,
-				see <a
-					href="https://github.com/Jiayang-Lai/100-Days-of-KQL#2026-04-19-update"
-					target="_blank"
-					class="text-primary underline hover:text-primary/80">author's guide</a
-				>.
-			</p>
-		{:else if view === 'saved-queries'}
+		{#if view === 'saved-queries'}
 			<p class="text-muted-foreground mt-1 text-sm">Saved KQL quries for the current cluster.</p>
 		{/if}
 	</AppHeader>
@@ -996,7 +993,7 @@
 		<Resizable.PaneGroup
 			direction="horizontal"
 			autoSaveId="kite-cluster-layout"
-			class="min-h-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-xs"
+			class="min-h-0 flex-1 overflow-hidden border bg-background shadow-xs"
 		>
 			{#if databaseSchema}
 				<Resizable.Pane defaultSize={75} minSize={45}>
@@ -1033,6 +1030,12 @@
 													{@const isComparisonModifiedTab = Boolean(
 														comparisonOriginalTab && tab.id === comparisonModifiedTab?.id
 													)}
+													{@const isQueryTabLocked = Boolean(
+														comparisonOriginalTab &&
+														comparisonModifiedTab &&
+														tab.id !== comparisonOriginalTab.id &&
+														tab.id !== comparisonModifiedTab.id
+													)}
 													<div
 														data-query-tab-id={tab.id}
 														class="group flex min-w-0 shrink-0 items-center rounded-md border px-2 text-xs transition-colors {tab.id ===
@@ -1042,30 +1045,36 @@
 																? 'border-primary/50 bg-primary/10 text-foreground ring-1 ring-primary/50'
 																: isComparedTab
 																	? 'border-amber-500/60 bg-amber-500/10 text-foreground ring-1 ring-amber-500/35'
-																	: 'border-transparent text-muted-foreground hover:bg-muted'}"
+																	: isQueryTabLocked
+																		? 'cursor-not-allowed border-transparent text-muted-foreground opacity-50'
+																		: 'border-transparent text-muted-foreground hover:bg-muted'}"
 														role="tab"
 														aria-selected={tab.id === activeQueryTabId}
+														aria-disabled={isQueryTabLocked}
 														aria-label={`${getQueryTabTitle(tab)}${isComparedTab ? ', comparison original' : isComparisonModifiedTab ? ', comparison modified' : ''}`}
 													>
 														<button
 															type="button"
 															class="max-w-32 truncate py-1.5 text-left outline-none"
+															disabled={isQueryTabLocked}
 															onclick={(event) => {
 																if (ignoreQueryTabClick) return;
 																if (event.shiftKey) {
 																	compareWithQueryTab(tab);
 																	return;
 																}
-																loadQueryTab(tab);
+																selectQueryTab(tab);
 															}}
-															title={`${getQueryTabTitle(tab)}${
-																activeQueryTab &&
-																tab.id !== activeQueryTab.id &&
-																tab.database.trim().toLowerCase() ===
-																	activeQueryTab.database.trim().toLowerCase()
-																	? ' (Shift-click to compare)'
-																	: ''
-															}`}
+															title={isQueryTabLocked
+																? 'Close diff to select this query'
+																: `${getQueryTabTitle(tab)}${
+																		activeQueryTab &&
+																		tab.id !== activeQueryTab.id &&
+																		tab.database.trim().toLowerCase() ===
+																			activeQueryTab.database.trim().toLowerCase()
+																			? ' (Shift-click to compare)'
+																			: ''
+																	}`}
 														>
 															{#if isQueryTabDirty(tab)}
 																<span

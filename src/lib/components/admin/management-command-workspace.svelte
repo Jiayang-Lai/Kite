@@ -219,7 +219,7 @@
 		<Resizable.PaneGroup
 			direction="vertical"
 			autoSaveId="kite-admin-command-layout"
-			class="min-h-0 flex-1 overflow-hidden rounded-xl border bg-background"
+			class="min-h-0 flex-1 overflow-hidden border bg-background"
 		>
 			<Resizable.Pane defaultSize={66} minSize={30}>
 				<div

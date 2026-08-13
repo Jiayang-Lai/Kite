@@ -22,7 +22,7 @@
 </script>
 
 <header
-	class="flex shrink-0 flex-col gap-2 rounded-xl border bg-background p-2 shadow-xs sm:p-3 md:flex-row md:items-center md:justify-between"
+	class="flex shrink-0 flex-col gap-2 border bg-background p-2 shadow-xs sm:p-3 md:flex-row md:items-center md:justify-between"
 >
 	<div class="min-w-0">
 		<div class="flex min-w-0 items-center gap-2">

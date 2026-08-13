@@ -11,6 +11,7 @@
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import * as Sidebar from '$lib/components/ui/sidebar';
 	import type { ClusterTreeProps } from './cluster-explorer-types';
+	import VirtualizedSchemaObjectList from './virtualized-schema-object-list.svelte';
 	import { cn } from '$lib/utils';
 
 	let {
@@ -27,7 +28,6 @@
 	const sidebar = Sidebar.useSidebar();
 	let databasesOpen = $state(true);
 	let dropdownOpen = $state(false);
-	const TABLE_LIST_MAX_ITEMS = 12;
 	const normalizedFilter = $derived(filter.trim().toLowerCase());
 	const isCollapsedDesktop = $derived(sidebar.state === 'collapsed' && !sidebar.isMobile);
 	const filteredDatabases = $derived.by(() =>
@@ -47,12 +47,12 @@
 		return Boolean(normalizedFilter) || Boolean(expansionState.databases[databaseName]);
 	}
 
-	function isGroupExpanded(databaseName: string, group: 'tables' | 'functions') {
-		return Boolean(normalizedFilter) || Boolean(expansionState.groups[`${databaseName}:${group}`]);
-	}
-
 	function setDatabaseExpanded(databaseName: string, open: boolean) {
 		onexpansionchange({ type: 'database', database: databaseName, open });
+	}
+
+	function isGroupExpanded(databaseName: string, group: 'tables' | 'functions') {
+		return Boolean(normalizedFilter) || Boolean(expansionState.groups[`${databaseName}:${group}`]);
 	}
 
 	function setGroupExpanded(databaseName: string, group: 'tables' | 'functions', open: boolean) {
@@ -129,7 +129,11 @@
 </script>
 
 {#snippet databaseTree()}
-	<Sidebar.MenuSub class={isCollapsedDesktop ? 'mx-0 translate-x-0 border-l-0 px-0' : ''}>
+	<Sidebar.MenuSub
+		class={isCollapsedDesktop
+			? 'mx-0 translate-x-0 border-l-0 px-0'
+			: 'mx-1.5 translate-x-0 px-1'}
+	>
 		{#each filteredDatabases as databaseName (databaseName)}
 			{@const expanded = isDatabaseExpanded(databaseName)}
 			<Collapsible.Root
@@ -166,7 +170,7 @@
 				</Sidebar.MenuSubItem>
 
 				<Collapsible.Content>
-					<div class="border-sidebar-border ms-3.5 mt-0.5 border-s ps-2.5">
+					<div class="border-sidebar-border ms-1.5 mt-0.5 border-s ps-1.5">
 						<Collapsible.Root
 							class="group/object-group"
 							open={isGroupExpanded(databaseName, 'tables')}
@@ -174,49 +178,25 @@
 						>
 							<Collapsible.Trigger
 								type="button"
-								class="hover:bg-sidebar-accent/50 focus-visible:ring-sidebar-ring flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[10px] font-semibold tracking-wide uppercase outline-none focus-visible:ring-2"
+								class="hover:bg-sidebar-accent/50 focus-visible:ring-sidebar-ring flex h-8 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-xs font-semibold tracking-wide uppercase outline-none focus-visible:ring-2"
 							>
 								<ChevronRightIcon
-									class="text-muted-foreground size-3 transition-transform group-data-[state=open]/object-group:rotate-90"
+									class="text-muted-foreground size-3.5 transition-transform group-data-[state=open]/object-group:rotate-90"
 								/>
-								<TablePropertiesIcon class="text-muted-foreground size-3" />
+								<TablePropertiesIcon class="text-muted-foreground size-3.5" />
 								<span class="min-w-0 flex-1 truncate">Tables</span>
 								<span class="text-muted-foreground font-normal normal-case"
 									>{databases[databaseName].tables.length}</span
 								>
 							</Collapsible.Trigger>
 							<Collapsible.Content>
-								{@const visibleTables = getVisibleTables(databaseName)}
-								<ScrollArea
-									class={visibleTables.length > TABLE_LIST_MAX_ITEMS ? 'h-72' : ''}
-									orientation="vertical"
-								>
-									<Sidebar.MenuSub class="ms-1 border-s-0 px-1">
-										{#each visibleTables as table (table.name)}
-											{@const selected =
-												selectedDatabase === databaseName && selectedTable === table.name}
-											<Sidebar.MenuSubItem>
-												<button
-													type="button"
-													class={cn(
-														'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-xs outline-none focus-visible:ring-2',
-														selected &&
-															'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-													)}
-													onclick={() => selectTable(databaseName, table.name)}
-													aria-pressed={selected}
-												>
-													<TablePropertiesIcon class="text-muted-foreground size-3.5 shrink-0" />
-													<span class="min-w-0 flex-1 truncate font-mono" title={table.name}
-														>{table.name}</span
-													>
-												</button>
-											</Sidebar.MenuSubItem>
-										{:else}
-											<p class="text-muted-foreground px-2 py-2 text-xs">No tables found.</p>
-										{/each}
-									</Sidebar.MenuSub>
-								</ScrollArea>
+							{@const visibleTables = getVisibleTables(databaseName)}
+								<VirtualizedSchemaObjectList
+									items={visibleTables}
+									kind="table"
+									selectedName={selectedDatabase === databaseName ? selectedTable : undefined}
+									onselect={(tableName) => selectTable(databaseName, tableName)}
+								/>
 							</Collapsible.Content>
 						</Collapsible.Root>
 
@@ -227,12 +207,12 @@
 						>
 							<Collapsible.Trigger
 								type="button"
-								class="hover:bg-sidebar-accent/50 focus-visible:ring-sidebar-ring mt-0.5 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[10px] font-semibold tracking-wide uppercase outline-none focus-visible:ring-2"
+								class="hover:bg-sidebar-accent/50 focus-visible:ring-sidebar-ring mt-0.5 flex h-8 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-xs font-semibold tracking-wide uppercase outline-none focus-visible:ring-2"
 							>
 								<ChevronRightIcon
-									class="text-muted-foreground size-3 transition-transform group-data-[state=open]/object-group:rotate-90"
+									class="text-muted-foreground size-3.5 transition-transform group-data-[state=open]/object-group:rotate-90"
 								/>
-								<SquareFunctionIcon class="text-muted-foreground size-3" />
+								<SquareFunctionIcon class="text-muted-foreground size-3.5" />
 								<span class="min-w-0 flex-1 truncate">Functions</span>
 								<span class="text-muted-foreground font-normal normal-case"
 									>{databases[databaseName].functions?.length ?? 0}</span
@@ -240,36 +220,12 @@
 							</Collapsible.Trigger>
 							<Collapsible.Content>
 								{@const visibleFunctions = getVisibleFunctions(databaseName)}
-								<ScrollArea
-									class={visibleFunctions.length > TABLE_LIST_MAX_ITEMS ? 'h-72' : ''}
-									orientation="vertical"
-								>
-									<Sidebar.MenuSub class="ms-1 border-s-0 px-1">
-										{#each visibleFunctions as fn (fn.name)}
-											{@const selected =
-												selectedDatabase === databaseName && selectedFunction === fn.name}
-											<Sidebar.MenuSubItem>
-												<button
-													type="button"
-													class={cn(
-														'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-xs outline-none focus-visible:ring-2',
-														selected &&
-															'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-													)}
-													onclick={() => selectFunction(databaseName, fn.name)}
-													aria-pressed={selected}
-												>
-													<SquareFunctionIcon class="text-muted-foreground size-3.5 shrink-0" />
-													<span class="min-w-0 flex-1 truncate font-mono" title={fn.name}
-														>{fn.name}</span
-													>
-												</button>
-											</Sidebar.MenuSubItem>
-										{:else}
-											<p class="text-muted-foreground px-2 py-2 text-xs">No functions found.</p>
-										{/each}
-									</Sidebar.MenuSub>
-								</ScrollArea>
+								<VirtualizedSchemaObjectList
+									items={visibleFunctions}
+									kind="function"
+									selectedName={selectedDatabase === databaseName ? selectedFunction : undefined}
+									onselect={(functionName) => selectFunction(databaseName, functionName)}
+								/>
 							</Collapsible.Content>
 						</Collapsible.Root>
 					</div>

@@ -402,14 +402,14 @@
 	<div
 		bind:this={container}
 		class={cn(
-			'relative min-w-0 max-w-full overflow-visible rounded-lg border bg-background',
+			'relative min-w-0 max-w-full overflow-visible border bg-background',
 			className
 		)}
 		style={`height: ${height};`}
 	>
 		{#if isLoading}
 			<div
-				class="absolute inset-0 z-10 grid place-items-center rounded-lg bg-background/80"
+				class="absolute inset-0 z-10 grid place-items-center bg-background/80"
 				aria-busy="true"
 			>
 				<Spinner class="size-7 text-muted-foreground" />
@@ -422,7 +422,7 @@
 <style>
 	/*
 	 * Monaco mounts button tooltips next to the editor root. The host must allow
-	 * those context views to escape while the editor surface keeps rounded edges.
+	 * those context views to escape while the editor surface inherits its container shape.
 	 */
 	:global(.monaco-editor),
 	:global(.monaco-editor .overflow-guard) {

@@ -7,8 +7,10 @@ export type AppShellState = {
 };
 
 /** Creates app-shell UI state that remains mounted across sibling workspace routes. */
-export function createAppShellState(): AppShellState {
-	let sidebarOpen = $state(true);
+export function createAppShellState(
+	getInitialSidebarOpen: () => boolean = () => true
+): AppShellState {
+	let sidebarOpen = $state(getInitialSidebarOpen());
 
 	return {
 		get sidebarOpen() {

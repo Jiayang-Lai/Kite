@@ -2,13 +2,15 @@
 	import CircleStopIcon from '@lucide/svelte/icons/circle-stop';
 	import BookmarkPlusIcon from '@lucide/svelte/icons/bookmark-plus';
 	import ArrowLeftRightIcon from '@lucide/svelte/icons/arrow-left-right';
+	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
+	import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
+	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import LightbulbIcon from '@lucide/svelte/icons/lightbulb';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import PanelRightCloseIcon from '@lucide/svelte/icons/panel-right-close';
 	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { mode } from 'mode-watcher';
 	import { goto } from '$app/navigation';
@@ -35,6 +37,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import * as Resizable from '$lib/components/ui/resizable';
 	import * as Select from '$lib/components/ui/select';
+	import { Separator } from '$lib/components/ui/separator';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import { deletePersistentDuckDbStorage } from '$lib/duckdb/storage';
 	import { startEmulatedQuery } from '$lib/emulation/cluster';
@@ -436,6 +439,14 @@
 		if (!distance) return;
 		event.preventDefault();
 		queryTabList.scrollBy({ left: distance });
+	}
+
+	function scrollQueryTabs(direction: 'left' | 'right') {
+		if (!queryTabList) return;
+		queryTabList.scrollBy({
+			left: queryTabList.clientWidth * 0.65 * (direction === 'left' ? -1 : 1),
+			behavior: 'smooth'
+		});
 	}
 
 	function startQueryTabDrag(event: PointerEvent) {
@@ -953,13 +964,9 @@
 						{ label: 'Query', href: '/explorer/query' },
 						{ label: 'Saved queries' }
 					]}
-		title={view === 'saved-queries' ? 'Saved queries' : ''}
+		title=""
 		sidebarToggleLabel="Toggle cluster explorer"
-	>
-		{#if view === 'saved-queries'}
-			<p class="text-muted-foreground mt-1 text-sm">Saved KQL quries for the current cluster.</p>
-		{/if}
-	</AppHeader>
+	/>
 
 	{#if view === 'overview'}
 		<ExplorerHero
@@ -971,29 +978,10 @@
 	{:else if view === 'saved-queries'}
 		<SavedQueriesPage queries={savedQueries} onopen={openQuery} delete={deleteSavedQuery} />
 	{:else}
-		{#if isEmulatedCluster}
-			<div
-				class="border-warning/40 bg-warning/10 text-warning flex shrink-0 items-start gap-2 rounded-lg border px-3 py-2 text-xs"
-				role="alert"
-			>
-				<TriangleAlertIcon class="size-4 shrink-0" />
-				<p>
-					Results from the emulated cluster may differ from Kusto. Translation is limited to the
-					operators and functions supported by
-					<a
-						href="https://github.com/Jiayang-Lai/kql-to-sql"
-						target="_blank"
-						rel="noreferrer"
-						class="font-medium underline underline-offset-2 hover:text-warning/80">kql-to-sql</a
-					>.
-				</p>
-			</div>
-		{/if}
-
 		<Resizable.PaneGroup
 			direction="horizontal"
 			autoSaveId="kite-cluster-layout"
-			class="min-h-0 flex-1 overflow-hidden border bg-background shadow-xs"
+			class="min-h-0 flex-1 overflow-hidden bg-muted/20 shadow-xs"
 		>
 			{#if databaseSchema}
 				<Resizable.Pane defaultSize={75} minSize={45}>
@@ -1005,15 +993,15 @@
 						>
 							<Resizable.Pane defaultSize={66} minSize={25}>
 								<div
-									class="relative flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden bg-background p-2 sm:p-3"
+									class="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card"
 									aria-busy={isClusterSwitching}
 								>
-									<div class="flex h-8 shrink-0 items-center justify-between gap-2">
+									<div class="flex h-9 shrink-0 items-stretch border-b bg-card">
 										<div class="relative min-w-0 flex-1">
 											<div
 												bind:this={queryTabList}
 												class:cursor-grabbing={queryTabDragPointerId !== undefined}
-												class="flex h-8 min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+												class="flex h-full min-w-0 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
 												role="tablist"
 												aria-label="Query tabs"
 												tabindex="0"
@@ -1038,16 +1026,16 @@
 													)}
 													<div
 														data-query-tab-id={tab.id}
-														class="group flex min-w-0 shrink-0 items-center rounded-md border px-2 text-xs transition-colors {tab.id ===
+														class="group flex h-full min-w-0 shrink-0 items-center border-r border-t-2 border-t-transparent px-2 text-xs transition-colors {tab.id ===
 														activeQueryTabId
-															? 'border-primary/40 bg-primary/10 text-foreground'
+															? 'border-t-primary bg-primary/10 text-foreground'
 															: isComparisonModifiedTab
-																? 'border-primary/50 bg-primary/10 text-foreground ring-1 ring-primary/50'
+																? 'border-t-primary/70 bg-primary/10 text-foreground'
 																: isComparedTab
-																	? 'border-amber-500/60 bg-amber-500/10 text-foreground ring-1 ring-amber-500/35'
+																	? 'border-t-amber-500/70 bg-amber-500/10 text-foreground'
 																	: isQueryTabLocked
-																		? 'cursor-not-allowed border-transparent text-muted-foreground opacity-50'
-																		: 'border-transparent text-muted-foreground hover:bg-muted'}"
+																		? 'cursor-not-allowed text-muted-foreground opacity-50'
+																		: 'text-muted-foreground hover:bg-muted'}"
 														role="tab"
 														aria-selected={tab.id === activeQueryTabId}
 														aria-disabled={isQueryTabLocked}
@@ -1055,7 +1043,7 @@
 													>
 														<button
 															type="button"
-															class="max-w-32 truncate py-1.5 text-left outline-none"
+															class="flex h-full max-w-32 min-w-0 items-center text-left outline-none"
 															disabled={isQueryTabLocked}
 															onclick={(event) => {
 																if (ignoreQueryTabClick) return;
@@ -1078,17 +1066,17 @@
 														>
 															{#if isQueryTabDirty(tab)}
 																<span
-																	class="bg-primary mr-1 inline-block size-1.5 rounded-full"
+																	class="bg-primary mr-1 inline-block size-1.5 shrink-0 rounded-full"
 																	aria-hidden="true"
 																></span>
 																<span class="sr-only">Unsaved changes </span>
 															{/if}
-															{getQueryTabTitle(tab)}
+															<span class="min-w-0 truncate">{getQueryTabTitle(tab)}</span>
 														</button>
 														<Button
 															variant="ghost"
 															size="icon-xs"
-															class="-mr-1 size-5 opacity-60 group-hover:opacity-100"
+															class="-mr-1 size-6 rounded-none opacity-60 group-hover:opacity-100"
 															aria-label={`Close ${getQueryTabTitle(tab)}`}
 															onpointerdown={(event) => event.stopPropagation()}
 															onclick={(event) => {
@@ -1102,49 +1090,65 @@
 												{/each}
 											</div>
 											{#if queryTabListCanScrollLeft}
-												<div
-													class="pointer-events-none absolute inset-y-0 left-0 w-5 bg-gradient-to-r from-background to-transparent"
-													aria-hidden="true"
-												></div>
+												<Button
+													variant="ghost"
+													size="icon-sm"
+													class="absolute inset-y-0 left-0 z-10 h-full w-8 rounded-none border-0 border-r bg-card"
+													aria-label="Show earlier query tabs"
+													title="Show earlier query tabs"
+													onpointerdown={(event) => event.stopPropagation()}
+													onclick={() => scrollQueryTabs('left')}
+												>
+													<ChevronLeftIcon />
+												</Button>
 											{/if}
 											{#if queryTabListCanScrollRight}
-												<div
-													class="pointer-events-none absolute inset-y-0 right-0 w-5 bg-gradient-to-l from-background to-transparent"
-													aria-hidden="true"
-												></div>
+												<Button
+													variant="ghost"
+													size="icon-sm"
+													class="absolute inset-y-0 right-0 z-10 h-full w-8 rounded-none border-0 border-l bg-card"
+													aria-label="Show later query tabs"
+													title="Show later query tabs"
+													onpointerdown={(event) => event.stopPropagation()}
+													onclick={() => scrollQueryTabs('right')}
+												>
+													<ChevronRightIcon />
+												</Button>
 											{/if}
 										</div>
-										<Button
-											variant="ghost"
-											size="icon-sm"
-											class="shrink-0"
-											aria-label="New query tab"
-											onclick={() => createQueryTab()}
-										>
-											<PlusIcon />
-										</Button>
-										<Button
-											variant="ghost"
-											size="icon-sm"
-											aria-label={databaseSchemaCollapsed
-												? 'Show database schema'
-												: 'Hide database schema'}
-											title={databaseSchemaCollapsed
-												? 'Show database schema'
-												: 'Hide database schema'}
-											onclick={toggleDatabaseSchema}
-										>
-											{#if databaseSchemaCollapsed}
-												<PanelRightOpenIcon />
-											{:else}
-												<PanelRightCloseIcon />
-											{/if}
-										</Button>
+										<div class="flex shrink-0 items-stretch border-l bg-card">
+											<Button
+												variant="ghost"
+												size="icon-sm"
+												class="h-full w-9 rounded-none border-0 border-r"
+												aria-label="New query tab"
+												onclick={() => createQueryTab()}
+											>
+												<PlusIcon />
+											</Button>
+											<Button
+												variant="ghost"
+												size="icon-sm"
+												class="h-full w-9 rounded-none border-0 border-r"
+												aria-label={databaseSchemaCollapsed
+													? 'Show database schema'
+													: 'Hide database schema'}
+												title={databaseSchemaCollapsed
+													? 'Show database schema'
+													: 'Hide database schema'}
+												onclick={toggleDatabaseSchema}
+											>
+												{#if databaseSchemaCollapsed}
+													<PanelRightOpenIcon />
+												{:else}
+													<PanelRightCloseIcon />
+												{/if}
+											</Button>
 
-										<div class="flex shrink-0 items-center gap-2">
 											<Button
 												variant="outline"
 												size="sm"
+												class="h-full rounded-none border-0 border-r px-2.5 shadow-none"
 												disabled={!comparisonOriginalTab && !compareCandidates.length}
 												onclick={comparisonOriginalTab ? stopQueryComparison : startQueryComparison}
 												title={comparisonOriginalTab
@@ -1159,6 +1163,7 @@
 											<Button
 												variant="outline"
 												size="sm"
+												class="h-full rounded-none border-0 border-r px-2.5 shadow-none"
 												disabled={!canSaveTargetQuery ||
 													Boolean(saveTargetSavedQuery && !isSaveTargetSavedQueryDirty)}
 												onclick={() => saveQuery()}
@@ -1172,13 +1177,20 @@
 												Save
 											</Button>
 											{#if isQueryRunning}
-												<Button variant="outline" size="sm" onclick={cancelQuery}>
+												<Button
+													variant="outline"
+													size="sm"
+													class="h-full rounded-none border-0 border-r px-2.5 shadow-none"
+													onclick={cancelQuery}
+												>
 													<CircleStopIcon />
 													Cancel
 												</Button>
 											{:else}
+												<Separator orientation="vertical" />
 												<Button
 													size="sm"
+													class="h-full rounded-none border-0 px-3 shadow-none"
 													onclick={() =>
 														void (comparisonOriginalTab && comparisonModifiedTab
 															? runComparisonQuery()
@@ -1201,37 +1213,26 @@
 									</div>
 
 									{#if comparisonOriginalTab && comparisonModifiedTab}
-										<section
-											class="flex min-h-0 flex-1 flex-col gap-2"
-											aria-label="Query comparison"
-										>
+										<section class="flex min-h-0 flex-1 flex-col" aria-label="Query comparison">
 											<div
-												class="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs"
+												class="flex h-10 shrink-0 items-center gap-3 border-b bg-muted/20 px-3 text-xs"
 											>
-												<p class="min-w-0 text-muted-foreground">
-													Comparing <span
-														class="rounded-sm bg-amber-500/10 px-1.5 py-0.5 font-medium text-foreground ring-1 ring-amber-500/35"
-														>{getQueryTabTitle(comparisonOriginalTab)}</span
+												<div class="flex min-w-0 flex-1 items-center gap-2">
+													<span class="hidden shrink-0 font-medium text-muted-foreground sm:inline"
+														>Diff</span
 													>
-													with
-													<span
-														class="rounded-sm bg-primary/10 px-1.5 py-0.5 font-medium text-foreground ring-1 ring-primary/35"
-														>{getQueryTabTitle(comparisonModifiedTab)}</span
+													<span class="hidden shrink-0 text-muted-foreground md:inline"
+														>Reference</span
 													>
-													in
-													<span class="font-mono text-foreground"
-														>{comparisonModifiedTab.database}</span
-													>
-												</p>
-												<div class="flex items-center gap-2">
-													<label class="sr-only" for="comparison-original-tab">Original query</label
+													<label class="sr-only" for="comparison-original-tab"
+														>Reference query</label
 													>
 													<Select.Root type="single" bind:value={compareOriginalTabId}>
-														<Select.Trigger id="comparison-original-tab" size="sm" class="max-w-52">
+														<Select.Trigger id="comparison-original-tab" size="sm" class="max-w-44">
 															<span data-slot="select-value" class="min-w-0 truncate">
 																{comparisonOriginalTab
 																	? getQueryTabTitle(comparisonOriginalTab)
-																	: 'Choose original query'}
+																	: 'Choose reference query'}
 															</span>
 														</Select.Trigger>
 														<Select.Content>
@@ -1242,6 +1243,21 @@
 															</Select.Group>
 														</Select.Content>
 													</Select.Root>
+													<ArrowRightIcon class="shrink-0 text-muted-foreground" />
+													<span class="hidden shrink-0 text-muted-foreground md:inline"
+														>Current</span
+													>
+													<span
+														class="max-w-44 truncate rounded-sm bg-primary/10 px-1.5 py-1 font-medium text-foreground ring-1 ring-primary/30"
+														title={getQueryTabTitle(comparisonModifiedTab)}
+														>{getQueryTabTitle(comparisonModifiedTab)}</span
+													>
+												</div>
+												<div
+													class="hidden shrink-0 border-l pl-3 font-mono text-muted-foreground lg:block"
+													title={comparisonModifiedTab.database}
+												>
+													DB: {comparisonModifiedTab.database}
 												</div>
 											</div>
 											{#key `${comparisonModifiedTab.id}:${comparisonOriginalTab.id}`}
@@ -1249,7 +1265,7 @@
 													bind:this={editorComponent}
 													value={comparisonModifiedTab.query}
 													originalValue={comparisonOriginalTab.query}
-													class="min-h-0 flex-1 border"
+													class="min-h-0 flex-1"
 													database={comparisonModifiedTab.database}
 													height="100%"
 													{databaseSchema}
@@ -1269,7 +1285,7 @@
 											<MonacoEditor
 												bind:this={editorComponent}
 												value={queryText}
-												class="min-h-0 flex-1 border"
+												class="min-h-0 flex-1"
 												database={selectedDatabase}
 												height="100%"
 												{databaseSchema}
@@ -1335,7 +1351,10 @@
 					</div>
 				</Resizable.Pane>
 
-				<Resizable.Handle />
+				<Resizable.Handle
+					class={databaseSchemaCollapsed ? 'invisible pointer-events-none' : undefined}
+					tabindex={databaseSchemaCollapsed ? -1 : 0}
+				/>
 
 				<Resizable.Pane
 					bind:this={databaseSchemaPane}
@@ -1403,6 +1422,7 @@
 			{languageServiceStatus}
 			{isQueryable}
 			emulatedStorage={activeCluster?.emulatedStorage}
+			emulatedResultsWarning={isEmulatedCluster}
 			onretry={failedClusterId ? retryFailedCluster : undefined}
 		/>
 	{/if}

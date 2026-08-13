@@ -74,7 +74,7 @@
 >
 	<header
 		class={cn(
-			'relative z-20 flex min-w-0 shrink-0 items-center justify-between gap-2 px-2',
+			'relative z-20 flex min-w-0 shrink-0 items-center justify-between gap-2 bg-muted/30 px-2',
 			collapsed ? 'h-full' : 'h-9 border-b'
 		)}
 	>

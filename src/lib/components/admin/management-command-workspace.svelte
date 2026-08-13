@@ -10,6 +10,7 @@
 
 	import MonacoEditor from '$lib/components/query/monaco-editor.svelte';
 	import QueryResults from '$lib/components/query/query-results.svelte';
+	import * as Alert from '$lib/components/ui/alert';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -183,43 +184,43 @@
 	});
 </script>
 
-<section class="relative flex min-h-0 flex-1 flex-col gap-2">
+<section class="relative flex min-h-0 flex-1 flex-col">
 	{#if isMockCluster || isEmulatedCluster || isLogAnalyticsCluster}
-		<Card.Root class="min-h-0 flex-1">
-			<Card.Content class="grid h-full place-items-center p-6 text-center">
-				<div class="max-w-md">
-					<ServerIcon class="text-muted-foreground mx-auto mb-3 size-7" />
-					<h2 class="font-semibold">
-						{isLogAnalyticsCluster
-							? 'Management commands are not supported for Log Analytics workspaces'
-							: isEmulatedCluster
-								? 'Management commands are not supported for emulated clusters'
-								: 'Management commands need a connected cluster'}
-					</h2>
-					<p class="text-muted-foreground mt-2 text-sm leading-6">
-						{isLogAnalyticsCluster
-							? 'Log Analytics exposes a query API rather than the Kusto management endpoint. Use the Query Explorer to run KQL.'
-							: isEmulatedCluster
-								? 'Use the Databases & tables page for supported DuckDB-backed schema operations, or select a remote Kusto connection to run administrative commands.'
-								: 'The Mock cluster supplies local schema data only. Select a remote Kusto connection to run administrative commands.'}
-					</p>
-					<code class="bg-muted mt-4 inline-block rounded-md px-3 py-2 text-sm">.show tables</code>
-				</div>
-			</Card.Content>
-		</Card.Root>
+		<section class="grid min-h-0 flex-1 place-items-center p-6">
+			<Alert.Root class="w-full max-w-md !rounded-none !border-0 bg-transparent !shadow-none">
+				<ServerIcon class="text-muted-foreground" />
+				<Alert.Title>
+					{isLogAnalyticsCluster
+						? 'Management commands are not supported for Log Analytics workspaces'
+						: isEmulatedCluster
+							? 'Management commands are not supported for emulated clusters'
+							: 'Management commands need a connected cluster'}
+				</Alert.Title>
+				<Alert.Description class="leading-6">
+					{isLogAnalyticsCluster
+						? 'Log Analytics exposes a query API rather than the Kusto management endpoint. Use the Query Explorer to run KQL.'
+						: isEmulatedCluster
+							? 'Use the Databases & tables page for supported DuckDB-backed schema operations, or select a remote Kusto connection to run administrative commands.'
+							: 'The Mock cluster supplies local schema data only. Select a remote Kusto connection to run administrative commands.'}
+				</Alert.Description>
+			</Alert.Root>
+		</section>
 	{:else if !databaseNames.length}
-		<Card.Root class="min-h-0 flex-1">
-			<Card.Content
-				class="text-muted-foreground grid h-full place-items-center p-6 text-center text-sm"
+		<section class="grid min-h-0 flex-1 place-items-center p-6">
+			<Alert.Root
+				role="status"
+				class="w-full max-w-md !rounded-none !border-0 bg-transparent text-center !shadow-none"
 			>
-				Connect to a cluster with at least one database before running management commands.
-			</Card.Content>
-		</Card.Root>
+				<Alert.Description>
+					Connect to a cluster with at least one database before running management commands.
+				</Alert.Description>
+			</Alert.Root>
+		</section>
 	{:else}
 		<Resizable.PaneGroup
 			direction="vertical"
 			autoSaveId="kite-admin-command-layout"
-			class="min-h-0 flex-1 overflow-hidden rounded-xl border bg-background"
+			class="min-h-0 flex-1 overflow-hidden border-0 bg-background"
 		>
 			<Resizable.Pane defaultSize={66} minSize={30}>
 				<div

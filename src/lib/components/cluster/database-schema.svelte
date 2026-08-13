@@ -4,7 +4,10 @@
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import SquareFunctionIcon from '@lucide/svelte/icons/square-function';
 	import TablePropertiesIcon from '@lucide/svelte/icons/table-properties';
+	import { createVirtualizer } from '@tanstack/svelte-virtual';
 	import type { Snippet } from 'svelte';
+	import { tick } from 'svelte';
+	import { get } from 'svelte/store';
 
 	import type {
 		ExplorerExpansionChange,
@@ -61,6 +64,7 @@
 	let filter = $state('');
 	let debouncedFilter = $state('');
 	let expandAllWarningOpen = $state(false);
+	let tableScrollElement = $state<HTMLElement | null>(null);
 	const SEARCH_DEBOUNCE_MS = 300;
 	const EXPAND_ALL_WARNING_THRESHOLD = 50;
 	const expandedTables = $derived(expansionState.schemaTables[database.name] ?? {});
@@ -93,6 +97,26 @@
 
 			return [{ ...table, columns: tableMatches ? table.columns : columns }];
 		});
+	});
+	const tableVirtualizer = createVirtualizer<HTMLElement, HTMLDivElement>({
+		count: 0,
+		getScrollElement: () => null,
+		estimateSize: () => 62,
+		getItemKey: (index) => String(index),
+		overscan: 8
+	});
+
+	$effect(() => {
+		get(tableVirtualizer).setOptions({
+			count: filteredTables.length,
+			getScrollElement: () => tableScrollElement ?? null,
+			getItemKey: (index) => filteredTables[index]?.name ?? String(index)
+		});
+	});
+
+	$effect(() => {
+		filteredTables;
+		void tick().then(() => get(tableVirtualizer).measure());
 	});
 
 	$effect(() => {
@@ -138,6 +162,7 @@
 			table: tableName,
 			open: !expandedTables[tableName]
 		});
+		void tick().then(() => get(tableVirtualizer).measure());
 	}
 
 	function toggleAllTables() {
@@ -150,6 +175,7 @@
 				open
 			});
 		}
+		void tick().then(() => get(tableVirtualizer).measure());
 	}
 
 	function requestToggleAllTables() {
@@ -163,6 +189,10 @@
 	function confirmExpandAllTables() {
 		expandAllWarningOpen = false;
 		toggleAllTables();
+	}
+
+	function measureTable(node: HTMLDivElement) {
+		get(tableVirtualizer).measureElement(node);
 	}
 
 	function showAllObjects() {
@@ -263,8 +293,9 @@
 		orientation="vertical"
 		style={`height: ${height};`}
 		type="auto"
+		bind:viewportRef={tableScrollElement}
 	>
-		<div class="space-y-2.5 p-3 sm:space-y-3 sm:p-4">
+		<div class="p-3 sm:p-4">
 			{#if focusedFunction}
 				<article class="min-w-0 overflow-hidden rounded-lg border bg-muted/20">
 					<div class="border-b p-3">
@@ -343,81 +374,95 @@
 					</div>
 				</article>
 			{:else}
-				{#each filteredTables as table (table.name)}
-					{@const expanded = isTableExpanded(table.name)}
-					<article
-						class={cn(
-							'min-w-0 overflow-hidden rounded-lg border bg-muted/20',
-							selectedTable === table.name && 'ring-primary/20 ring-2'
-						)}
-					>
-						<button
-							type="button"
-							class="hover:bg-muted/60 focus-visible:ring-ring/50 flex w-full min-w-0 items-center gap-2 p-2.5 text-left transition-colors outline-none focus-visible:ring-[3px] disabled:cursor-default disabled:hover:bg-transparent sm:p-3"
-							aria-expanded={expanded}
-							disabled={Boolean(debouncedFilter.trim())}
-							onclick={() => toggleTable(table.name)}
-						>
-							<ChevronRightIcon
-								class={cn(
-									'text-muted-foreground size-4 shrink-0 transition-transform',
-									expanded && 'rotate-90'
-								)}
-							/>
-							<TablePropertiesIcon class="text-muted-foreground size-4 shrink-0" />
-							<h3 class="min-w-0 flex-1 break-all font-mono text-sm font-medium">
-								{@render highlightedText(table.name)}
-							</h3>
-							<Badge variant="secondary" class="shrink-0">
-								{table.columns.length}
-								{table.columns.length === 1 ? 'column' : 'columns'}
-							</Badge>
-						</button>
-
-						{#if expanded}
-							<div class="border-t p-2.5 sm:p-3">
-								{#if table.docstring || tableActions}
-									<div class="mb-2.5 flex items-start justify-between gap-3">
-										{#if table.docstring}
-											<p class="text-muted-foreground min-w-0 text-xs">
-												{@render highlightedText(table.docstring)}
-											</p>
-										{:else}
-											<span></span>
-										{/if}
-										<div class="shrink-0">
-											{@render tableActions?.(table)}
-										</div>
-									</div>
-								{/if}
-
-								<dl class="min-w-0 divide-y rounded-md border bg-background">
-									{#each table.columns as column (column.name)}
-										<div
-											class="flex min-w-0 flex-col items-start gap-1.5 px-2.5 py-2 min-[380px]:flex-row min-[380px]:justify-between min-[380px]:gap-3 sm:px-3"
+				{#if filteredTables.length}
+					<div class="relative" style:height={`${$tableVirtualizer.getTotalSize()}px`}>
+						{#each $tableVirtualizer.getVirtualItems() as virtualTable (virtualTable.key)}
+							{@const table = filteredTables[virtualTable.index]}
+							{#if table}
+								{@const expanded = isTableExpanded(table.name)}
+								<div
+									use:measureTable
+									data-index={virtualTable.index}
+									class="absolute top-0 left-0 w-full pb-2.5 sm:pb-3"
+									style:transform={`translateY(${virtualTable.start}px)`}
+								>
+									<article
+										class={cn(
+											'min-w-0 overflow-hidden rounded-lg border bg-muted/20',
+											selectedTable === table.name && 'ring-primary/20 ring-2'
+										)}
+									>
+										<button
+											type="button"
+											class="hover:bg-muted/60 focus-visible:ring-ring/50 flex w-full min-w-0 items-center gap-2 p-2.5 text-left transition-colors outline-none focus-visible:ring-[3px] disabled:cursor-default disabled:hover:bg-transparent sm:p-3"
+											aria-expanded={expanded}
+											disabled={Boolean(debouncedFilter.trim())}
+											onclick={() => toggleTable(table.name)}
 										>
-											<div class="min-w-0">
-												<dt class="break-all font-mono text-xs font-medium">
-													{@render highlightedText(column.name)}
-												</dt>
-												{#if column.docstring}
-													<dd class="text-muted-foreground mt-0.5 text-xs">
-														{@render highlightedText(column.docstring)}
-													</dd>
+											<ChevronRightIcon
+												class={cn(
+													'text-muted-foreground size-4 shrink-0 transition-transform',
+													expanded && 'rotate-90'
+												)}
+											/>
+											<TablePropertiesIcon class="text-muted-foreground size-4 shrink-0" />
+											<h3 class="min-w-0 flex-1 break-all font-mono text-sm font-medium">
+												{@render highlightedText(table.name)}
+											</h3>
+											<Badge variant="secondary" class="shrink-0">
+												{table.columns.length}
+												{table.columns.length === 1 ? 'column' : 'columns'}
+											</Badge>
+										</button>
+
+										{#if expanded}
+											<div class="border-t p-2.5 sm:p-3">
+												{#if table.docstring || tableActions}
+													<div class="mb-2.5 flex items-start justify-between gap-3">
+														{#if table.docstring}
+															<p class="text-muted-foreground min-w-0 text-xs">
+																{@render highlightedText(table.docstring)}
+															</p>
+														{:else}
+															<span></span>
+														{/if}
+														<div class="shrink-0">
+															{@render tableActions?.(table)}
+														</div>
+													</div>
 												{/if}
+
+												<dl class="min-w-0 divide-y rounded-md border bg-background">
+													{#each table.columns as column (column.name)}
+														<div
+															class="flex min-w-0 flex-col items-start gap-1.5 px-2.5 py-2 min-[380px]:flex-row min-[380px]:justify-between min-[380px]:gap-3 sm:px-3"
+														>
+															<div class="min-w-0">
+																<dt class="break-all font-mono text-xs font-medium">
+																	{@render highlightedText(column.name)}
+																</dt>
+																{#if column.docstring}
+																	<dd class="text-muted-foreground mt-0.5 text-xs">
+																		{@render highlightedText(column.docstring)}
+																	</dd>
+																{/if}
+															</div>
+															<div class="flex shrink-0 items-center gap-1">
+																<Badge variant="outline" class="font-mono text-[11px]">
+																	{column.type}
+																</Badge>
+																{@render columnActions?.(table, column)}
+															</div>
+														</div>
+													{/each}
+												</dl>
 											</div>
-											<div class="flex shrink-0 items-center gap-1">
-												<Badge variant="outline" class="font-mono text-[11px]">
-													{column.type}
-												</Badge>
-												{@render columnActions?.(table, column)}
-											</div>
-										</div>
-									{/each}
-								</dl>
-							</div>
-						{/if}
-					</article>
+										{/if}
+									</article>
+								</div>
+							{/if}
+						{/each}
+					</div>
 				{:else}
 					<p class="text-muted-foreground py-8 text-center text-sm">
 						{#if debouncedFilter.trim()}
@@ -426,7 +471,7 @@
 							This database has no tables.
 						{/if}
 					</p>
-				{/each}
+				{/if}
 			{/if}
 		</div>
 	</ScrollArea>

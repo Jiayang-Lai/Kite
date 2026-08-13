@@ -52,7 +52,7 @@ test('serves the production build and opens the query explorer', async ({ page }
 
 	await page.getByRole('link', { name: 'Open Query Explorer' }).click();
 	await expect(page).toHaveURL(/\/explorer\/query$/);
-	await expect(page.getByRole('heading', { name: 'Kite KQL Editor' })).toBeVisible();
+	await expect(page.getByRole('tablist', { name: 'Query tabs' })).toBeVisible();
 	await expectDuckDbWorkerCount(page, 0);
 });
 
@@ -179,16 +179,11 @@ test('runs KQL through the emulated cluster and disables Kusto commands', async 
 	await expect(clusterTooltip).toContainText('Emulated cluster');
 	await expect(clusterTooltip).toContainText('KQL translated and executed in this browser tab');
 	await emulatedClusterItem.click();
-	const emulatedClusterWarning = page
-		.getByRole('alert')
-		.filter({ hasText: 'Results from the emulated cluster may differ from Kusto' });
+	const emulatedClusterWarning = page.getByLabel('Warning: emulated results may differ from Kusto');
 	await expect(emulatedClusterWarning).toBeVisible({ timeout: 30_000 });
-	await expect(emulatedClusterWarning).toContainText(
-		'Translation is limited to the operators and functions supported by kql-to-sql.'
-	);
-	await expect(emulatedClusterWarning.getByRole('link', { name: 'kql-to-sql' })).toHaveAttribute(
-		'href',
-		'https://github.com/Jiayang-Lai/kql-to-sql'
+	await expect(emulatedClusterWarning).toHaveAttribute(
+		'title',
+		'Emulated results may differ from Kusto because translation supports only a subset of operators and functions.'
 	);
 	await expect(page.getByText('memory', { exact: true }).first()).toBeVisible({
 		timeout: 30_000
@@ -203,9 +198,9 @@ test('runs KQL through the emulated cluster and disables Kusto commands', async 
 
 	await page.goto('/admin/commands');
 	await expect(
-		page.getByRole('heading', {
-			name: 'Management commands are not supported for emulated clusters'
-		})
+		page
+			.getByRole('alert')
+			.filter({ hasText: 'Management commands are not supported for emulated clusters' })
 	).toBeVisible({ timeout: 30_000 });
 	await expectKqlTranslatorWorkerCount(page, 0);
 });
@@ -239,6 +234,9 @@ test('compares, edits, and runs either side of two query tabs', async ({ page })
 	await expect(comparison).toBeVisible();
 	await expect(comparison).toContainText('Left query');
 	await expect(comparison).toContainText('Right query');
+	await expect(comparison.locator('#comparison-original-tab')).toHaveText(
+		'print Message = "Left query"'
+	);
 
 	const leftEditorSurface = comparison.locator('.monaco-diff-editor .editor.original');
 	const rightEditorSurface = comparison.locator('.monaco-diff-editor .editor.modified');
@@ -248,7 +246,7 @@ test('compares, edits, and runs either side of two query tabs', async ({ page })
 	await leftEditorSurface.click();
 	await page.keyboard.press('Control+A');
 	await page.keyboard.insertText('print Message = "Left edited"');
-	await page.getByRole('button', { name: 'Run' }).click();
+	await page.keyboard.press('Shift+Enter');
 	await expect(page.getByRole('cell', { name: 'Left edited' })).toBeVisible({ timeout: 30_000 });
 	await page.locator('button[title="Save query locally"]').click();
 	const saveQueryDialog = page.getByRole('dialog', { name: 'Save query' });
@@ -318,7 +316,7 @@ test('releases the Kusto worker after leaving Query and recreates it for the nex
 }) => {
 	test.setTimeout(45_000);
 	await page.goto('/explorer/query');
-	await expect(page.getByRole('heading', { name: 'Kite KQL Editor' })).toBeVisible();
+	await expect(page.getByRole('tablist', { name: 'Query tabs' })).toBeVisible();
 	await expectKustoWorkerCount(page, 0);
 	await activateKustoIntelliSense(page);
 	await expectKustoWorkerCount(page, 1);
@@ -328,7 +326,7 @@ test('releases the Kusto worker after leaving Query and recreates it for the nex
 	await expectKustoWorkerCount(page, 0);
 
 	await page.getByRole('link', { name: 'Query workspace' }).click();
-	await expect(page.getByRole('heading', { name: 'Kite KQL Editor' })).toBeVisible();
+	await expect(page.getByRole('tablist', { name: 'Query tabs' })).toBeVisible();
 	await activateKustoIntelliSense(page);
 	await expectKustoWorkerCount(page, 1);
 });
@@ -344,7 +342,7 @@ test('creates DuckDB databases and tables from emulated cluster administration',
 		timeout: 30_000
 	});
 
-	await page.getByRole('button', { name: 'New', exact: true }).click();
+	await page.getByRole('button', { name: 'New database' }).click();
 	const databaseDialog = page.getByRole('dialog', { name: 'Create database' });
 	await databaseDialog.getByLabel('Database name').fill('Analytics');
 	await databaseDialog.getByRole('button', { name: 'Create database' }).click();

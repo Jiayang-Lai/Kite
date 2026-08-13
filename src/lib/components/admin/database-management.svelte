@@ -45,10 +45,10 @@
 	} from '$lib/cluster/cluster-session.svelte';
 	import DatabaseSchema from '$lib/components/cluster/database-schema.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { Skeleton } from '$lib/components/ui/skeleton';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { quoteKustoEntity, quoteKustoString } from '$lib/kusto/command-format';
 	import {
 		getKustoErrorMessage,
@@ -875,27 +875,38 @@
 	{/if}
 {/snippet}
 
-<section class="flex min-h-0 flex-1 flex-col gap-2 lg:flex-row">
-	<Card.Root size="sm" class="h-52 shrink-0 lg:h-auto lg:w-72">
-		<Card.Header>
-			<Card.Title>Databases</Card.Title>
-			<Card.Description>{databaseEntries.length} on the selected cluster</Card.Description>
-			{#if databaseCapabilities.create}
-				<div class="flex flex-wrap gap-1 pt-1">
-					<Button
-						size="xs"
-						variant="outline"
-						disabled={isBusy}
-						title="Create a database"
-						onclick={() => openDatabaseDialog('create')}
-					>
-						<PlusIcon />
-						New
-					</Button>
-				</div>
-			{/if}
-		</Card.Header>
-		<Card.Content class="min-h-0 flex flex-1 flex-col">
+<section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-background lg:flex-row">
+	<aside
+		class="flex h-52 shrink-0 flex-col border-b bg-card lg:h-auto lg:w-72 lg:border-r lg:border-b-0"
+	>
+		<header class="shrink-0 border-b px-4 py-3">
+			<div class="flex items-center justify-between gap-3">
+				<h2 class="text-sm font-semibold">Databases</h2>
+				{#if !isLoading && databaseCapabilities.create}
+					<Tooltip.Root>
+						<Tooltip.Trigger>
+							{#snippet child({ props })}
+								<Button
+									{...props}
+									size="icon-xs"
+									variant="outline"
+									disabled={isBusy}
+									aria-label="New database"
+									onclick={() => openDatabaseDialog('create')}
+								>
+									<PlusIcon />
+								</Button>
+							{/snippet}
+						</Tooltip.Trigger>
+						<Tooltip.Content side="right">New database</Tooltip.Content>
+					</Tooltip.Root>
+				{/if}
+			</div>
+			<p class="text-muted-foreground mt-1 text-xs">
+				{databaseEntries.length} on the selected cluster
+			</p>
+		</header>
+		<div class="min-h-0 flex flex-1 flex-col p-3">
 			<div class="relative shrink-0">
 				<SearchIcon
 					class="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
@@ -950,13 +961,13 @@
 					{/each}
 				</div>
 			</ScrollArea>
-		</Card.Content>
-	</Card.Root>
+		</div>
+	</aside>
 
-	<div class="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+	<div class="flex min-h-0 min-w-0 flex-1 flex-col">
 		{#if activeDatabase}
 			{#if isMockCluster || isEmulatedCluster || isLogAnalyticsCluster}
-				<p class="text-muted-foreground rounded-lg border bg-muted/20 px-3 py-2 text-xs">
+				<p class="text-muted-foreground shrink-0 border-b bg-muted/20 px-4 py-2 text-xs">
 					{isLogAnalyticsCluster
 						? 'Log Analytics workspace schema is read-only. Use Query Explorer to run KQL.'
 						: isEmulatedCluster
@@ -966,14 +977,14 @@
 			{/if}
 			{#if mutationSuccess}
 				<p
-					class="border-primary/20 bg-primary/5 text-foreground rounded-lg border px-3 py-2 text-xs"
+					class="border-primary/20 bg-primary/5 text-foreground shrink-0 border-b px-4 py-2 text-xs"
 					role="status"
 				>
 					{mutationSuccess}
 				</p>
 			{/if}
 			<DatabaseSchema
-				class="min-h-0 flex-1"
+				class="min-h-0 flex-1 !rounded-none !border-0 !shadow-none"
 				database={activeDatabase}
 				{expansionState}
 				{onexpansionchange}
@@ -983,28 +994,22 @@
 				{columnActions}
 			/>
 		{:else if isLoading}
-			<Card.Root class="min-h-0 flex-1">
-				<Card.Header>
-					<Card.Title>Loading cluster schema</Card.Title>
-					<Card.Description>Retrieving the databases and tables for this cluster.</Card.Description>
-				</Card.Header>
-				<Card.Content class="space-y-3">
+			<section class="min-h-0 flex-1 p-4" aria-label="Loading cluster schema">
+				<div class="space-y-3">
 					<Skeleton class="h-9 w-full" />
 					<Skeleton class="h-36 w-full" />
-				</Card.Content>
-			</Card.Root>
+				</div>
+			</section>
 		{:else}
-			<Card.Root class="min-h-0 flex-1">
-				<Card.Content
-					class="text-muted-foreground grid h-full place-items-center text-center text-sm"
-				>
-					<div>
-						<TablePropertiesIcon class="mx-auto mb-3 size-6" />
-						<p class="font-medium text-foreground">No database schema available</p>
-						<p class="mt-1">Connect to a cluster to browse its databases and tables.</p>
-					</div>
-				</Card.Content>
-			</Card.Root>
+			<section
+				class="text-muted-foreground grid min-h-0 flex-1 place-items-center p-6 text-center text-sm"
+			>
+				<div>
+					<TablePropertiesIcon class="mx-auto mb-3 size-6" />
+					<p class="font-medium text-foreground">No database schema available</p>
+					<p class="mt-1">Connect to a cluster to browse its databases and tables.</p>
+				</div>
+			</section>
 		{/if}
 	</div>
 </section>

@@ -2,6 +2,7 @@
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
 	import CircleXIcon from '@lucide/svelte/icons/circle-x';
 	import BinocularsIcon from '@lucide/svelte/icons/binoculars';
+	import PlugZapIcon from '@lucide/svelte/icons/plug-zap';
 
 	import EmulatedStorageBadge from '$lib/components/cluster/emulated-storage-badge.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -17,6 +18,7 @@
 		languageServiceStatus?: 'idle' | 'loading' | 'ready';
 		isQueryable: boolean;
 		emulatedStorage?: EmulatedStorage;
+		emulatedResultsWarning?: boolean;
 		onretry?: () => void;
 	};
 
@@ -29,6 +31,7 @@
 		languageServiceStatus = 'idle',
 		isQueryable,
 		emulatedStorage,
+		emulatedResultsWarning = false,
 		onretry
 	}: ConnectionStatusProps = $props();
 
@@ -40,7 +43,7 @@
 </script>
 
 <footer
-	class="text-muted-foreground flex shrink-0 items-center justify-between gap-3 rounded-md border bg-background px-2 py-1.5 text-xs sm:px-3"
+	class="text-muted-foreground flex shrink-0 items-center justify-between gap-3 border bg-muted/30 px-2 py-1.5 text-xs sm:px-3"
 	aria-live="polite"
 >
 	<div class="flex min-w-0 items-center gap-2">
@@ -73,6 +76,15 @@
 		{/if}
 		{#if emulatedStorage}
 			<EmulatedStorageBadge storage={emulatedStorage} class="hidden sm:inline-flex" />
+		{/if}
+		{#if emulatedResultsWarning}
+			<span
+				class="text-warning inline-flex shrink-0"
+				title="Emulated results may differ from Kusto because translation supports only a subset of operators and functions."
+				aria-label="Warning: emulated results may differ from Kusto"
+			>
+				<PlugZapIcon class="size-3.5" />
+			</span>
 		{/if}
 		<span class="bg-border hidden h-4 w-px sm:block" aria-hidden="true"></span>
 		<span

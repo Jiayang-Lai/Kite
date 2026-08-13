@@ -13,7 +13,6 @@
 		setAzureAuthenticationProfileStore
 	} from '$lib/azure-auth/profile-store.svelte';
 	import { createClusterSession, setClusterSession } from '$lib/cluster/cluster-session.svelte';
-	import { SIDEBAR_COOKIE_NAME } from '$lib/components/ui/sidebar/constants.js';
 	import { getKustoClusters } from '$lib/kusto/query-client';
 	import {
 		createRecentQueryStore,
@@ -21,9 +20,9 @@
 	} from '$lib/query/recent-query-store.svelte';
 	import { createSavedQueryStore, setSavedQueryStore } from '$lib/query/saved-query-store.svelte';
 
-	let { children } = $props();
+	let { data, children } = $props();
 
-	const appShellState = createAppShellState();
+	const appShellState = createAppShellState(() => data.sidebarOpen);
 	setAppShellState(appShellState);
 	const clusters = getKustoClusters();
 	const persistedClusterId = getPersistedActiveClusterId();
@@ -40,13 +39,6 @@
 	setSavedQueryStore(savedQueryStore);
 
 	onMount(() => {
-		const sidebarCookie = document.cookie
-			.split('; ')
-			.find((cookie) => cookie.startsWith(`${SIDEBAR_COOKIE_NAME}=`));
-		if (sidebarCookie) {
-			appShellState.sidebarOpen = sidebarCookie.split('=')[1] !== 'false';
-		}
-
 		clusterConnectionStore.hydrate();
 		azureAuthenticationProfileStore.hydrate();
 		recentQueryStore.hydrate();

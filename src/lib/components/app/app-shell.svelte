@@ -29,7 +29,7 @@
 		<Sidebar.Rail />
 	</Sidebar.Root>
 
-	<Sidebar.Inset class="min-h-0 gap-2 overflow-hidden bg-muted/30 p-1.5 sm:p-2 md:p-3 lg:p-4">
+	<Sidebar.Inset class="min-h-0 overflow-hidden bg-muted/30">
 		{@render children()}
 	</Sidebar.Inset>
 </Sidebar.Provider>

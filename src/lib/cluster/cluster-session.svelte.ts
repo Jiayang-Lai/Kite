@@ -34,6 +34,7 @@ export type QueryTab = {
 export type ClusterSession = {
 	activeClusterId: string;
 	databaseSchema?: KustoDatabaseSchema;
+	isSchemaFresh: (clusterId: string, maxAgeMs: number) => boolean;
 	selectedDatabase: string;
 	selectedTable?: string;
 	selectedFunction?: string;
@@ -59,6 +60,8 @@ export function createClusterSession(initialClusterId: string): ClusterSession {
 	const createQueryTabId = () => `query-tab-${++nextQueryTabId}`;
 	let activeClusterId = $state(initialClusterId);
 	let databaseSchema = $state.raw<KustoDatabaseSchema>();
+	let schemaClusterId = $state<string>();
+	let schemaLoadedAt = $state(0);
 	let selectedDatabase = $state('');
 	let selectedTable = $state<string>();
 	let selectedFunction = $state<string>();
@@ -166,6 +169,14 @@ export function createClusterSession(initialClusterId: string): ClusterSession {
 		activeQueryTabId = tab.id;
 	}
 
+	function isSchemaFresh(clusterId: string, maxAgeMs: number) {
+		return (
+			Boolean(databaseSchema) &&
+			schemaClusterId === clusterId &&
+			Date.now() - schemaLoadedAt < maxAgeMs
+		);
+	}
+
 	return {
 		get activeClusterId() {
 			return activeClusterId;
@@ -178,6 +189,8 @@ export function createClusterSession(initialClusterId: string): ClusterSession {
 		},
 		set databaseSchema(value: KustoDatabaseSchema | undefined) {
 			databaseSchema = value;
+			schemaClusterId = value ? activeClusterId : undefined;
+			schemaLoadedAt = value ? Date.now() : 0;
 		},
 		get selectedDatabase() {
 			return selectedDatabase;
@@ -212,6 +225,7 @@ export function createClusterSession(initialClusterId: string): ClusterSession {
 		set activeQueryTabId(value: string) {
 			if (getQueryTab(value)) activeQueryTabId = value;
 		},
+		isSchemaFresh,
 		getQueryTab,
 		createQueryTab,
 		updateQueryTab,

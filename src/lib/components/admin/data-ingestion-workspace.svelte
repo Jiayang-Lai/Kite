@@ -17,6 +17,7 @@
 
 	import EmulatedStorageBadge from '$lib/components/cluster/emulated-storage-badge.svelte';
 	import QueryResults from '$lib/components/query/query-results.svelte';
+	import * as Alert from '$lib/components/ui/alert';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -693,19 +694,17 @@
 
 <section class="relative flex min-h-0 flex-1 flex-col">
 	{#if isMockCluster || (!isEmulatedCluster && !ingestion)}
-		<Card.Root class="min-h-0 flex-1 bg-background shadow-xs">
-			<Card.Content class="grid h-full place-items-center p-6 text-center">
-				<div class="max-w-lg">
-					<ServerIcon class="text-muted-foreground mx-auto mb-3 size-7" />
-					<h2 class="font-semibold">Data ingestion needs a configured Kustainer connection</h2>
-					<p class="text-muted-foreground mt-2 text-sm leading-6">
-						{isMockCluster
-							? 'Cluster type of mock does not support ingestion.'
-							: 'This connection does not declare a mounted ingestion directory.'}
-					</p>
-				</div>
-			</Card.Content>
-		</Card.Root>
+		<section class="grid min-h-0 flex-1 place-items-center p-6">
+			<Alert.Root class="w-full max-w-lg !rounded-none !border-0 bg-transparent !shadow-none">
+				<ServerIcon class="text-muted-foreground" />
+				<Alert.Title>Data ingestion needs a configured Kustainer connection</Alert.Title>
+				<Alert.Description class="leading-6">
+					{isMockCluster
+						? 'Cluster type of mock does not support ingestion.'
+						: 'This connection does not declare a mounted ingestion directory.'}
+				</Alert.Description>
+			</Alert.Root>
+		</section>
 	{:else if !databaseNames.length}
 		<Card.Root class="min-h-0 flex-1 bg-background shadow-xs">
 			<Card.Content
@@ -720,7 +719,7 @@
 		<Resizable.PaneGroup
 			direction="vertical"
 			autoSaveId="kite-admin-ingestion-layout"
-			class="min-h-0 flex-1 overflow-hidden rounded-xl border bg-background shadow-xs"
+			class="min-h-0 flex-1 overflow-hidden border bg-background shadow-xs"
 		>
 			<Resizable.Pane defaultSize={66} minSize={30}>
 				<div class="flex h-full min-h-0 flex-col bg-background">
@@ -755,470 +754,489 @@
 							{/if}
 						</div>
 					</div>
-					<div
-						class="grid min-h-0 flex-1 gap-4 overflow-auto p-2 sm:p-3 lg:grid-cols-[minmax(0,1fr)_18rem]"
+					<Resizable.PaneGroup
+						direction="horizontal"
+						autoSaveId="kite-admin-ingestion-source-layout"
+						class="min-h-0 flex-1"
 					>
-						<div class="min-w-0 space-y-4">
-							<div class="grid gap-3 sm:grid-cols-2">
-								<div>
-									<label class="text-sm font-medium" for="ingestion-database">Database</label>
-									<Select.Root type="single" bind:value={selectedDatabase} disabled={isRunning}>
-										<Select.Trigger id="ingestion-database" class="mt-1 w-full">
-											<Select.Value placeholder="Select database" />
-										</Select.Trigger>
-										<Select.Content>
-											<Select.Group>
-												{#each databaseNames as databaseName (databaseName)}
-													<Select.Item value={databaseName} label={databaseName} />
-												{/each}
-											</Select.Group>
-										</Select.Content>
-									</Select.Root>
-								</div>
-								<div>
-									<label class="text-sm font-medium" for="ingestion-table">Table</label>
-									<Select.Root
-										type="single"
-										bind:value={selectedTable}
-										disabled={isRunning || !tableEntries.length}
-									>
-										<Select.Trigger id="ingestion-table" class="mt-1 w-full">
-											<Select.Value placeholder="Select table" />
-										</Select.Trigger>
-										<Select.Content>
-											<Select.Group>
-												{#each tableEntries as table (table.name)}
-													<Select.Item value={table.name} label={table.name} />
-												{/each}
-											</Select.Group>
-										</Select.Content>
-									</Select.Root>
-								</div>
-							</div>
-
-							<Tabs.Root bind:value={sourceMode}>
-								<Tabs.List>
-									<Tabs.Trigger value="inline" disabled={isRunning}
-										><FileTextIcon /> Inline CSV</Tabs.Trigger
-									>
-									<Tabs.Trigger value="inline-file" disabled={isRunning}
-										><FileUpIcon /> {isEmulatedCluster ? 'Local file' : 'Inline file'}</Tabs.Trigger
-									>
-									{#if !isEmulatedCluster}
-										<Tabs.Trigger value="file" disabled={isRunning}
-											><FolderOpenIcon /> Mounted file</Tabs.Trigger
-										>
-									{/if}
-									<Tabs.Trigger value="remote-file" disabled={isRunning}
-										><CloudDownloadIcon /> Remote file</Tabs.Trigger
-									>
-								</Tabs.List>
-
-								<Tabs.Content value="inline" class="space-y-2">
-									<div class="flex items-center justify-between gap-3">
-										<label class="text-sm font-medium" for="inline-ingestion-data">CSV rows</label>
-										<span class="text-muted-foreground text-xs tabular-nums">
-											{inlineData.length.toLocaleString()} / {INLINE_DATA_MAX_LENGTH.toLocaleString()}
-										</span>
-									</div>
-									<Textarea
-										id="inline-ingestion-data"
-										bind:value={inlineData}
-										maxlength={INLINE_DATA_MAX_LENGTH}
-										disabled={isRunning}
-										class="min-h-40 resize-y font-mono text-xs"
-										placeholder={'2026-07-22T12:00:00Z,sensor-1,temperature,21.5\n2026-07-22T12:01:00Z,sensor-2,humidity,45.2'}
-									/>
-									<label class="flex w-fit items-center gap-2 text-sm">
-										<input
-											id="inline-data-has-header"
-											type="checkbox"
-											bind:checked={inlineDataHasHeader}
-											disabled={isRunning}
-											class="border-input accent-primary size-4 rounded border"
-										/>
-										First row contains column names
-									</label>
-									<p class="text-muted-foreground text-xs">
-										Values are parsed as CSV in the table column order. When enabled, the first row
-										is used for comparison and excluded from ingestion.
-									</p>
-									{#if inlineDataScanning}
-										<p class="text-muted-foreground text-xs" aria-live="polite">
-											Checking CSV shape…
-										</p>
-									{:else if inlineDataScanError}
-										<p class="text-destructive flex items-center gap-2 text-xs" role="alert">
-											<CircleAlertIcon class="size-4 shrink-0" />
-											{inlineDataScanError}
-										</p>
-									{/if}
-								</Tabs.Content>
-
-								<Tabs.Content value="inline-file" class="space-y-3">
-									<div>
-										<label class="text-sm font-medium" for="inline-file-input">
-											{isEmulatedCluster ? 'CSV or Parquet file' : 'CSV file'}
-										</label>
-										<Input
-											id="inline-file-input"
-											type="file"
-											accept={isEmulatedCluster
-												? '.csv,.parquet,text/csv,application/vnd.apache.parquet'
-												: '.csv,text/csv'}
-											bind:files={selectedFiles}
-											onchange={selectInlineFile}
-											disabled={isRunning}
-											class="mt-1"
-										/>
-									</div>
-
-									{#if !isEmulatedCluster || localFileFormat !== 'parquet'}
-										<label class="flex w-fit items-center gap-2 text-sm">
-											<input
-												type="checkbox"
-												bind:checked={inlineFileHasHeader}
-												disabled={isRunning}
-												class="border-input accent-primary size-4 rounded border"
-											/>
-											First row contains column names
-										</label>
-									{/if}
-
-									{#if inlineFileState === 'scanning'}
-										<div class="space-y-2 rounded-md border p-3" aria-live="polite">
-											<div class="flex items-center justify-between gap-3 text-xs">
-												<span>Scanning {inlineFile?.name}</span>
-												<span class="text-muted-foreground tabular-nums"
-													>{inlineFileScanProgress}%</span
-												>
-											</div>
-											<div class="bg-muted h-1.5 overflow-hidden rounded-full">
-												<div
-													class="bg-primary h-full transition-[width]"
-													style:width={`${inlineFileScanProgress}%`}
-												></div>
-											</div>
+						<Resizable.Pane defaultSize={75} minSize={45}>
+							<div class="flex h-full min-h-0 min-w-0 flex-col">
+								<div class="min-h-0 flex-1 space-y-4 overflow-auto p-2 sm:p-3">
+									<div class="grid gap-3 sm:grid-cols-2">
+										<div>
+											<label class="text-sm font-medium" for="ingestion-database">Database</label>
+											<Select.Root type="single" bind:value={selectedDatabase} disabled={isRunning}>
+												<Select.Trigger id="ingestion-database" class="mt-1 w-full">
+													<Select.Value placeholder="Select database" />
+												</Select.Trigger>
+												<Select.Content>
+													<Select.Group>
+														{#each databaseNames as databaseName (databaseName)}
+															<Select.Item value={databaseName} label={databaseName} />
+														{/each}
+													</Select.Group>
+												</Select.Content>
+											</Select.Root>
 										</div>
-									{:else if inlineFile && (inlineFilePlan || (isEmulatedCluster && localFileFormat === 'parquet'))}
-										<div class="space-y-3 rounded-md border p-3">
-											<div class="flex flex-wrap items-center justify-between gap-2">
-												<div class="min-w-0">
-													<p class="truncate text-sm font-medium">{inlineFile.name}</p>
-													<p class="text-muted-foreground text-xs">
-														{formatBytes(inlineFile.size)} ·
-														{localFileFormat === 'parquet' ? 'Parquet' : 'UTF-8 CSV'}
-													</p>
-												</div>
-												<Badge
-													variant={inlineFileState === 'succeeded'
-														? 'secondary'
-														: inlineFileState === 'failed'
-															? 'destructive'
-															: 'outline'}
+										<div>
+											<label class="text-sm font-medium" for="ingestion-table">Table</label>
+											<Select.Root
+												type="single"
+												bind:value={selectedTable}
+												disabled={isRunning || !tableEntries.length}
+											>
+												<Select.Trigger id="ingestion-table" class="mt-1 w-full">
+													<Select.Value placeholder="Select table" />
+												</Select.Trigger>
+												<Select.Content>
+													<Select.Group>
+														{#each tableEntries as table (table.name)}
+															<Select.Item value={table.name} label={table.name} />
+														{/each}
+													</Select.Group>
+												</Select.Content>
+											</Select.Root>
+										</div>
+									</div>
+
+									<Tabs.Root bind:value={sourceMode}>
+										<Tabs.List>
+											<Tabs.Trigger value="inline" disabled={isRunning}
+												><FileTextIcon /> Inline CSV</Tabs.Trigger
+											>
+											<Tabs.Trigger value="inline-file" disabled={isRunning}
+												><FileUpIcon />
+												{isEmulatedCluster ? 'Local file' : 'Inline file'}</Tabs.Trigger
+											>
+											{#if !isEmulatedCluster}
+												<Tabs.Trigger value="file" disabled={isRunning}
+													><FolderOpenIcon /> Mounted file</Tabs.Trigger
 												>
-													{inlineFileStatusLabel}
-												</Badge>
-											</div>
-											{#if inlineFilePlan}
-												<dl class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-													<div class="bg-muted rounded-md p-2">
-														<dt class="text-muted-foreground">Rows</dt>
-														<dd class="mt-1 font-medium tabular-nums">
-															{inlineFilePlan.totalRecords.toLocaleString()}
-														</dd>
-													</div>
-													<div class="bg-muted rounded-md p-2">
-														<dt class="text-muted-foreground">Columns</dt>
-														<dd class="mt-1 font-medium tabular-nums">
-															{inlineFilePlan.columnCount}
-														</dd>
-													</div>
-													<div class="bg-muted rounded-md p-2">
-														<dt class="text-muted-foreground">
-															{isEmulatedCluster ? 'Format' : 'Chunks'}
-														</dt>
-														<dd class="mt-1 font-medium tabular-nums">
-															{isEmulatedCluster ? 'CSV' : inlineFilePlan.chunks.length}
-														</dd>
-													</div>
-													<div class="bg-muted rounded-md p-2">
-														<dt class="text-muted-foreground">Data</dt>
-														<dd class="mt-1 font-medium tabular-nums">
-															{formatBytes(inlineFilePlan.dataBytes)}
-														</dd>
-													</div>
-												</dl>
 											{/if}
-											{#if inlineFilePlan?.header}
-												<p
-													class="text-muted-foreground truncate text-xs"
-													title={inlineFilePlan.header}
+											<Tabs.Trigger value="remote-file" disabled={isRunning}
+												><CloudDownloadIcon /> Remote file</Tabs.Trigger
+											>
+										</Tabs.List>
+
+										<Tabs.Content value="inline" class="space-y-2">
+											<div class="flex items-center justify-between gap-3">
+												<label class="text-sm font-medium" for="inline-ingestion-data"
+													>CSV rows</label
 												>
-													Header: <code>{inlineFilePlan.header}</code>
+												<span class="text-muted-foreground text-xs tabular-nums">
+													{inlineData.length.toLocaleString()} / {INLINE_DATA_MAX_LENGTH.toLocaleString()}
+												</span>
+											</div>
+											<Textarea
+												id="inline-ingestion-data"
+												bind:value={inlineData}
+												maxlength={INLINE_DATA_MAX_LENGTH}
+												disabled={isRunning}
+												class="min-h-40 resize-y font-mono text-xs"
+												placeholder={'2026-07-22T12:00:00Z,sensor-1,temperature,21.5\n2026-07-22T12:01:00Z,sensor-2,humidity,45.2'}
+											/>
+											<label class="flex w-fit items-center gap-2 text-sm">
+												<input
+													id="inline-data-has-header"
+													type="checkbox"
+													bind:checked={inlineDataHasHeader}
+													disabled={isRunning}
+													class="border-input accent-primary size-4 rounded border"
+												/>
+												First row contains column names
+											</label>
+											<p class="text-muted-foreground text-xs">
+												Values are parsed as CSV in the table column order. When enabled, the first
+												row is used for comparison and excluded from ingestion.
+											</p>
+											{#if inlineDataScanning}
+												<p class="text-muted-foreground text-xs" aria-live="polite">
+													Checking CSV shape…
+												</p>
+											{:else if inlineDataScanError}
+												<p class="text-destructive flex items-center gap-2 text-xs" role="alert">
+													<CircleAlertIcon class="size-4 shrink-0" />
+													{inlineDataScanError}
 												</p>
 											{/if}
-											{#if !isEmulatedCluster && inlineFilePlan && (inlineFileState === 'running' || completedFileChunks > 0)}
-												<div class="space-y-2 border-t pt-3" aria-live="polite">
+										</Tabs.Content>
+
+										<Tabs.Content value="inline-file" class="space-y-3">
+											<div>
+												<label class="text-sm font-medium" for="inline-file-input">
+													{isEmulatedCluster ? 'CSV or Parquet file' : 'CSV file'}
+												</label>
+												<Input
+													id="inline-file-input"
+													type="file"
+													accept={isEmulatedCluster
+														? '.csv,.parquet,text/csv,application/vnd.apache.parquet'
+														: '.csv,text/csv'}
+													bind:files={selectedFiles}
+													onchange={selectInlineFile}
+													disabled={isRunning}
+													class="mt-1"
+												/>
+											</div>
+
+											{#if !isEmulatedCluster || localFileFormat !== 'parquet'}
+												<label class="flex w-fit items-center gap-2 text-sm">
+													<input
+														type="checkbox"
+														bind:checked={inlineFileHasHeader}
+														disabled={isRunning}
+														class="border-input accent-primary size-4 rounded border"
+													/>
+													First row contains column names
+												</label>
+											{/if}
+
+											{#if inlineFileState === 'scanning'}
+												<div class="space-y-2 rounded-md border p-3" aria-live="polite">
 													<div class="flex items-center justify-between gap-3 text-xs">
-														<span>
-															{inlineFileState === 'running' && activeFileChunk !== undefined
-																? `Ingesting chunk ${activeFileChunk + 1} of ${inlineFilePlan.chunks.length}`
-																: `${completedFileChunks} of ${inlineFilePlan.chunks.length} chunks completed`}
-														</span>
+														<span>Scanning {inlineFile?.name}</span>
 														<span class="text-muted-foreground tabular-nums"
-															>{fileExecutionProgress}%</span
+															>{inlineFileScanProgress}%</span
 														>
 													</div>
 													<div class="bg-muted h-1.5 overflow-hidden rounded-full">
 														<div
 															class="bg-primary h-full transition-[width]"
-															style:width={`${fileExecutionProgress}%`}
+															style:width={`${inlineFileScanProgress}%`}
 														></div>
 													</div>
-													<p class="text-muted-foreground text-xs">
-														{completedFileRecords.toLocaleString()} rows confirmed
-														{#if extentIds.length}
-															· {extentIds.length} extents returned{/if}
-													</p>
 												</div>
+											{:else if inlineFile && (inlineFilePlan || (isEmulatedCluster && localFileFormat === 'parquet'))}
+												<div class="space-y-3 rounded-md border p-3">
+													<div class="flex flex-wrap items-center justify-between gap-2">
+														<div class="min-w-0">
+															<p class="truncate text-sm font-medium">{inlineFile.name}</p>
+															<p class="text-muted-foreground text-xs">
+																{formatBytes(inlineFile.size)} ·
+																{localFileFormat === 'parquet' ? 'Parquet' : 'UTF-8 CSV'}
+															</p>
+														</div>
+														<Badge
+															variant={inlineFileState === 'succeeded'
+																? 'secondary'
+																: inlineFileState === 'failed'
+																	? 'destructive'
+																	: 'outline'}
+														>
+															{inlineFileStatusLabel}
+														</Badge>
+													</div>
+													{#if inlineFilePlan}
+														<dl class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+															<div class="bg-muted rounded-md p-2">
+																<dt class="text-muted-foreground">Rows</dt>
+																<dd class="mt-1 font-medium tabular-nums">
+																	{inlineFilePlan.totalRecords.toLocaleString()}
+																</dd>
+															</div>
+															<div class="bg-muted rounded-md p-2">
+																<dt class="text-muted-foreground">Columns</dt>
+																<dd class="mt-1 font-medium tabular-nums">
+																	{inlineFilePlan.columnCount}
+																</dd>
+															</div>
+															<div class="bg-muted rounded-md p-2">
+																<dt class="text-muted-foreground">
+																	{isEmulatedCluster ? 'Format' : 'Chunks'}
+																</dt>
+																<dd class="mt-1 font-medium tabular-nums">
+																	{isEmulatedCluster ? 'CSV' : inlineFilePlan.chunks.length}
+																</dd>
+															</div>
+															<div class="bg-muted rounded-md p-2">
+																<dt class="text-muted-foreground">Data</dt>
+																<dd class="mt-1 font-medium tabular-nums">
+																	{formatBytes(inlineFilePlan.dataBytes)}
+																</dd>
+															</div>
+														</dl>
+													{/if}
+													{#if inlineFilePlan?.header}
+														<p
+															class="text-muted-foreground truncate text-xs"
+															title={inlineFilePlan.header}
+														>
+															Header: <code>{inlineFilePlan.header}</code>
+														</p>
+													{/if}
+													{#if !isEmulatedCluster && inlineFilePlan && (inlineFileState === 'running' || completedFileChunks > 0)}
+														<div class="space-y-2 border-t pt-3" aria-live="polite">
+															<div class="flex items-center justify-between gap-3 text-xs">
+																<span>
+																	{inlineFileState === 'running' && activeFileChunk !== undefined
+																		? `Ingesting chunk ${activeFileChunk + 1} of ${inlineFilePlan.chunks.length}`
+																		: `${completedFileChunks} of ${inlineFilePlan.chunks.length} chunks completed`}
+																</span>
+																<span class="text-muted-foreground tabular-nums"
+																	>{fileExecutionProgress}%</span
+																>
+															</div>
+															<div class="bg-muted h-1.5 overflow-hidden rounded-full">
+																<div
+																	class="bg-primary h-full transition-[width]"
+																	style:width={`${fileExecutionProgress}%`}
+																></div>
+															</div>
+															<p class="text-muted-foreground text-xs">
+																{completedFileRecords.toLocaleString()} rows confirmed
+																{#if extentIds.length}
+																	· {extentIds.length} extents returned{/if}
+															</p>
+														</div>
+													{/if}
+												</div>
+											{:else if inlineFileError}
+												<div class="space-y-2">
+													<p
+														class="text-destructive flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs"
+														role="alert"
+													>
+														<CircleAlertIcon class="size-4 shrink-0" />
+														{inlineFileError}
+													</p>
+													{#if inlineFile}
+														<Button variant="outline" size="sm" onclick={rescanInlineFile}
+															>Scan again</Button
+														>
+													{/if}
+												</div>
+											{:else}
+												<p class="text-muted-foreground text-xs">
+													{#if isEmulatedCluster}
+														DuckDB reads the selected file directly in this browser tab. Limit:
+														{formatBytes(EMULATION_MAX_FILE_BYTES)}.
+													{:else if ingestion}
+														The file stays in the browser and is sent sequentially as record-safe
+														inline commands. Limit: {formatBytes(ingestion.maxInlineFileBytes)}.
+													{/if}
+												</p>
 											{/if}
-										</div>
-									{:else if inlineFileError}
-										<div class="space-y-2">
+										</Tabs.Content>
+
+										{#if !isEmulatedCluster && ingestion}
+											<Tabs.Content value="file" class="space-y-3">
+												<div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem]">
+													<div>
+														<label class="text-sm font-medium" for="mounted-file-path"
+															>Relative file path</label
+														>
+														<Input
+															id="mounted-file-path"
+															bind:value={relativePath}
+															disabled={isRunning}
+															class="mt-1 font-mono"
+															placeholder="import.parquet"
+														/>
+													</div>
+													<div>
+														<label class="text-sm font-medium" for="mounted-file-format"
+															>Format</label
+														>
+														<Select.Root type="single" bind:value={fileFormat} disabled={isRunning}>
+															<Select.Trigger id="mounted-file-format" class="mt-1 w-full">
+																<Select.Value />
+															</Select.Trigger>
+															<Select.Content>
+																<Select.Item value="parquet" label="Parquet" />
+																<Select.Item value="csv" label="CSV" />
+															</Select.Content>
+														</Select.Root>
+													</div>
+												</div>
+												<div class="bg-muted rounded-md p-3 text-xs">
+													<p class="text-muted-foreground">Kustainer source path</p>
+													<code class="mt-1 block break-all"
+														>{resolvedFilePath || `${ingestion.containerRoot}/…`}</code
+													>
+												</div>
+												<p class="text-muted-foreground text-xs">
+													The file must already exist below <code>{ingestion.containerRoot}</code> inside
+													the container.
+												</p>
+											</Tabs.Content>
+										{/if}
+
+										<Tabs.Content value="remote-file" class="space-y-3">
+											<div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem]">
+												<div>
+													<label class="text-sm font-medium" for="remote-file-url">File URL</label>
+													<Input
+														id="remote-file-url"
+														type="url"
+														bind:value={remoteFileUrl}
+														disabled={isRunning}
+														class="mt-1 font-mono"
+														placeholder="https://example.com/import.csv"
+														autocomplete="url"
+													/>
+												</div>
+												<div>
+													<label class="text-sm font-medium" for="remote-file-format">Format</label>
+													<Select.Root
+														type="single"
+														bind:value={remoteFileFormat}
+														disabled={isRunning}
+													>
+														<Select.Trigger id="remote-file-format" class="mt-1 w-full">
+															<Select.Value />
+														</Select.Trigger>
+														<Select.Content>
+															<Select.Item value="parquet" label="Parquet" />
+															<Select.Item value="csv" label="CSV" />
+														</Select.Content>
+													</Select.Root>
+												</div>
+											</div>
+											{#if remoteFileFormat === 'csv'}
+												<label class="flex w-fit items-center gap-2 text-sm">
+													<input
+														type="checkbox"
+														bind:checked={remoteFileSkipFirstLine}
+														disabled={isRunning}
+														class="border-input accent-primary size-4 rounded border"
+													/>
+													Skip first line
+												</label>
+											{/if}
+											<div class="bg-muted rounded-md p-3 text-xs">
+												<p class="text-muted-foreground">Remote source</p>
+												<code class="mt-1 block break-all"
+													>{resolvedRemoteFileUrl || 'https://…'}</code
+												>
+											</div>
+											<p class="text-muted-foreground text-xs">
+												Import a CSV or Parquet file from a public HTTP(S) URL, or use a signed URL
+												when the source requires temporary read access.
+												{#if isEmulatedCluster}
+													The server must allow browser CORS and range requests.
+												{/if}
+											</p>
+										</Tabs.Content>
+									</Tabs.Root>
+
+									{#if preparedCommand.error && hasSourceInput}
+										<p class="text-destructive flex items-center gap-2 text-xs" role="alert">
+											<CircleAlertIcon class="size-4 shrink-0" />
+											{preparedCommand.error}
+										</p>
+									{/if}
+									{#if activeGuardrails.length}
+										<Alert.Root class="!rounded-none !border-0 bg-transparent !shadow-none">
+											<CircleAlertIcon class="text-warning" />
+											<Alert.Title>Source shape differs from the target</Alert.Title>
+											<Alert.Description>
+												{activeCsvPlan?.columnCount ?? 0} source columns; the target table has
+												{activeTable?.columns.length ?? 0}.
+											</Alert.Description>
+										</Alert.Root>
+									{:else if sourceShapeCheckUnavailable && hasSourceInput}
+										<p class="text-muted-foreground text-xs">
+											Source shape cannot be checked before ingestion because this file is read by
+											Kustainer, not the browser.
+										</p>
+									{/if}
+								</div>
+
+								<div
+									class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t bg-background px-2 py-3 sm:px-3"
+								>
+									<p class="text-muted-foreground text-xs">
+										Runs against <span class="text-foreground font-medium">{clusterName}</span>.
+										Data is appended.
+									</p>
+									{#if isRunning}
+										<Button variant="outline" size="sm" onclick={cancelIngestion}>
+											<CircleStopIcon /> Stop waiting
+										</Button>
+									{:else if sourceMode === 'inline-file' && inlineFileState === 'scanning'}
+										<Button variant="outline" size="sm" onclick={cancelIngestion}>
+											<CircleStopIcon /> Cancel scan
+										</Button>
+									{:else}
+										<Button size="sm" disabled={!canIngest} onclick={requestIngestion}>
+											<PlayIcon />
+											{sourceMode === 'inline-file' && completedFileChunks
+												? 'Review retry'
+												: 'Review ingestion'}
+										</Button>
+									{/if}
+								</div>
+							</div>
+						</Resizable.Pane>
+
+						<Resizable.Handle />
+
+						<Resizable.Pane defaultSize={25} minSize={15}>
+							<aside class="flex h-full min-h-0 flex-col border">
+								<div class="flex items-center gap-2 border-b p-3">
+									<TablePropertiesIcon class="text-muted-foreground size-4" />
+									<div class="min-w-0">
+										<p class="truncate text-sm font-medium">
+											{activeTable?.name ?? 'Select a table'}
+										</p>
+										<p class="text-muted-foreground text-xs">Target column order</p>
+									</div>
+								</div>
+								<ScrollArea class="min-h-0 flex-1" orientation="vertical" type="auto">
+									{#if activeTable?.columns.length}
+										<ol class="divide-y">
+											{#each activeTable.columns as column, index (`${column.name}:${index}`)}
+												<li
+													class={`grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2 px-3 py-2 text-xs ${targetColumnShapeWarnings[index] ? 'bg-amber-500/10' : ''}`}
+												>
+													<span class="text-muted-foreground text-right tabular-nums"
+														>{index + 1}</span
+													>
+													<span class="min-w-0">
+														<span class="block truncate font-medium">{column.name}</span>
+														<span class="text-muted-foreground font-mono">{column.type}</span>
+														{#if targetColumnShapeWarnings[index]}
+															<span
+																class="mt-1 flex items-start gap-1 text-amber-800 dark:text-amber-200"
+																title={targetColumnShapeWarnings[index].message}
+															>
+																{#if targetColumnShapeWarnings[index].kind === 'header-order'}
+																	<ArrowLeftRightIcon class="mt-0.5 size-3 shrink-0" />
+																{:else}
+																	<CircleXIcon class="mt-0.5 size-3 shrink-0" />
+																{/if}
+																<span class="line-clamp-2"
+																	>{targetColumnShapeWarnings[index].message}</span
+																>
+															</span>
+														{/if}
+													</span>
+												</li>
+											{/each}
+										</ol>
+										{#if extraSourceColumnCount}
 											<p
-												class="text-destructive flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs"
+												class="border-t border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"
 												role="alert"
 											>
-												<CircleAlertIcon class="size-4 shrink-0" />
-												{inlineFileError}
-											</p>
-											{#if inlineFile}
-												<Button variant="outline" size="sm" onclick={rescanInlineFile}
-													>Scan again</Button
-												>
-											{/if}
-										</div>
-									{:else}
-										<p class="text-muted-foreground text-xs">
-											{#if isEmulatedCluster}
-												DuckDB reads the selected file directly in this browser tab. Limit:
-											{formatBytes(EMULATION_MAX_FILE_BYTES)}.
-											{:else if ingestion}
-												The file stays in the browser and is sent sequentially as record-safe inline
-												commands. Limit: {formatBytes(ingestion.maxInlineFileBytes)}.
-											{/if}
-										</p>
-									{/if}
-								</Tabs.Content>
-
-								{#if !isEmulatedCluster && ingestion}
-									<Tabs.Content value="file" class="space-y-3">
-										<div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem]">
-											<div>
-												<label class="text-sm font-medium" for="mounted-file-path"
-													>Relative file path</label
-												>
-												<Input
-													id="mounted-file-path"
-													bind:value={relativePath}
-													disabled={isRunning}
-													class="mt-1 font-mono"
-													placeholder="import.parquet"
-												/>
-											</div>
-											<div>
-												<label class="text-sm font-medium" for="mounted-file-format">Format</label>
-												<Select.Root type="single" bind:value={fileFormat} disabled={isRunning}>
-													<Select.Trigger id="mounted-file-format" class="mt-1 w-full">
-														<Select.Value />
-													</Select.Trigger>
-													<Select.Content>
-														<Select.Item value="parquet" label="Parquet" />
-														<Select.Item value="csv" label="CSV" />
-													</Select.Content>
-												</Select.Root>
-											</div>
-										</div>
-										<div class="bg-muted rounded-md p-3 text-xs">
-											<p class="text-muted-foreground">Kustainer source path</p>
-											<code class="mt-1 block break-all"
-												>{resolvedFilePath || `${ingestion.containerRoot}/…`}</code
-											>
-										</div>
-										<p class="text-muted-foreground text-xs">
-											The file must already exist below <code>{ingestion.containerRoot}</code> inside
-											the container.
-										</p>
-									</Tabs.Content>
-								{/if}
-
-								<Tabs.Content value="remote-file" class="space-y-3">
-									<div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem]">
-										<div>
-											<label class="text-sm font-medium" for="remote-file-url">File URL</label>
-											<Input
-												id="remote-file-url"
-												type="url"
-												bind:value={remoteFileUrl}
-												disabled={isRunning}
-												class="mt-1 font-mono"
-												placeholder="https://example.com/import.csv"
-												autocomplete="url"
-											/>
-										</div>
-										<div>
-											<label class="text-sm font-medium" for="remote-file-format">Format</label>
-											<Select.Root type="single" bind:value={remoteFileFormat} disabled={isRunning}>
-												<Select.Trigger id="remote-file-format" class="mt-1 w-full">
-													<Select.Value />
-												</Select.Trigger>
-												<Select.Content>
-													<Select.Item value="parquet" label="Parquet" />
-													<Select.Item value="csv" label="CSV" />
-												</Select.Content>
-											</Select.Root>
-										</div>
-									</div>
-									{#if remoteFileFormat === 'csv'}
-										<label class="flex w-fit items-center gap-2 text-sm">
-											<input
-												type="checkbox"
-												bind:checked={remoteFileSkipFirstLine}
-												disabled={isRunning}
-												class="border-input accent-primary size-4 rounded border"
-											/>
-											Skip first line
-										</label>
-									{/if}
-									<div class="bg-muted rounded-md p-3 text-xs">
-										<p class="text-muted-foreground">Remote source</p>
-										<code class="mt-1 block break-all">{resolvedRemoteFileUrl || 'https://…'}</code>
-									</div>
-									<p class="text-muted-foreground text-xs">
-										Import a CSV or Parquet file from a public HTTP(S) URL, or use a signed URL when
-										the source requires temporary read access.
-										{#if isEmulatedCluster}
-											The server must allow browser CORS and range requests.
-										{/if}
-									</p>
-								</Tabs.Content>
-							</Tabs.Root>
-
-							{#if preparedCommand.error && hasSourceInput}
-								<p class="text-destructive flex items-center gap-2 text-xs" role="alert">
-									<CircleAlertIcon class="size-4 shrink-0" />
-									{preparedCommand.error}
-								</p>
-							{/if}
-							{#if activeGuardrails.length}
-								<div
-									class="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-200"
-									role="alert"
-								>
-									<p class="flex items-center gap-2 font-medium">
-										<CircleAlertIcon class="size-4 shrink-0" /> Source shape differs from the target
-									</p>
-									<ul class="list-disc space-y-1 pl-5">
-										{#each activeGuardrails as guardrail (guardrail.id)}
-											<li>{guardrail.message}</li>
-										{/each}
-									</ul>
-								</div>
-							{:else if sourceShapeCheckUnavailable && hasSourceInput}
-								<p class="text-muted-foreground text-xs">
-									Source shape cannot be checked before ingestion because this file is read by
-									Kustainer, not the browser.
-								</p>
-							{/if}
-
-							<div class="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-								<p class="text-muted-foreground text-xs">
-									Runs against <span class="text-foreground font-medium">{clusterName}</span>. Data
-									is appended.
-								</p>
-								{#if isRunning}
-									<Button variant="outline" size="sm" onclick={cancelIngestion}>
-										<CircleStopIcon /> Stop waiting
-									</Button>
-								{:else if sourceMode === 'inline-file' && inlineFileState === 'scanning'}
-									<Button variant="outline" size="sm" onclick={cancelIngestion}>
-										<CircleStopIcon /> Cancel scan
-									</Button>
-								{:else}
-									<Button size="sm" disabled={!canIngest} onclick={requestIngestion}>
-										<PlayIcon />
-										{sourceMode === 'inline-file' && completedFileChunks
-											? 'Review retry'
-											: 'Review ingestion'}
-									</Button>
-								{/if}
-							</div>
-						</div>
-
-						<aside class="min-h-0 rounded-lg border">
-							<div class="flex items-center gap-2 border-b p-3">
-								<TablePropertiesIcon class="text-muted-foreground size-4" />
-								<div class="min-w-0">
-									<p class="truncate text-sm font-medium">
-										{activeTable?.name ?? 'Select a table'}
-									</p>
-									<p class="text-muted-foreground text-xs">Target column order</p>
-								</div>
-							</div>
-							<ScrollArea class="h-64 lg:h-[calc(100%-3.75rem)]" orientation="vertical" type="auto">
-								{#if activeTable?.columns.length}
-									<ol class="divide-y">
-										{#each activeTable.columns as column, index (`${column.name}:${index}`)}
-											<li
-												class={`grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2 px-3 py-2 text-xs ${targetColumnShapeWarnings[index] ? 'bg-amber-500/10' : ''}`}
-											>
-												<span class="text-muted-foreground text-right tabular-nums"
-													>{index + 1}</span
-												>
-												<span class="min-w-0">
-													<span class="block truncate font-medium">{column.name}</span>
-													<span class="text-muted-foreground font-mono">{column.type}</span>
-													{#if targetColumnShapeWarnings[index]}
-														<span
-															class="mt-1 flex items-start gap-1 text-amber-800 dark:text-amber-200"
-															title={targetColumnShapeWarnings[index].message}
-														>
-															{#if targetColumnShapeWarnings[index].kind === 'header-order'}
-																<ArrowLeftRightIcon class="mt-0.5 size-3 shrink-0" />
-															{:else}
-																<CircleXIcon class="mt-0.5 size-3 shrink-0" />
-															{/if}
-															<span class="line-clamp-2"
-																>{targetColumnShapeWarnings[index].message}</span
-															>
-														</span>
-													{/if}
+												<span class="flex items-center gap-1">
+													<ListPlusIcon class="size-3 shrink-0" />
+													+ {extraSourceColumnCount} extra source column{extraSourceColumnCount ===
+													1
+														? ''
+														: 's'}
 												</span>
-											</li>
-										{/each}
-									</ol>
-									{#if extraSourceColumnCount}
-										<p
-											class="border-t border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"
-											role="alert"
-										>
-											<span class="flex items-center gap-1">
-												<ListPlusIcon class="size-3 shrink-0" />
-												+ {extraSourceColumnCount} extra source column{extraSourceColumnCount === 1
-													? ''
-													: 's'}
-											</span>
+											</p>
+										{/if}
+									{:else}
+										<p class="text-muted-foreground p-4 text-center text-xs">
+											No table columns available.
 										</p>
 									{/if}
-								{:else}
-									<p class="text-muted-foreground p-4 text-center text-xs">
-										No table columns available.
-									</p>
-								{/if}
-							</ScrollArea>
-						</aside>
-					</div>
+								</ScrollArea>
+							</aside>
+						</Resizable.Pane>
+					</Resizable.PaneGroup>
 				</div>
 			</Resizable.Pane>
 
@@ -1290,19 +1308,17 @@
 						<dd>Append</dd>
 					</dl>
 					{#if activeGuardrails.length}
-						<div
-							class="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-200"
-							role="alert"
-						>
-							<p class="flex items-center gap-2 font-medium">
-								<CircleAlertIcon class="size-4 shrink-0" /> Review source-shape warnings before continuing
-							</p>
-							<ul class="list-disc space-y-1 pl-5">
-								{#each activeGuardrails as guardrail (guardrail.id)}
-									<li>{guardrail.message}</li>
-								{/each}
-							</ul>
-						</div>
+						<Alert.Root class="!rounded-none !border-0 bg-transparent !shadow-none">
+							<CircleAlertIcon class="text-warning" />
+							<Alert.Title>Review source-shape warnings before continuing</Alert.Title>
+							<Alert.Description>
+								<ul class="list-disc pl-5">
+									{#each activeGuardrails as guardrail (guardrail.id)}
+										<li>{guardrail.message}</li>
+									{/each}
+								</ul>
+							</Alert.Description>
+						</Alert.Root>
 					{:else if sourceShapeCheckUnavailable}
 						<p class="text-muted-foreground text-xs">
 							Source shape was not checked; Kustainer reads this source directly.

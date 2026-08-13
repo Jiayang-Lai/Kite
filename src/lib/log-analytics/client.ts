@@ -93,14 +93,13 @@ async function requestMetadata(
 			Authorization: `Bearer ${token}`,
 			...(isPortalFunctionMetadata
 				? {
-					Accept: '*/*',
-					'Content-Type': 'text/plain;charset=UTF-8',
-					Prefer: 'metadata-format-v4,exclude-customlogs,exclude-customfields,wait=180'
-				}
+						Accept: '*/*',
+						'Content-Type': 'text/plain;charset=UTF-8',
+						Prefer: 'metadata-format-v4,exclude-customlogs,exclude-customfields,wait=180'
+					}
 				: {})
 		},
 		...(isPortalFunctionMetadata ? { body: '' } : {}),
-		cache: 'no-store',
 		signal
 	});
 	const payload: unknown = await response.json().catch(() => undefined);

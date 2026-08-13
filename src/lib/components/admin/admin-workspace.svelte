@@ -273,12 +273,16 @@
 		{customClusters}
 		{selectedClusterId}
 		disabled={isClusterSwitching || isTableMutating}
+		switching={isClusterSwitching}
 		onclusterchange={switchCluster}
 		onclusteradd={addCluster}
 		onclusteredit={editCluster}
 		onclusterremove={removeCluster}
 		onlinkauthenticationprofile={(clusterId, authenticationProfileId) => {
-			clusterConnectionStore.linkLogAnalyticsAuthenticationProfile(clusterId, authenticationProfileId);
+			clusterConnectionStore.linkLogAnalyticsAuthenticationProfile(
+				clusterId,
+				authenticationProfileId
+			);
 			switchCluster(clusterId);
 		}}
 	/>
@@ -319,10 +323,12 @@
 					{ label: 'Admin', href: '/admin' },
 					{ label: activeView.title }
 				]}
-		title={view === 'overview' || view === 'databases' ? '' : activeView.title}
+		title={view === 'overview' || view === 'databases' || view === 'ingestion'
+			? ''
+			: activeView.title}
 		sidebarToggleLabel="Toggle admin navigation"
 	>
-		{#if view === 'commands' || view === 'ingestion'}
+		{#if view === 'commands'}
 			<p class="text-muted-foreground mt-1 text-sm">{activeView.description}</p>
 		{/if}
 	</AppHeader>

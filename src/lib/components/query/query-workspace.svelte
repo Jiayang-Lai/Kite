@@ -894,6 +894,7 @@
 		{customClusters}
 		{selectedClusterId}
 		disabled={isClusterSwitching}
+		switching={isClusterSwitching}
 		onclusterchange={switchCluster}
 		onclusteradd={addCluster}
 		onclusteredit={editCluster}
@@ -1358,7 +1359,7 @@
 						{#if connectionStatus === 'loading'}
 							<div class="text-muted-foreground flex flex-col items-center gap-3 text-sm">
 								<Spinner class="size-6" />
-								<p>Connecting to the selected cluster…</p>
+								<p>Connecting to {selectedClusterName}…</p>
 								{#if isSelectedLogAnalyticsCluster && showLogAnalyticsSignInTip}
 									<div
 										class="flex max-w-sm items-start gap-2 rounded-md border bg-muted/50 px-3 py-2 text-left text-xs"

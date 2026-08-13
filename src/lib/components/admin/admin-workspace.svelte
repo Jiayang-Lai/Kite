@@ -273,12 +273,16 @@
 		{customClusters}
 		{selectedClusterId}
 		disabled={isClusterSwitching || isTableMutating}
+		switching={isClusterSwitching}
 		onclusterchange={switchCluster}
 		onclusteradd={addCluster}
 		onclusteredit={editCluster}
 		onclusterremove={removeCluster}
 		onlinkauthenticationprofile={(clusterId, authenticationProfileId) => {
-			clusterConnectionStore.linkLogAnalyticsAuthenticationProfile(clusterId, authenticationProfileId);
+			clusterConnectionStore.linkLogAnalyticsAuthenticationProfile(
+				clusterId,
+				authenticationProfileId
+			);
 			switchCluster(clusterId);
 		}}
 	/>

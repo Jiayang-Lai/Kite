@@ -21,6 +21,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Button } from '$lib/components/ui/button';
 	import * as Sidebar from '$lib/components/ui/sidebar';
+	import { Spinner } from '$lib/components/ui/spinner';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import type { NewClusterConnection } from '$lib/cluster/cluster-connection-store.svelte';
 	import type { KustoClusterConnection } from '$lib/kusto/query-client';
@@ -34,6 +35,7 @@
 		selectedClusterId: string;
 		disabled?: boolean;
 		locked?: boolean;
+		switching?: boolean;
 		onclusterchange?: (clusterId: string) => void;
 		onclusteradd?: (cluster: NewClusterConnection) => void;
 		onclusteredit?: (clusterId: string, cluster: NewClusterConnection) => void;
@@ -47,6 +49,7 @@
 		selectedClusterId,
 		disabled = false,
 		locked = false,
+		switching = false,
 		onclusterchange,
 		onclusteradd,
 		onclusteredit,
@@ -101,7 +104,8 @@
 		}
 
 		window.addEventListener('kite:azure-authentication-profile-removed', handleSessionRemoval);
-		return () => window.removeEventListener('kite:azure-authentication-profile-removed', handleSessionRemoval);
+		return () =>
+			window.removeEventListener('kite:azure-authentication-profile-removed', handleSessionRemoval);
 	});
 
 	function linkAuthenticationProfile() {
@@ -135,7 +139,11 @@
 						{...props}
 						size="lg"
 						class="h-14"
-						tooltipContent={locked ? 'Cluster selection is locked' : 'Switch cluster'}
+						tooltipContent={locked
+							? 'Cluster selection is locked'
+							: switching
+								? `Switching to ${selectedCluster?.name ?? selectedClusterId}`
+								: 'Switch cluster'}
 						disabled={disabled || locked}
 						aria-disabled={disabled || locked}
 					>
@@ -167,18 +175,26 @@
 									/>
 								{/if}
 							</div>
-							<span
-								class="text-muted-foreground truncate text-xs"
-								title={selectedCluster?.description ?? clusterTypeSummary(selectedCluster)}
-							>
-								{selectedCluster?.description ?? clusterTypeSummary(selectedCluster)}
-							</span>
+							{#if switching}
+								<span class="text-muted-foreground truncate text-xs" aria-live="polite">
+									Switching to {selectedCluster?.name ?? selectedClusterId}…
+								</span>
+							{:else}
+								<span
+									class="text-muted-foreground truncate text-xs"
+									title={selectedCluster?.description ?? clusterTypeSummary(selectedCluster)}
+								>
+									{selectedCluster?.description ?? clusterTypeSummary(selectedCluster)}
+								</span>
+							{/if}
 						</div>
 						{#if locked}
 							<LockIcon
 								class="text-muted-foreground ms-auto size-4"
 								aria-label="Cluster selection locked"
 							/>
+						{:else if switching}
+							<Spinner class="ms-auto" aria-label="Switching connection" />
 						{:else}
 							<ChevronsUpDownIcon class="ms-auto" />
 						{/if}
@@ -294,7 +310,8 @@
 									<CircleCheckIcon class="size-3.5 shrink-0" aria-hidden="true" />
 									<span class="truncate">
 										Signed in as {selectedAzureAuthenticationProfile.account.name ??
-											selectedAzureAuthenticationProfile.account.username}{selectedAzureAuthenticationProfile.account.name &&
+											selectedAzureAuthenticationProfile.account
+												.username}{selectedAzureAuthenticationProfile.account.name &&
 										selectedAzureAuthenticationProfile.account.username
 											? ` (${selectedAzureAuthenticationProfile.account.username})`
 											: ''}
@@ -371,7 +388,9 @@
 		</div>
 		<Dialog.Footer class="border-t p-4">
 			<Button variant="outline" onclick={() => (linkProfileOpen = false)}>Cancel</Button>
-			<Button disabled={!linkProfileId} onclick={linkAuthenticationProfile}>Link and continue</Button>
+			<Button disabled={!linkProfileId} onclick={linkAuthenticationProfile}
+				>Link and continue</Button
+			>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

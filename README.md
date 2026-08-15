@@ -82,6 +82,7 @@ See [Development guide](docs/development.md) for translator setup, production bu
 - [Table and CSV ingestion quick start](docs/avro-emulated-quick-start.md) — create a table, load sample data, and query it
 - [Self-hosting Kite](docs/self-hosting.md) — containers, health checks, source builds, and Kustainer
 - [Development guide](docs/development.md) — local development, WASM builds, validation, and scripts
+- [Terminology and glossary](docs/terminology.md) — connection kinds, capabilities, schemas, storage, and ingestion
 - [Entra authentication for Log Analytics](docs/azure-entra-log-analytics-auth.md) — users, app registrations, delegated permissions, and workspace access
 - [Kusto documentation pipeline](docs/kusto-documentation.md) — indexing, downloads, throttling, caching, and troubleshooting
 - [Azure Log Analytics browser authentication](docs/log-analytics-authentication.md) — Entra sign-in, tokens, and workspace RBAC

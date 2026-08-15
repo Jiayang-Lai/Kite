@@ -80,6 +80,7 @@
 		emulatedStorage?: EmulatedStorage;
 		isMockCluster?: boolean;
 		isEmulatedCluster?: boolean;
+		ingestionEnabled?: boolean;
 		isLoading?: boolean;
 	};
 
@@ -94,6 +95,7 @@
 		emulatedStorage,
 		isMockCluster = false,
 		isEmulatedCluster = false,
+		ingestionEnabled = false,
 		isLoading = false
 	}: DataIngestionWorkspaceProps = $props();
 	const isPersistentEmulatedCluster = $derived(
@@ -693,7 +695,7 @@
 </script>
 
 <section class="relative flex min-h-0 flex-1 flex-col">
-	{#if isMockCluster || (!isEmulatedCluster && !ingestion)}
+	{#if !ingestionEnabled}
 		<section class="grid min-h-0 flex-1 place-items-center p-6">
 			<Alert.Root class="w-full max-w-lg !rounded-none !border-0 bg-transparent !shadow-none">
 				<ServerIcon class="text-muted-foreground" />

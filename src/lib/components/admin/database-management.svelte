@@ -23,7 +23,7 @@
 	import TableDropDialog from '$lib/components/admin/table-drop-dialog.svelte';
 	import TableEditorDialog from '$lib/components/admin/table-editor-dialog.svelte';
 	import { getClusterConnectionStore } from '$lib/cluster/cluster-connection-store.svelte';
-	import { getDatabaseCapabilities } from '$lib/cluster/database-capabilities';
+	import { getConnectionCapabilities } from '$lib/cluster/connection-capabilities';
 	import {
 		applyMockCreateDatabase,
 		applyMockCreateTable,
@@ -149,7 +149,7 @@
 	const activeCluster = $derived(
 		clusterConnectionStore.clusters.find((cluster) => cluster.id === clusterId)
 	);
-	const databaseCapabilities = $derived(getDatabaseCapabilities(activeCluster));
+	const databaseCapabilities = $derived(getConnectionCapabilities(activeCluster).databases);
 	const visibleDatabases = $derived(
 		databaseEntries.filter((database) =>
 			`${database.name} ${database.prettyName ?? ''}`

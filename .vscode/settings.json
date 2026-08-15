@@ -2,5 +2,6 @@
 	"files.associations": {
 		"*.css": "tailwindcss"
 	},
+	"vitest.rootConfig": "vite.config.ts",
 	"makefile.configureOnOpen": false
 }

@@ -35,6 +35,7 @@
 		isMockCluster?: boolean;
 		isEmulatedCluster?: boolean;
 		isLogAnalyticsCluster?: boolean;
+		managementCommands?: boolean;
 		onrefreshschema?: () => Promise<void> | void;
 	};
 
@@ -46,6 +47,7 @@
 		isMockCluster = false,
 		isEmulatedCluster = false,
 		isLogAnalyticsCluster = false,
+		managementCommands = false,
 		onrefreshschema
 	}: ManagementCommandWorkspaceProps = $props();
 
@@ -82,14 +84,7 @@
 
 	const databaseNames = $derived(Object.values(databases ?? {}).map((database) => database.name));
 	const canRun = $derived(
-		Boolean(
-			commandText.trim() &&
-			selectedDatabase &&
-			!isMockCluster &&
-			!isEmulatedCluster &&
-			!isLogAnalyticsCluster &&
-			!isRunning
-		)
+		Boolean(commandText.trim() && selectedDatabase && managementCommands && !isRunning)
 	);
 	const changesClusterState = $derived(
 		isManagementCommand(commandText) && !isReadOnlyManagementCommand(commandText)
@@ -108,15 +103,7 @@
 
 	function requestRun() {
 		const command = commandText.trim();
-		if (
-			!command ||
-			!selectedDatabase ||
-			isMockCluster ||
-			isEmulatedCluster ||
-			isLogAnalyticsCluster ||
-			isRunning
-		)
-			return;
+		if (!command || !selectedDatabase || !managementCommands || isRunning) return;
 		if (!isManagementCommand(command)) {
 			commandError = 'Management commands must start with a period, for example .show tables.';
 			return;
@@ -185,7 +172,7 @@
 </script>
 
 <section class="relative flex min-h-0 flex-1 flex-col">
-	{#if isMockCluster || isEmulatedCluster || isLogAnalyticsCluster}
+	{#if !managementCommands}
 		<section class="grid min-h-0 flex-1 place-items-center p-6">
 			<Alert.Root class="w-full max-w-md !rounded-none !border-0 bg-transparent !shadow-none">
 				<ServerIcon class="text-muted-foreground" />

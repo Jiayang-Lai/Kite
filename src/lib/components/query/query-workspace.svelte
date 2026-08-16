@@ -40,11 +40,11 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import { deletePersistentDuckDbStorage } from '$lib/duckdb/storage';
-	import { startEmulatedQuery } from '$lib/emulation/cluster';
-	import { LogAnalyticsQueryRequestError, startLogAnalyticsQuery } from '$lib/log-analytics/client';
+	import { LogAnalyticsQueryRequestError } from '$lib/log-analytics/client';
 	import { getClusterSession } from '$lib/cluster/cluster-session.svelte';
 	import type { QueryTab } from '$lib/cluster/cluster-session.svelte';
-	import { connectClusterRuntime, releaseClusterRuntime } from '$lib/cluster/cluster-runtime';
+	import { createConnectionRuntime, releaseClusterRuntime } from '$lib/cluster/cluster-runtime';
+	import { getConnectionCapabilities } from '$lib/cluster/connection-capabilities';
 	import {
 		getPersistedActiveClusterId,
 		persistActiveClusterId
@@ -55,7 +55,7 @@
 	} from '$lib/cluster/cluster-connection-store.svelte';
 	import { usesBuiltInMockCatalog } from '$lib/cluster/mock-cluster-schema';
 	import { MOCK_RECENT_QUERIES, MOCK_SAVED_QUERIES } from '$lib/data/mock-queries';
-	import { getKustoErrorMessage, startKustoQuery } from '$lib/kusto/query-client';
+	import { getKustoErrorMessage } from '$lib/kusto/query-client';
 	import { disposeKqlTranslator } from '$lib/kql/wasm-translator';
 	import { getRecentQueryStore } from '$lib/query/recent-query-store.svelte';
 	import { getSavedQueryStore } from '$lib/query/saved-query-store.svelte';
@@ -178,6 +178,12 @@
 		)
 	);
 	const activeCluster = $derived(clusters.find((cluster) => cluster.id === activeClusterId));
+	const activeRuntime = $derived(
+		activeCluster ? createConnectionRuntime(activeCluster) : undefined
+	);
+	const activeCapabilities = $derived(
+		activeRuntime?.capabilities ?? getConnectionCapabilities(undefined)
+	);
 	const isMockCluster = $derived(activeCluster?.kind === 'mock');
 	const isEmulatedCluster = $derived(activeCluster?.kind === 'emulated');
 	const isLogAnalyticsCluster = $derived(activeCluster?.kind === 'log-analytics');
@@ -186,7 +192,7 @@
 	);
 	const hasBuiltInMockSamples = $derived(usesBuiltInMockCatalog(activeCluster));
 	let explorerExpansion = $state(clusterSession.getExplorerExpansion(initialCluster.id));
-	const isQueryable = $derived(hasCluster && !isMockCluster);
+	const isQueryable = $derived(hasCluster && activeCapabilities.queryExecutor !== 'none');
 	const canSaveTargetQuery = $derived(
 		Boolean(saveTargetTab?.query.trim() && saveTargetTab.database)
 	);
@@ -515,7 +521,7 @@
 		}
 
 		try {
-			const schema = await connectClusterRuntime(requestedCluster);
+			const schema = await createConnectionRuntime(requestedCluster).loadSchema();
 			if (requestId !== schemaRequestId || requestedClusterId !== selectedClusterId) return;
 
 			const firstDatabase = Object.values(schema)[0];
@@ -795,7 +801,15 @@
 	async function runQuery() {
 		const tab = activeQueryTab;
 		const query = queryText.trim();
-		if (!tab || !query || !selectedDatabase || tab.isRunning || isMockCluster) return;
+		if (
+			!tab ||
+			!query ||
+			!selectedDatabase ||
+			tab.isRunning ||
+			activeCapabilities.queryExecutor === 'none'
+		)
+			return;
+		if (!activeRuntime) return;
 
 		const requestId = ++queryRequestId;
 		queryError = '';
@@ -810,11 +824,7 @@
 			errorRequestId: undefined,
 			errorRaw: undefined
 		});
-		activeExecution = isEmulatedCluster
-			? startEmulatedQuery(activeClusterId, selectedDatabase, query)
-			: isLogAnalyticsCluster && activeCluster?.logAnalytics
-				? startLogAnalyticsQuery(activeCluster.logAnalytics, query)
-				: startKustoQuery(selectedDatabase, query, activeClusterUrl);
+		activeExecution = activeRuntime.startQuery(selectedDatabase, query);
 		activeExecutionTabId = tab.id;
 		recentQueryStore.record({
 			clusterId: activeClusterId,
@@ -1207,11 +1217,11 @@
 														? focusedComparisonSide === 'left'
 															? comparisonOriginalTab.query.trim()
 															: comparisonModifiedTab.query.trim()
-														: queryText.trim()) || isMockCluster}
+														: queryText.trim()) || !isQueryable}
 													title={isMockCluster
 														? 'Query execution is unavailable for the mock cluster'
 														: 'Run query (Shift+Enter)'}
-													aria-keyshortcuts={isMockCluster ? undefined : 'Shift+Enter'}
+													aria-keyshortcuts={isQueryable ? 'Shift+Enter' : undefined}
 												>
 													<PlayIcon />
 													Run

@@ -1,5 +1,22 @@
 import { expect, test, type Page } from '@playwright/test';
 
+const AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY = 'kite:azure-authentication-profiles:v1';
+const CLUSTER_CONNECTIONS_STORAGE_KEY = 'kite:cluster-connections:v1';
+
+const e2eAzureProfile = {
+	id: 'e2e-azure-profile',
+	name: 'E2E Entra profile',
+	tenantId: 'contoso.onmicrosoft.com',
+	clientId: '22222222-2222-4222-8222-222222222222',
+	account: {
+		homeAccountId: 'e2e-home-account',
+		localAccountId: 'e2e-local-account',
+		tenantId: 'contoso.onmicrosoft.com',
+		username: 'e2e.user@contoso.com',
+		name: 'E2E User'
+	}
+};
+
 const APPLICATION_ROUTES = [
 	'/',
 	'/admin',
@@ -11,6 +28,12 @@ const APPLICATION_ROUTES = [
 	'/explorer/query/saved',
 	'/labs/kql-to-sql'
 ];
+
+async function openAzureAuthenticationProfiles(page: Page) {
+	await page.getByRole('button', { name: 'Settings' }).click();
+	await page.getByRole('menuitem', { name: 'Azure authentication profiles' }).click();
+	return page.getByRole('dialog', { name: 'Azure authentication profiles' });
+}
 
 function countDuckDbWorkers(page: Page) {
 	return page.workers().filter((worker) => worker.url().includes('duckdb-browser-')).length;
@@ -63,6 +86,242 @@ test('serves every application route after a direct browser reload', async ({ pa
 		const reload = await page.reload();
 		expect(reload?.ok(), `Reloading ${route} must succeed`).toBe(true);
 	}
+});
+
+test('creates and persists an Azure authentication profile', async ({ page }) => {
+	await page.goto('/explorer/query');
+
+	let dialog = await openAzureAuthenticationProfiles(page);
+	await dialog.getByRole('button', { name: 'New profile' }).click();
+	await dialog.getByPlaceholder('Session name').fill('Production Log Analytics');
+	await dialog.getByPlaceholder('Tenant ID or domain').fill('contoso.onmicrosoft.com');
+	await dialog
+		.getByPlaceholder('Application (client) ID')
+		.fill('22222222-2222-4222-8222-222222222222');
+	await dialog.getByRole('button', { name: 'Create profile' }).click();
+
+	await expect(dialog).toContainText('Production Log Analytics');
+	await expect(dialog.getByLabel('Sign in required')).toBeVisible();
+	await expect
+		.poll(() =>
+			page.evaluate(
+				(key) => JSON.parse(localStorage.getItem(key) ?? '[]'),
+				AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY
+			)
+		)
+		.toEqual([
+			expect.objectContaining({
+				name: 'Production Log Analytics',
+				tenantId: 'contoso.onmicrosoft.com',
+				clientId: '22222222-2222-4222-8222-222222222222'
+			})
+		]);
+
+	await page.reload();
+	dialog = await openAzureAuthenticationProfiles(page);
+	await expect(dialog).toContainText('Production Log Analytics');
+});
+
+test('requires every Azure authentication profile field before it can be created', async ({
+	page
+}) => {
+	await page.goto('/explorer/query');
+
+	const dialog = await openAzureAuthenticationProfiles(page);
+	await dialog.getByRole('button', { name: 'New profile' }).click();
+	const createProfile = dialog.getByRole('button', { name: 'Create profile' });
+	await expect(createProfile).toBeDisabled();
+
+	await dialog.getByPlaceholder('Session name').fill('Incomplete profile');
+	await expect(createProfile).toBeDisabled();
+	await dialog.getByPlaceholder('Tenant ID or domain').fill('contoso.onmicrosoft.com');
+	await expect(createProfile).toBeDisabled();
+	await dialog
+		.getByPlaceholder('Application (client) ID')
+		.fill('22222222-2222-4222-8222-222222222222');
+	await expect(createProfile).toBeEnabled();
+});
+
+test('shows a seeded signed-in Azure profile and removes it from browser storage', async ({
+	page
+}) => {
+	await page.addInitScript(
+		({ key, profile }) => localStorage.setItem(key, JSON.stringify([profile])),
+		{ key: AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY, profile: e2eAzureProfile }
+	);
+	await page.goto('/explorer/query');
+
+	const dialog = await openAzureAuthenticationProfiles(page);
+	await expect(dialog).toContainText('E2E Entra profile');
+	await expect(dialog).toContainText('Signed in as e2e.user@contoso.com');
+	await expect(dialog.getByLabel('Signed in')).toBeVisible();
+
+	await dialog.getByRole('button', { name: 'Remove E2E Entra profile' }).click();
+	await dialog.getByRole('button', { name: 'Remove profile only' }).click();
+	await expect(dialog).toContainText('No Azure authentication profiles have been created.');
+	await expect
+		.poll(() =>
+			page.evaluate(
+				(key) => JSON.parse(localStorage.getItem(key) ?? '[]'),
+				AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY
+			)
+		)
+		.toEqual([]);
+});
+
+test('clears shared account bindings when removing a profile and its Kite sign-in', async ({
+	page
+}) => {
+	const sharedAccountProfile = {
+		...e2eAzureProfile,
+		id: 'e2e-second-azure-profile',
+		name: 'Second profile'
+	};
+	await page.addInitScript(
+		({ key, profiles }) => localStorage.setItem(key, JSON.stringify(profiles)),
+		{
+			key: AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY,
+			profiles: [e2eAzureProfile, sharedAccountProfile]
+		}
+	);
+	await page.goto('/explorer/query');
+
+	const dialog = await openAzureAuthenticationProfiles(page);
+	await expect(dialog.getByLabel('Signed in')).toHaveCount(2);
+	await dialog.getByRole('button', { name: 'Remove E2E Entra profile' }).click();
+	await dialog.getByRole('button', { name: 'Remove and clear Kite sign-in' }).click();
+	await expect(dialog).not.toContainText('E2E Entra profile');
+	await expect(dialog).toContainText('Second profile');
+	await expect(dialog.getByLabel('Sign in required')).toHaveCount(1);
+});
+
+test('shows a recoverable error when the Entra sign-in popup is blocked', async ({ page }) => {
+	await page.addInitScript(
+		({ key, profile }) => {
+			localStorage.setItem(key, JSON.stringify([profile]));
+			window.open = () => null;
+		},
+		{
+			key: AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY,
+			profile: { ...e2eAzureProfile, account: undefined }
+		}
+	);
+	await page.goto('/explorer/query');
+
+	const dialog = await openAzureAuthenticationProfiles(page);
+	await dialog.getByRole('button', { name: 'Sign in' }).click();
+	await expect(dialog.getByRole('alert')).toBeVisible();
+	await expect(dialog.getByRole('button', { name: 'Sign in' })).toBeVisible();
+});
+
+test('migrates a legacy Azure profile and ignores malformed profile storage', async ({ page }) => {
+	await page.addInitScript((profile) => {
+		localStorage.setItem('kite:azure-sessions:v1', JSON.stringify([profile]));
+	}, e2eAzureProfile);
+	await page.goto('/explorer/query');
+
+	let dialog = await openAzureAuthenticationProfiles(page);
+	await expect(dialog).toContainText('E2E Entra profile');
+	await expect
+		.poll(() =>
+			page.evaluate(
+				(key) => JSON.parse(localStorage.getItem(key) ?? '[]'),
+				AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY
+			)
+		)
+		.toEqual([expect.objectContaining({ id: e2eAzureProfile.id })]);
+
+	await page.addInitScript(
+		(key) => localStorage.setItem(key, '{not valid JSON'),
+		AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY
+	);
+	await page.reload();
+	dialog = await openAzureAuthenticationProfiles(page);
+	await expect(dialog).toContainText('No Azure authentication profiles have been created.');
+});
+
+test('uses the selected profile while configuring a Log Analytics workspace', async ({ page }) => {
+	await page.addInitScript(
+		({ key, profile }) => localStorage.setItem(key, JSON.stringify([profile])),
+		{ key: AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY, profile: e2eAzureProfile }
+	);
+	await page.goto('/explorer/query');
+
+	await page.getByRole('button', { name: /Mock cluster/ }).click();
+	await page.getByRole('menuitem', { name: 'Add cluster' }).click();
+	const dialog = page.getByRole('dialog', { name: 'Add cluster' });
+	await dialog.getByLabel('Name').fill('E2E Log Analytics');
+	await dialog.locator('#new-cluster-kind').click();
+	await page.getByRole('option', { name: 'Azure Log Analytics' }).click();
+	await dialog.locator('#log-analytics-profile').click();
+	await page.getByRole('option', { name: 'E2E Entra profile' }).click();
+	await expect(dialog).toContainText(
+		'contoso.onmicrosoft.com · 22222222-2222-4222-8222-222222222222'
+	);
+	await dialog.getByLabel('Workspace ID').fill('11111111-1111-4111-8111-111111111111');
+	await dialog
+		.getByLabel('Workspace resource ID')
+		.fill(
+			'/subscriptions/33333333-3333-4333-8333-333333333333/resourceGroups/e2e/providers/Microsoft.OperationalInsights/workspaces/e2e-workspace'
+		);
+	await expect(dialog.getByRole('button', { name: 'Add and connect' })).toBeEnabled();
+});
+
+test('links an unconfigured Log Analytics connection to an Azure authentication profile', async ({
+	page
+}) => {
+	await page.addInitScript(
+		({ profileKey, clusterKey, profile }) => {
+			localStorage.setItem(profileKey, JSON.stringify([profile]));
+			localStorage.setItem(
+				clusterKey,
+				JSON.stringify([
+					{
+						id: 'e2e-log-analytics-cluster',
+						name: 'Unlinked Log Analytics',
+						kind: 'log-analytics',
+						logAnalytics: {
+							workspaceId: '11111111-1111-4111-8111-111111111111',
+							workspaceResourceId:
+								'/subscriptions/33333333-3333-4333-8333-333333333333/resourceGroups/e2e/providers/Microsoft.OperationalInsights/workspaces/e2e-workspace',
+							tenantId: 'contoso.onmicrosoft.com',
+							clientId: '22222222-2222-4222-8222-222222222222',
+							authenticationProfileId: 'removed-profile'
+						}
+					}
+				])
+			);
+		},
+		{
+			profileKey: AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY,
+			clusterKey: CLUSTER_CONNECTIONS_STORAGE_KEY,
+			profile: e2eAzureProfile
+		}
+	);
+	await page.goto('/explorer/query');
+
+	await page.getByRole('button', { name: /Mock cluster/ }).click();
+	await page.getByRole('menuitem', { name: 'Unlinked Log Analytics' }).click();
+	const dialog = page.getByRole('dialog', { name: 'Link authentication profile' });
+	await expect(dialog).toBeVisible();
+	await dialog.getByRole('button', { name: 'Choose an authentication profile' }).click();
+	await page.getByRole('option', { name: 'E2E Entra profile' }).click();
+	await dialog.getByRole('button', { name: 'Link and continue' }).click();
+
+	await expect
+		.poll(() =>
+			page.evaluate((key) => {
+				const clusters = JSON.parse(localStorage.getItem(key) ?? '[]');
+				return clusters.find(
+					(cluster: { id: string }) => cluster.id === 'e2e-log-analytics-cluster'
+				);
+			}, CLUSTER_CONNECTIONS_STORAGE_KEY)
+		)
+		.toEqual(
+			expect.objectContaining({
+				logAnalytics: expect.objectContaining({ authenticationProfileId: e2eAzureProfile.id })
+			})
+		);
 });
 
 test('places the cluster switcher below its trigger on smaller displays', async ({ page }) => {

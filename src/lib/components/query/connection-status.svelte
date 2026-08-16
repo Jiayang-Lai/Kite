@@ -43,7 +43,7 @@
 </script>
 
 <footer
-	class="text-muted-foreground flex shrink-0 items-center justify-between gap-3 border bg-muted/30 px-2 py-1.5 text-xs sm:px-3"
+	class="text-muted-foreground flex shrink-0 items-center justify-between gap-3 border-t bg-muted/30 px-2 py-1.5 text-xs sm:px-3"
 	aria-live="polite"
 >
 	<div class="flex min-w-0 items-center gap-2">

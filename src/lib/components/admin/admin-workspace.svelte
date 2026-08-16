@@ -24,7 +24,8 @@
 		getClusterConnectionStore,
 		type NewClusterConnection
 	} from '$lib/cluster/cluster-connection-store.svelte';
-	import { connectClusterRuntime, releaseClusterRuntime } from '$lib/cluster/cluster-runtime';
+	import { createConnectionRuntime, releaseClusterRuntime } from '$lib/cluster/cluster-runtime';
+	import { getConnectionCapabilities } from '$lib/cluster/connection-capabilities';
 	import { usesBuiltInMockCatalog } from '$lib/cluster/mock-cluster-schema';
 	import { MOCK_RECENT_QUERIES, MOCK_SAVED_QUERIES } from '$lib/data/mock-queries';
 	import { deletePersistentDuckDbStorage } from '$lib/duckdb/storage';
@@ -70,6 +71,7 @@
 	const activeCluster = $derived(
 		clusters.find((cluster) => cluster.id === clusterSession.activeClusterId)
 	);
+	const activeCapabilities = $derived(getConnectionCapabilities(activeCluster));
 	let activeClusterUrl = $state(
 		clusterConnectionStore.clusters.find((cluster) => cluster.id === clusterSession.activeClusterId)
 			?.url ?? ''
@@ -162,7 +164,7 @@
 		isClusterSwitching = Boolean(clusterSession.databaseSchema);
 		connectionError = '';
 		try {
-			const schema = await connectClusterRuntime(cluster);
+			const schema = await createConnectionRuntime(cluster).loadSchema();
 			if (requestId !== schemaRequestId || clusterId !== selectedClusterId) return false;
 			const firstDatabase = Object.values(schema)[0];
 			const shouldRestoreSelection = clusterId === clusterSession.activeClusterId;
@@ -373,6 +375,7 @@
 			{isMockCluster}
 			{isEmulatedCluster}
 			{isLogAnalyticsCluster}
+			managementCommands={activeCapabilities.managementCommands}
 			onrefreshschema={async () => {
 				await connectCluster(clusterSession.activeClusterId);
 			}}
@@ -390,6 +393,7 @@
 				emulatedStorage={activeCluster?.emulatedStorage}
 				{isMockCluster}
 				{isEmulatedCluster}
+				ingestionEnabled={activeCapabilities.ingestion !== 'none'}
 				isLoading={connectionStatus === 'loading'}
 			/>
 		{/key}

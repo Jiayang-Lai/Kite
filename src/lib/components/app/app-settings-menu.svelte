@@ -67,7 +67,11 @@
 
 	function addAuthenticationProfile() {
 		if (!name.trim() || !tenantId.trim() || !clientId.trim()) return;
-		azureAuthenticationProfiles.add({ name: name.trim(), tenantId: tenantId.trim(), clientId: clientId.trim() });
+		azureAuthenticationProfiles.add({
+			name: name.trim(),
+			tenantId: tenantId.trim(),
+			clientId: clientId.trim()
+		});
 		name = tenantId = clientId = '';
 		profileView = 'current';
 	}
@@ -118,19 +122,18 @@
 
 		try {
 			await Promise.all(
-				profiles
-					.map((candidate) =>
-						azureMsalClientManager.clearAccountCache({
-							workspaceId: '',
-							tenantId: candidate.tenantId,
-							clientId: candidate.clientId,
-							account: candidate.account
-						})
-					)
+				profiles.map((candidate) =>
+					azureMsalClientManager.clearAccountCache({
+						workspaceId: '',
+						tenantId: candidate.tenantId,
+						clientId: candidate.clientId,
+						account: candidate.account
+					})
+				)
 			);
 		} catch {
-				profileAuthenticationError =
-					'Kite removed the saved sign-in, but could not clear all local Microsoft Entra cache entries.';
+			profileAuthenticationError =
+				'Kite removed the saved sign-in, but could not clear all local Microsoft Entra cache entries.';
 		}
 	}
 
@@ -257,8 +260,13 @@
 				Create reusable Microsoft Entra authentication profiles for Analytics connections.
 			</Dialog.Description>
 		</Dialog.Header>
-		<div class="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] sm:grid-cols-[11rem_minmax(0,1fr)] sm:grid-rows-1">
-			<nav class="border-b p-2 sm:border-r sm:border-b-0 sm:p-3" aria-label="Azure authentication profile views">
+		<div
+			class="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] sm:grid-cols-[11rem_minmax(0,1fr)] sm:grid-rows-1"
+		>
+			<nav
+				class="border-b p-2 sm:border-r sm:border-b-0 sm:p-3"
+				aria-label="Azure authentication profile views"
+			>
 				<div class="flex gap-1 sm:grid">
 					<Button
 						variant={profileView === 'current' ? 'secondary' : 'ghost'}
@@ -281,7 +289,10 @@
 						</p>
 					</div>
 					{#if profileAuthenticationError}
-						<p class="border-destructive/30 bg-destructive/10 text-destructive mb-4 rounded-md border px-3 py-2 text-sm" role="alert">
+						<p
+							class="border-destructive/30 bg-destructive/10 text-destructive mb-4 rounded-md border px-3 py-2 text-sm"
+							role="alert"
+						>
 							{profileAuthenticationError}
 						</p>
 					{/if}
@@ -294,9 +305,15 @@
 								</p>
 							</div>
 							<div class="flex flex-wrap justify-end gap-2">
-								<Button variant="outline" onclick={() => (profileToRemove = undefined)}>Cancel</Button>
-								<Button variant="outline" onclick={() => removeProfile(false)}>Remove profile only</Button>
-								<Button variant="destructive" onclick={() => removeProfile(true)}>Remove and clear Kite sign-in</Button>
+								<Button variant="outline" onclick={() => (profileToRemove = undefined)}
+									>Cancel</Button
+								>
+								<Button variant="outline" onclick={() => removeProfile(false)}
+									>Remove profile only</Button
+								>
+								<Button variant="destructive" onclick={() => removeProfile(true)}
+									>Remove and clear Kite sign-in</Button
+								>
 							</div>
 						</div>
 					{:else}
@@ -304,52 +321,64 @@
 							{#each azureAuthenticationProfiles.profiles as profile (profile.id)}
 								<div class="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
 									<div class="flex min-w-0 flex-1 items-start gap-2">
-											{#if profile.account}
-												<CircleCheckIcon
-													class="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
-													aria-label="Signed in"
-												/>
-											{:else}
-												<CircleAlertIcon
-													class="mt-0.5 size-3.5 shrink-0 text-amber-700 dark:text-amber-300"
-													aria-label="Sign in required"
-												/>
-											{/if}
-											<div class="min-w-0 flex-1">
-												<div class="flex min-w-0 items-center gap-2">
-													<p class="truncate text-sm font-medium">{profile.name}</p>
-													{#if activeLogAnalyticsAuthenticationProfileId === profile.id}
-														<span class="bg-primary/10 text-primary shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium">
-															Current connection
-														</span>
-													{/if}
-												</div>
-												{#if profile.account}
-													<p class="text-muted-foreground truncate text-xs">
-														Signed in as {profile.account.username}
-													</p>
+										{#if profile.account}
+											<CircleCheckIcon
+												class="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+												aria-label="Signed in"
+											/>
+										{:else}
+											<CircleAlertIcon
+												class="mt-0.5 size-3.5 shrink-0 text-amber-700 dark:text-amber-300"
+												aria-label="Sign in required"
+											/>
+										{/if}
+										<div class="min-w-0 flex-1">
+											<div class="flex min-w-0 items-center gap-2">
+												<p class="truncate text-sm font-medium">{profile.name}</p>
+												{#if activeLogAnalyticsAuthenticationProfileId === profile.id}
+													<span
+														class="bg-primary/10 text-primary shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium"
+													>
+														Current connection
+													</span>
 												{/if}
-												<p class="text-muted-foreground truncate text-xs">
-													Tenant ID: {profile.tenantId}
-												</p>
-												<p class="text-muted-foreground truncate text-xs">
-													Application ID: {profile.clientId}
-												</p>
 											</div>
+											{#if profile.account}
+												<p class="text-muted-foreground truncate text-xs">
+													Signed in as {profile.account.username}
+												</p>
+											{/if}
+											<p class="text-muted-foreground truncate text-xs">
+												Tenant ID: {profile.tenantId}
+											</p>
+											<p class="text-muted-foreground truncate text-xs">
+												Application ID: {profile.clientId}
+											</p>
+										</div>
 									</div>
 									{#if signingOutProfileId === profile.id}
 										<div class="flex flex-wrap items-center justify-end gap-2 sm:flex-nowrap">
 											<span class="text-muted-foreground text-xs">Waiting for Entra…</span>
-											<Button variant="ghost" size="sm" onclick={() => stopWaitingForMicrosoftEntraSignOut(profile)}
+											<Button
+												variant="ghost"
+												size="sm"
+												onclick={() => stopWaitingForMicrosoftEntraSignOut(profile)}
 												>Stop waiting</Button
 											>
 										</div>
 									{:else if !profile.account}
-										<Button class="self-end sm:self-auto" variant="ghost" size="sm" onclick={() => signIn(profile)}
-											><LogInIcon /> Sign in</Button
+										<Button
+											class="self-end sm:self-auto"
+											variant="ghost"
+											size="sm"
+											onclick={() => signIn(profile)}><LogInIcon /> Sign in</Button
 										>
 									{:else}
-										<Button class="self-end sm:self-auto" variant="ghost" size="sm" onclick={() => signOutOfMicrosoftEntra(profile)}
+										<Button
+											class="self-end sm:self-auto"
+											variant="ghost"
+											size="sm"
+											onclick={() => signOutOfMicrosoftEntra(profile)}
 											><LogOutIcon /> Sign out</Button
 										>
 									{/if}
@@ -388,7 +417,12 @@
 			<Button variant="outline" onclick={() => (authenticationProfileDialogOpen = false)}
 				>{profileView === 'new' ? 'Cancel' : 'Done'}</Button
 			>
-			{#if profileView === 'new'}<Button onclick={addAuthenticationProfile}>Create profile</Button>{/if}
+			{#if profileView === 'new'}
+				<Button
+					disabled={!name.trim() || !tenantId.trim() || !clientId.trim()}
+					onclick={addAuthenticationProfile}>Create profile</Button
+				>
+			{/if}
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

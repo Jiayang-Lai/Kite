@@ -65,8 +65,13 @@
 		type TableMutationPlan,
 		type TableSchemaSnapshot
 	} from '$lib/kusto/table-management';
-	import { buildAvroTableSchema } from '$lib/kusto/avro-table-template';
-	import type { KustoColumn, KustoDatabaseSchema, KustoTable } from '$lib/types/kusto-schema';
+	import { buildAvroDatabaseExport, buildAvroTableSchema } from '$lib/kusto/avro-table-template';
+	import type {
+		KustoColumn,
+		KustoDatabase,
+		KustoDatabaseSchema,
+		KustoTable
+	} from '$lib/types/kusto-schema';
 
 	type DatabaseManagementProps = {
 		databases?: KustoDatabaseSchema;
@@ -783,6 +788,17 @@
 		URL.revokeObjectURL(url);
 	}
 
+	function exportDatabaseSchema(database: KustoDatabase) {
+		const schema = JSON.stringify(buildAvroDatabaseExport(database), null, '\t');
+		const fileName = `${database.name.replaceAll(/[^A-Za-z0-9._-]/g, '_') || 'database'}.schema.json`;
+		const url = URL.createObjectURL(new Blob([`${schema}\n`], { type: 'application/json' }));
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = fileName;
+		link.click();
+		URL.revokeObjectURL(url);
+	}
+
 	onDestroy(() => {
 		mutationRequestId += 1;
 		activeCancel?.();
@@ -801,6 +817,17 @@
 		>
 			<PlusIcon />
 			New table
+		</Button>
+	{/if}
+	{#if activeDatabase}
+		<Button
+			size="sm"
+			variant="outline"
+			onclick={() => exportDatabaseSchema(activeDatabase)}
+			title={`Download all ${activeDatabase.tables.length} table schemas as Avro records`}
+		>
+			<FileDownIcon />
+			Export Schema
 		</Button>
 	{/if}
 	<Button

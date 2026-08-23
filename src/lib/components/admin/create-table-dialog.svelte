@@ -396,7 +396,7 @@
 											class="text-muted-foreground text-xs"
 											for={`create-column-description-${column.id}`}
 										>
-											Description <span class="font-normal">(optional)</span>
+											Column description <span class="font-normal">(optional)</span>
 										</label>
 										<Textarea
 											id={`create-column-description-${column.id}`}

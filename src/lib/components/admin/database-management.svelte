@@ -65,8 +65,13 @@
 		type TableMutationPlan,
 		type TableSchemaSnapshot
 	} from '$lib/kusto/table-management';
-	import { buildAvroTableSchema } from '$lib/kusto/avro-table-template';
-	import type { KustoColumn, KustoDatabaseSchema, KustoTable } from '$lib/types/kusto-schema';
+	import { buildAvroDatabaseExport, buildAvroTableSchema } from '$lib/kusto/avro-table-template';
+	import type {
+		KustoColumn,
+		KustoDatabase,
+		KustoDatabaseSchema,
+		KustoTable
+	} from '$lib/types/kusto-schema';
 
 	type DatabaseManagementProps = {
 		databases?: KustoDatabaseSchema;
@@ -682,6 +687,7 @@
 		const targetClusterUrl = clusterUrl;
 		const targetDatabase = editorDatabaseName;
 		let commandCompleted = false;
+		let columnDocstringsApplied = !plan.columnDocstringsCommand;
 		let succeeded = false;
 
 		createTableError = '';
@@ -725,6 +731,17 @@
 				await execution.promise;
 				if (requestId !== mutationRequestId) return;
 				commandCompleted = true;
+				if (plan.columnDocstringsCommand) {
+					const columnDocstringsExecution = startKustoManagementCommand(
+						targetDatabase,
+						plan.columnDocstringsCommand,
+						targetClusterUrl
+					);
+					activeCancel = columnDocstringsExecution.cancel;
+					await columnDocstringsExecution.promise;
+					if (requestId !== mutationRequestId) return;
+					columnDocstringsApplied = true;
+				}
 			}
 
 			await onrefreshschema?.(targetClusterId);
@@ -738,7 +755,9 @@
 				createdTable?.columns.length === plan.columns.length &&
 				createdTable.columns.every(
 					(column, index) =>
-						column.name === plan.columns[index].name && column.type === plan.columns[index].type
+						column.name === plan.columns[index].name &&
+						column.type === plan.columns[index].type &&
+						(column.docstring ?? '') === (plan.columns[index].docstring ?? '')
 				);
 			if (!createdTable || !schemaMatches || (createdTable.docstring ?? '') !== plan.docstring) {
 				createTableError = `The create command completed, but ${targetDatabase}.${plan.tableName} does not match the reviewed schema and description. Another client may have claimed this name; Kite did not replace that table.`;
@@ -752,7 +771,9 @@
 			if (requestId !== mutationRequestId) return;
 			const message = getKustoErrorMessage(error);
 			createTableError = commandCompleted
-				? `The create command completed, but Kite could not refresh and verify the table. Reconnect or refresh before continuing.\n\n${message}`
+				? !columnDocstringsApplied
+					? `The table was created, but Kite could not set its column descriptions. Reconnect or refresh before retrying the documentation update.\n\n${message}`
+					: `The create command completed, but Kite could not refresh and verify the table. Reconnect or refresh before continuing.\n\n${message}`
 				: message === 'Command cancelled.'
 					? 'Stopped waiting for creation. The Kusto operation may still complete; refresh the schema before retrying.'
 					: message;
@@ -783,6 +804,17 @@
 		URL.revokeObjectURL(url);
 	}
 
+	function exportDatabaseSchema(database: KustoDatabase) {
+		const schema = JSON.stringify(buildAvroDatabaseExport(database), null, '\t');
+		const fileName = `${database.name.replaceAll(/[^A-Za-z0-9._-]/g, '_') || 'database'}.schema.json`;
+		const url = URL.createObjectURL(new Blob([`${schema}\n`], { type: 'application/json' }));
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = fileName;
+		link.click();
+		URL.revokeObjectURL(url);
+	}
+
 	onDestroy(() => {
 		mutationRequestId += 1;
 		activeCancel?.();
@@ -803,6 +835,17 @@
 			New table
 		</Button>
 	{/if}
+	{#if activeDatabase}
+		<Button
+			size="sm"
+			variant="outline"
+			onclick={() => exportDatabaseSchema(activeDatabase)}
+			title={`Download all ${activeDatabase.tables.length} table schemas as Avro records`}
+		>
+			<FileDownIcon />
+			Export Schema
+		</Button>
+	{/if}
 	<Button
 		size="sm"
 		variant="outline"
@@ -815,16 +858,16 @@
 
 {#snippet tableActions(table: KustoTable)}
 	<div class="flex flex-wrap items-center justify-end gap-1">
+		<Button
+			size="xs"
+			variant="outline"
+			onclick={() => exportTableSchema(table)}
+			title={`Download ${table.name}'s schema as an Avro record`}
+		>
+			<FileDownIcon />
+			Export Schema
+		</Button>
 		{#if !isLogAnalyticsCluster}
-			<Button
-				size="xs"
-				variant="outline"
-				onclick={() => exportTableSchema(table)}
-				title={`Download ${table.name}'s schema as an Avro record`}
-			>
-				<FileDownIcon />
-				Export Avro
-			</Button>
 			<Button
 				size="xs"
 				variant="outline"

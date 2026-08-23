@@ -20,11 +20,13 @@ export type KustoScalarType = (typeof KUSTO_SCALAR_TYPES)[number];
 export type NewTableColumn = {
 	name: string;
 	type: KustoScalarType;
+	docstring?: string;
 };
 
 export type CreateTablePlan = {
 	kind: 'create-table';
 	command: string;
+	columnDocstringsCommand?: string;
 	tableName: string;
 	columns: readonly NewTableColumn[];
 	docstring: string;
@@ -181,7 +183,10 @@ function validateColumns(
 		if (!KUSTO_SCALAR_TYPES.includes(column.type)) {
 			throw new Error(`“${column.type}” is not a supported Kusto scalar type.`);
 		}
-		validatedColumns.push({ name, type: column.type });
+		const docstring = normalizeDocstring(column.docstring);
+		validatedColumns.push(
+			docstring ? { name, type: column.type, docstring } : { name, type: column.type }
+		);
 	}
 
 	return validatedColumns;
@@ -189,6 +194,18 @@ function validateColumns(
 
 function formatColumn(column: NewTableColumn) {
 	return `${quoteKustoEntity(column.name, 'Enter a column name.')}:${column.type}`;
+}
+
+function buildColumnDocstringsCommand(tableName: string, columns: readonly NewTableColumn[]) {
+	if (!columns.some((column) => column.docstring)) return undefined;
+	const quotedTableName = quoteKustoEntity(tableName, 'Enter a table name.');
+	const docstrings = columns
+		.map(
+			(column) =>
+				`${quoteKustoEntity(column.name, 'Enter a column name.')}:${quoteKustoString(column.docstring ?? '')}`
+		)
+		.join(', ');
+	return `.alter table ${quotedTableName} column-docstrings (${docstrings})`;
 }
 
 /** Builds one empty table creation command with an explicit initial schema. */
@@ -218,10 +235,12 @@ export function buildCreateTablePlan(input: {
 		folder ? `folder = ${quoteKustoString(folder)}` : ''
 	].filter(Boolean);
 	const withClause = properties.length ? ` with (${properties.join(', ')})` : '';
+	const columnDocstringsCommand = buildColumnDocstringsCommand(tableName, columns);
 
 	return {
 		kind: 'create-table',
 		command: `.create table ${quotedTableName} (${columns.map(formatColumn).join(', ')})${withClause}`,
+		...(columnDocstringsCommand ? { columnDocstringsCommand } : {}),
 		tableName,
 		columns,
 		docstring,

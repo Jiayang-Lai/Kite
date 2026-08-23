@@ -16,18 +16,19 @@ const SCHEMA_SQL = `
 		t.comment AS table_comment,
 		c.column_name,
 		c.data_type,
-		c.ordinal_position
+		c.column_index,
+		c.comment AS column_comment
 	FROM duckdb_databases() AS d
 	LEFT JOIN duckdb_tables() AS t
 		ON t.database_name = d.database_name
 		AND t.schema_name = 'main'
 		AND NOT t.internal
-	LEFT JOIN information_schema.columns AS c
-		ON c.table_catalog = t.database_name
-		AND c.table_schema = t.schema_name
+	LEFT JOIN duckdb_columns() AS c
+		ON c.database_name = t.database_name
+		AND c.schema_name = t.schema_name
 		AND c.table_name = t.table_name
 	WHERE NOT d.internal
-	ORDER BY d.database_name, t.table_name, c.ordinal_position
+	ORDER BY d.database_name, t.table_name, c.column_index
 `;
 
 const PERSISTENT_SCHEMA_SQL = `
@@ -38,15 +39,16 @@ const PERSISTENT_SCHEMA_SQL = `
 		t.comment AS table_comment,
 		c.column_name,
 		c.data_type,
-		c.ordinal_position
+		c.column_index,
+		c.comment AS column_comment
 	FROM information_schema.schemata AS s
 	LEFT JOIN duckdb_tables() AS t
 		ON t.database_name = current_database()
 		AND t.schema_name = s.schema_name
 		AND NOT t.internal
-	LEFT JOIN information_schema.columns AS c
-		ON c.table_catalog = current_database()
-		AND c.table_schema = t.schema_name
+	LEFT JOIN duckdb_columns() AS c
+		ON c.database_name = current_database()
+		AND c.schema_name = t.schema_name
 		AND c.table_name = t.table_name
 	WHERE s.catalog_name = current_database()
 		AND s.schema_name NOT IN (
@@ -55,7 +57,7 @@ const PERSISTENT_SCHEMA_SQL = `
 			'main',
 			'kite_internal'
 		)
-	ORDER BY s.schema_name, t.table_name, c.ordinal_position
+	ORDER BY s.schema_name, t.table_name, c.column_index
 `;
 
 export function quoteDuckDbIdentifier(value: string) {
@@ -105,7 +107,7 @@ export async function loadEmulatedSchema(clusterId: string): Promise<KustoDataba
 	const schema: KustoDatabaseSchema = {};
 	const tables = new Map<
 		string,
-		{ name: string; columns: Array<{ name: string; type: string }> }
+		{ name: string; columns: Array<{ name: string; type: string; docstring?: string }> }
 	>();
 
 	for (const row of result.rows) {
@@ -141,7 +143,9 @@ export async function loadEmulatedSchema(clusterId: string): Promise<KustoDataba
 		if (columnValue != null) {
 			table.columns.push({
 				name: String(columnValue),
-				type: toKustoType(String(row[indexes.data_type]))
+				type: toKustoType(String(row[indexes.data_type])),
+				docstring:
+					row[indexes.column_comment] == null ? undefined : String(row[indexes.column_comment])
 			});
 		}
 	}

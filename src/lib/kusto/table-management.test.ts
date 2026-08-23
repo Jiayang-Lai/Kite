@@ -56,7 +56,7 @@ describe('table management commands', () => {
 				existingTableNames: ['Metrics'],
 				columns: [
 					{ name: 'Timestamp', type: 'datetime' },
-					{ name: 'Trace Id', type: 'guid' }
+					{ name: 'Trace Id', type: 'guid', docstring: 'Correlation identifier' }
 				],
 				docstring: "Today's telemetry",
 				folder: 'Operations'
@@ -65,10 +65,12 @@ describe('table management commands', () => {
 			kind: 'create-table',
 			command:
 				".create table ['Today''s Events'] (Timestamp:datetime, ['Trace Id']:guid) with (docstring = 'Today''s telemetry', folder = 'Operations')",
+			columnDocstringsCommand:
+				".alter table ['Today''s Events'] column-docstrings (Timestamp:'', ['Trace Id']:'Correlation identifier')",
 			tableName: "Today's Events",
 			columns: [
 				{ name: 'Timestamp', type: 'datetime' },
-				{ name: 'Trace Id', type: 'guid' }
+				{ name: 'Trace Id', type: 'guid', docstring: 'Correlation identifier' }
 			],
 			docstring: "Today's telemetry",
 			folder: 'Operations',

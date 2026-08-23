@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	MAX_AVRO_TABLE_TEMPLATE_BYTES,
+	buildAvroDatabaseExport,
+	buildAvroDatabaseSchemas,
 	buildAvroTableSchema,
 	parseAvroTableTemplate,
 	readAvroTableTemplate
 } from './avro-table-template';
-import type { KustoTable } from '$lib/types/kusto-schema';
+import type { KustoDatabase, KustoTable } from '$lib/types/kusto-schema';
 
 describe('Avro table templates', () => {
 	it('maps an Avro record and its logical and complex fields to a Kusto table draft', async () => {
@@ -19,7 +21,7 @@ describe('Avro table templates', () => {
 				"fields": [
 					{ "name": "Timestamp", "type": { "type": "long", "logicalType": "timestamp-millis" } },
 					{ "name": "TraceId", "type": { "type": "string", "logicalType": "uuid" } },
-					{ "name": "Message", "type": ["null", "string"], "default": null },
+					{ "name": "Message", "type": ["null", "string"], "default": null, "doc": "Event message" },
 					{ "name": "Payload", "type": { "type": "map", "values": "string" } }
 				]
 			}`)
@@ -30,7 +32,7 @@ describe('Avro table templates', () => {
 			columns: [
 				{ name: 'Timestamp', type: 'datetime' },
 				{ name: 'TraceId', type: 'guid' },
-				{ name: 'Message', type: 'string' },
+				{ name: 'Message', type: 'string', docstring: 'Event message' },
 				{ name: 'Payload', type: 'dynamic' }
 			]
 		});
@@ -122,6 +124,44 @@ describe('Avro table templates', () => {
 				{ name: 'Elapsed', type: 'timespan' },
 				{ name: 'Payload', type: 'dynamic' }
 			]
+		});
+	});
+
+	it('exports every database table as an Avro record with descriptions', () => {
+		const database = {
+			name: 'Analytics',
+			tables: [
+				{
+					name: 'Event Logs',
+					docstring: 'Application events.',
+					columns: [{ name: 'Event Id', type: 'guid', docstring: 'Event identifier.' }]
+				},
+				{
+					name: 'Metrics',
+					columns: [{ name: 'Value', type: 'real' }]
+				}
+			]
+		} as KustoDatabase;
+		const schemas = buildAvroDatabaseSchemas(database);
+
+		expect(schemas).toEqual([
+			expect.objectContaining({
+				name: 'Event_Logs',
+				doc: 'Application events.',
+				'kite.tableName': 'Event Logs',
+				fields: [
+					expect.objectContaining({
+						name: 'Event_Id',
+						doc: 'Event identifier.',
+						'kite.columnName': 'Event Id'
+					})
+				]
+			}),
+			expect.objectContaining({ name: 'Metrics', 'kite.tableName': 'Metrics' })
+		]);
+		expect(buildAvroDatabaseExport(database)).toMatchObject({
+			databaseName: 'Analytics',
+			tables: schemas
 		});
 	});
 });

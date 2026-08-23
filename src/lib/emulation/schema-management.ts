@@ -57,6 +57,11 @@ function tableCommentStatement(database: string, table: string, comment: string)
 	}`;
 }
 
+function columnCommentStatement(database: string, table: string, column: string, comment?: string) {
+	if (!comment) return '';
+	return `COMMENT ON COLUMN ${qualifiedTable(database, table)}.${quoteDuckDbIdentifier(column)} IS ${quoteDuckDbString(comment)}`;
+}
+
 async function assertCurrentSnapshot(clusterId: string, expectedSnapshot: TableSchemaSnapshot) {
 	const schema = await loadEmulatedSchema(clusterId);
 	const table = schema[expectedSnapshot.databaseName]?.tables.find(
@@ -109,7 +114,12 @@ export async function createEmulatedTable(
 		.join(', ');
 	await runTransaction(clusterId, [
 		`CREATE TABLE ${qualifiedTable(databaseName, plan.tableName)} (${columns})`,
-		tableCommentStatement(databaseName, plan.tableName, plan.docstring)
+		tableCommentStatement(databaseName, plan.tableName, plan.docstring),
+		...plan.columns
+			.map((column) =>
+				columnCommentStatement(databaseName, plan.tableName, column.name, column.docstring)
+			)
+			.filter(Boolean)
 	]);
 }
 

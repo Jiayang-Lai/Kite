@@ -20,6 +20,7 @@ export type KustoScalarType = (typeof KUSTO_SCALAR_TYPES)[number];
 export type NewTableColumn = {
 	name: string;
 	type: KustoScalarType;
+	docstring?: string;
 };
 
 export type CreateTablePlan = {
@@ -181,7 +182,10 @@ function validateColumns(
 		if (!KUSTO_SCALAR_TYPES.includes(column.type)) {
 			throw new Error(`“${column.type}” is not a supported Kusto scalar type.`);
 		}
-		validatedColumns.push({ name, type: column.type });
+		const docstring = normalizeDocstring(column.docstring);
+		validatedColumns.push(
+			docstring ? { name, type: column.type, docstring } : { name, type: column.type }
+		);
 	}
 
 	return validatedColumns;

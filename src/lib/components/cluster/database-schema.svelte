@@ -1,6 +1,7 @@
 <script lang="ts">
 	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
+	import FileDownIcon from '@lucide/svelte/icons/file-down';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import SquareFunctionIcon from '@lucide/svelte/icons/square-function';
 	import TablePropertiesIcon from '@lucide/svelte/icons/table-properties';
@@ -18,6 +19,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
+	import { buildAvroDatabaseExport } from '$lib/kusto/avro-table-template';
 	import type {
 		KustoColumn,
 		KustoDatabase,
@@ -191,6 +193,20 @@
 		toggleAllTables();
 	}
 
+	function exportDatabaseSchema() {
+		const fileName = `${database.name.replaceAll(/[^A-Za-z0-9._-]/g, '_') || 'database'}.schema.json`;
+		const url = URL.createObjectURL(
+			new Blob([`${JSON.stringify(buildAvroDatabaseExport(database), null, '\t')}\n`], {
+				type: 'application/json'
+			})
+		);
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = fileName;
+		link.click();
+		URL.revokeObjectURL(url);
+	}
+
 	function measureTable(node: HTMLDivElement) {
 		get(tableVirtualizer).measureElement(node);
 	}
@@ -266,6 +282,17 @@
 			</div>
 			<div class="flex shrink-0 items-center gap-1.5">
 				{@render headerActions?.()}
+				{#if !focusedFunction}
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={exportDatabaseSchema}
+						title={`Download all ${database.tables.length} table schemas as Avro records`}
+					>
+						<FileDownIcon data-icon="inline-start" />
+						Export Schema
+					</Button>
+				{/if}
 				{#if debouncedFilter.trim() && !focusedFunction}
 					<Badge variant="outline">Matches expanded</Badge>
 				{:else if selectedTable || selectedFunction}

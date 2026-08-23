@@ -1,6 +1,6 @@
 import type { KiteAvroTableTemplate } from '$lib/generated/kite-avro-table-template';
 import type { KustoScalarType, NewTableColumn } from '$lib/kusto/table-management';
-import type { KustoTable } from '$lib/types/kusto-schema';
+import type { KustoDatabase, KustoTable } from '$lib/types/kusto-schema';
 
 export const MAX_AVRO_TABLE_TEMPLATE_BYTES = 256 * 1024;
 
@@ -137,7 +137,8 @@ export async function parseAvroTableTemplate(source: string): Promise<ImportedAv
 		folder: template['kite.folder'] ?? '',
 		columns: template.fields.map((field) => ({
 			name: field['kite.columnName'] ?? field.name,
-			type: mapAvroType(field.type)
+			type: mapAvroType(field.type),
+			...(field.doc ? { docstring: field.doc } : {})
 		}))
 	};
 }
@@ -218,5 +219,18 @@ export function buildAvroTableSchema(table: KustoTable) {
 				type: avroTypeForKusto(column.type, name, usedNamedTypes)
 			};
 		})
+	};
+}
+
+/** Builds one standard Avro record schema for every table in a database. */
+export function buildAvroDatabaseSchemas(database: KustoDatabase) {
+	return database.tables.map(buildAvroTableSchema);
+}
+
+/** Packages every table in a database as a portable Avro record schema. */
+export function buildAvroDatabaseExport(database: KustoDatabase) {
+	return {
+		databaseName: database.name,
+		tables: buildAvroDatabaseSchemas(database)
 	};
 }

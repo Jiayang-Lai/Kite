@@ -56,7 +56,7 @@ describe('table management commands', () => {
 				existingTableNames: ['Metrics'],
 				columns: [
 					{ name: 'Timestamp', type: 'datetime' },
-					{ name: 'Trace Id', type: 'guid' }
+					{ name: 'Trace Id', type: 'guid', docstring: 'Correlation identifier' }
 				],
 				docstring: "Today's telemetry",
 				folder: 'Operations'
@@ -68,7 +68,7 @@ describe('table management commands', () => {
 			tableName: "Today's Events",
 			columns: [
 				{ name: 'Timestamp', type: 'datetime' },
-				{ name: 'Trace Id', type: 'guid' }
+				{ name: 'Trace Id', type: 'guid', docstring: 'Correlation identifier' }
 			],
 			docstring: "Today's telemetry",
 			folder: 'Operations',

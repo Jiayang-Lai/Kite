@@ -25,6 +25,7 @@
 		id: number;
 		name: string;
 		type: KustoScalarType;
+		docstring: string;
 	};
 
 	type CreateTableDialogProps = {
@@ -89,7 +90,7 @@
 		tableName = '';
 		docstring = '';
 		folder = '';
-		columns = [{ id: nextColumnId++, name: '', type: 'string' }];
+		columns = [{ id: nextColumnId++, name: '', type: 'string', docstring: '' }];
 		reviewing = false;
 		confirmationText = '';
 		templateImportError = '';
@@ -102,7 +103,7 @@
 
 	function addColumn() {
 		if (isRunning) return;
-		columns = [...columns, { id: nextColumnId++, name: '', type: 'string' }];
+		columns = [...columns, { id: nextColumnId++, name: '', type: 'string', docstring: '' }];
 	}
 
 	function removeColumn(id: number) {
@@ -150,7 +151,11 @@
 			tableName = template.tableName;
 			docstring = template.docstring;
 			folder = template.folder;
-			columns = template.columns.map((column) => ({ id: nextColumnId++, ...column }));
+			columns = template.columns.map((column) => ({
+				id: nextColumnId++,
+				...column,
+				docstring: column.docstring ?? ''
+			}));
 			importedTemplateName = file.name;
 		} catch (error) {
 			templateImportError = error instanceof Error ? error.message : String(error);
@@ -211,9 +216,14 @@
 						<h3 class="mb-2 text-sm font-medium">Initial columns</h3>
 						<div class="divide-y overflow-hidden rounded-lg border">
 							{#each preparedPlan.plan.columns as column, index (column.name)}
-								<div class="flex items-center gap-3 px-3 py-2.5">
+								<div class="flex items-start gap-3 px-3 py-2.5">
 									<span class="text-muted-foreground w-5 font-mono text-xs">{index + 1}</span>
-									<span class="min-w-0 flex-1 break-all font-mono text-xs">{column.name}</span>
+									<div class="min-w-0 flex-1">
+										<p class="break-all font-mono text-xs">{column.name}</p>
+										{#if column.docstring}
+											<p class="text-muted-foreground mt-0.5 text-xs">{column.docstring}</p>
+										{/if}
+									</div>
 									<Badge variant="outline" class="font-mono text-[11px]">{column.type}</Badge>
 								</div>
 							{/each}
@@ -345,7 +355,7 @@
 						<div class="space-y-2">
 							{#each columns as column, index (column.id)}
 								<div
-									class="grid grid-cols-[minmax(0,1fr)_8rem_auto] items-end gap-2 rounded-lg border p-3"
+									class="grid grid-cols-[minmax(0,1fr)_8rem_auto] items-end gap-2 rounded-lg border px-3 pt-2 pb-3"
 								>
 									<div>
 										<label class="text-muted-foreground text-xs" for={`create-column-${column.id}`}
@@ -380,6 +390,21 @@
 												</Select.Group>
 											</Select.Content>
 										</Select.Root>
+									</div>
+									<div class="col-span-full">
+										<label
+											class="text-muted-foreground text-xs"
+											for={`create-column-description-${column.id}`}
+										>
+											Description <span class="font-normal">(optional)</span>
+										</label>
+										<Textarea
+											id={`create-column-description-${column.id}`}
+											class="mt-1 min-h-16"
+											bind:value={column.docstring}
+											disabled={isRunning}
+											placeholder="Describe this column"
+										/>
 									</div>
 									<Button
 										variant="ghost"

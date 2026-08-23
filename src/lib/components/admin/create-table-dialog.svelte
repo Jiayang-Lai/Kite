@@ -234,7 +234,9 @@
 						<h3 class="mb-2 text-sm font-medium">Management command</h3>
 						<pre
 							class="bg-muted max-h-48 overflow-auto rounded-lg border p-3 font-mono text-xs whitespace-pre-wrap">{preparedPlan
-								.plan.command}</pre>
+								.plan.columnDocstringsCommand
+								? `${preparedPlan.plan.command}\n${preparedPlan.plan.columnDocstringsCommand}`
+								: preparedPlan.plan.command}</pre>
 					</div>
 
 					<div class="border-primary/30 bg-primary/5 rounded-lg border p-3">

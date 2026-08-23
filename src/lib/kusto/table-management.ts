@@ -26,6 +26,7 @@ export type NewTableColumn = {
 export type CreateTablePlan = {
 	kind: 'create-table';
 	command: string;
+	columnDocstringsCommand?: string;
 	tableName: string;
 	columns: readonly NewTableColumn[];
 	docstring: string;
@@ -195,6 +196,18 @@ function formatColumn(column: NewTableColumn) {
 	return `${quoteKustoEntity(column.name, 'Enter a column name.')}:${column.type}`;
 }
 
+function buildColumnDocstringsCommand(tableName: string, columns: readonly NewTableColumn[]) {
+	if (!columns.some((column) => column.docstring)) return undefined;
+	const quotedTableName = quoteKustoEntity(tableName, 'Enter a table name.');
+	const docstrings = columns
+		.map(
+			(column) =>
+				`${quoteKustoEntity(column.name, 'Enter a column name.')}:${quoteKustoString(column.docstring ?? '')}`
+		)
+		.join(', ');
+	return `.alter table ${quotedTableName} column-docstrings (${docstrings})`;
+}
+
 /** Builds one empty table creation command with an explicit initial schema. */
 export function buildCreateTablePlan(input: {
 	tableName: string;
@@ -222,10 +235,12 @@ export function buildCreateTablePlan(input: {
 		folder ? `folder = ${quoteKustoString(folder)}` : ''
 	].filter(Boolean);
 	const withClause = properties.length ? ` with (${properties.join(', ')})` : '';
+	const columnDocstringsCommand = buildColumnDocstringsCommand(tableName, columns);
 
 	return {
 		kind: 'create-table',
 		command: `.create table ${quotedTableName} (${columns.map(formatColumn).join(', ')})${withClause}`,
+		...(columnDocstringsCommand ? { columnDocstringsCommand } : {}),
 		tableName,
 		columns,
 		docstring,

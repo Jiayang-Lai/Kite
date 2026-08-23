@@ -687,6 +687,7 @@
 		const targetClusterUrl = clusterUrl;
 		const targetDatabase = editorDatabaseName;
 		let commandCompleted = false;
+		let columnDocstringsApplied = !plan.columnDocstringsCommand;
 		let succeeded = false;
 
 		createTableError = '';
@@ -730,6 +731,17 @@
 				await execution.promise;
 				if (requestId !== mutationRequestId) return;
 				commandCompleted = true;
+				if (plan.columnDocstringsCommand) {
+					const columnDocstringsExecution = startKustoManagementCommand(
+						targetDatabase,
+						plan.columnDocstringsCommand,
+						targetClusterUrl
+					);
+					activeCancel = columnDocstringsExecution.cancel;
+					await columnDocstringsExecution.promise;
+					if (requestId !== mutationRequestId) return;
+					columnDocstringsApplied = true;
+				}
 			}
 
 			await onrefreshschema?.(targetClusterId);
@@ -743,7 +755,9 @@
 				createdTable?.columns.length === plan.columns.length &&
 				createdTable.columns.every(
 					(column, index) =>
-						column.name === plan.columns[index].name && column.type === plan.columns[index].type
+						column.name === plan.columns[index].name &&
+						column.type === plan.columns[index].type &&
+						(column.docstring ?? '') === (plan.columns[index].docstring ?? '')
 				);
 			if (!createdTable || !schemaMatches || (createdTable.docstring ?? '') !== plan.docstring) {
 				createTableError = `The create command completed, but ${targetDatabase}.${plan.tableName} does not match the reviewed schema and description. Another client may have claimed this name; Kite did not replace that table.`;
@@ -757,7 +771,9 @@
 			if (requestId !== mutationRequestId) return;
 			const message = getKustoErrorMessage(error);
 			createTableError = commandCompleted
-				? `The create command completed, but Kite could not refresh and verify the table. Reconnect or refresh before continuing.\n\n${message}`
+				? !columnDocstringsApplied
+					? `The table was created, but Kite could not set its column descriptions. Reconnect or refresh before retrying the documentation update.\n\n${message}`
+					: `The create command completed, but Kite could not refresh and verify the table. Reconnect or refresh before continuing.\n\n${message}`
 				: message === 'Command cancelled.'
 					? 'Stopped waiting for creation. The Kusto operation may still complete; refresh the schema before retrying.'
 					: message;

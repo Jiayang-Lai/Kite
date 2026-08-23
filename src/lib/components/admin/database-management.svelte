@@ -815,16 +815,16 @@
 
 {#snippet tableActions(table: KustoTable)}
 	<div class="flex flex-wrap items-center justify-end gap-1">
+		<Button
+			size="xs"
+			variant="outline"
+			onclick={() => exportTableSchema(table)}
+			title={`Download ${table.name}'s schema as an Avro record`}
+		>
+			<FileDownIcon />
+			Export Schema
+		</Button>
 		{#if !isLogAnalyticsCluster}
-			<Button
-				size="xs"
-				variant="outline"
-				onclick={() => exportTableSchema(table)}
-				title={`Download ${table.name}'s schema as an Avro record`}
-			>
-				<FileDownIcon />
-				Export Avro
-			</Button>
 			<Button
 				size="xs"
 				variant="outline"

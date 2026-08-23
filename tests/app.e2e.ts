@@ -648,7 +648,7 @@ test('creates DuckDB databases and tables from emulated cluster administration',
 
 	await page.getByRole('button', { name: 'Events 1 column' }).click();
 	const avroDownload = page.waitForEvent('download');
-	await page.getByRole('button', { name: 'Export Avro' }).click();
+	await page.getByRole('button', { name: 'Export Schema' }).click();
 	expect((await avroDownload).suggestedFilename()).toBe('Events.avsc');
 	await page.getByRole('button', { name: 'Edit table' }).click();
 	const editDialog = page.getByRole('dialog', { name: 'Edit Events' });

@@ -435,7 +435,7 @@
 												<dl class="min-w-0 divide-y rounded-md border bg-background">
 													{#each table.columns as column (column.name)}
 														<div
-															class="flex min-w-0 flex-col items-start gap-1.5 px-2.5 py-2 min-[380px]:flex-row min-[380px]:justify-between min-[380px]:gap-3 sm:px-3"
+															class="flex min-w-0 flex-col items-start gap-1.5 px-2.5 py-2 min-[380px]:flex-row min-[380px]:items-center min-[380px]:justify-between min-[380px]:gap-3 sm:px-3"
 														>
 															<div class="min-w-0">
 																<dt class="break-all font-mono text-xs font-medium">

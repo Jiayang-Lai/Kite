@@ -39,6 +39,7 @@ type ConnectionLifecycleOptions = {
 	initialCluster: KustoClusterConnection;
 	onQueryExecutionReset: () => void;
 	onSchemaReady: (database: string, query: string | undefined) => void;
+	onstatechange?: () => void;
 };
 
 const SIGN_IN_TIP_DELAY_MS = 10_000;
@@ -140,6 +141,7 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 			state.connectionStatus = 'ready';
 			state.isClusterSwitching = false;
 			state.failedClusterId = undefined;
+			options.onstatechange?.();
 		} catch (error) {
 			if (currentRequestId !== requestId) return;
 			resetTabsAfterConnection = false;
@@ -149,6 +151,7 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 			state.isClusterSwitching = false;
 			if (state.databaseSchema) state.selectedClusterId = state.activeClusterId;
 			state.connectionStatus = 'error';
+			options.onstatechange?.();
 		}
 	}
 

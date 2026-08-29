@@ -58,6 +58,7 @@
 	import { getKustoErrorMessage } from '$lib/kusto/query-client';
 	import { disposeKqlTranslator } from '$lib/kql/wasm-translator';
 	import { getRecentQueryStore } from '$lib/query/recent-query-store.svelte';
+	import { createConnectionLifecycleController } from '$lib/query/connection-lifecycle-controller.svelte';
 	import { createQueryExecutionController } from '$lib/query/query-execution-controller.svelte';
 	import { createQueryTabController } from '$lib/query/query-tab-controller.svelte';
 	import { getSavedQueryStore } from '$lib/query/saved-query-store.svelte';
@@ -209,6 +210,23 @@
 		getDiagnostics: () => editorComponent?.getDiagnostics() ?? [],
 		updateTab: (tabId, update) => clusterSession.updateQueryTab(tabId, update)
 	});
+	const connectionLifecycle = createConnectionLifecycleController({
+		store: clusterConnectionStore,
+		session: clusterSession,
+		initialCluster,
+		onQueryExecutionReset: () => queryExecution.reset(),
+		onSchemaReady: (database, pendingQuery) => {
+			const tab = activeQueryTab ?? clusterSession.createQueryTab(database);
+			clusterSession.updateQueryTab(tab.id, {
+				database,
+				query: pendingQuery ?? tab.query
+			});
+			loadQueryTab(clusterSession.getQueryTab(tab.id) ?? tab);
+			executionState.result = undefined;
+			executionState.error = '';
+		},
+		onstatechange: () => syncConnectionState()
+	});
 	const queryTabsController = createQueryTabController({
 		state: tabComparisonState,
 		session: clusterSession,
@@ -219,7 +237,7 @@
 			selectedTable = undefined;
 			selectedFunction = undefined;
 		},
-		onTabLoaded: (tab) => queryExecution.loadTab(tab),
+		onTabLoaded: (tab) => loadQueryTab(tab),
 		onTabClosing: (tabId) => queryExecution.cancelTab(tabId)
 	});
 	const canSaveTargetQuery = $derived(
@@ -407,27 +425,7 @@
 	}
 
 	function closeQueryTab(tab: QueryTab) {
-		if (
-			tab.isRunning &&
-			!window.confirm(`Cancel the running query in “${getQueryTabTitle(tab)}” and close its tab?`)
-		) {
-			return;
-		}
-		if (
-			isQueryTabDirty(tab) &&
-			!window.confirm(`Close “${getQueryTabTitle(tab)}”? Its query text will be lost.`)
-		) {
-			return;
-		}
-		queryExecution.cancelTab(tab.id);
-		clusterSession.closeQueryTab(tab.id);
-		if (
-			tabComparisonState.comparisonOriginalTabId === tab.id ||
-			tabComparisonState.comparisonModifiedTabId === tab.id
-		)
-			stopQueryComparison();
-		const nextTab = clusterSession.getQueryTab(clusterSession.activeQueryTabId);
-		if (nextTab) loadQueryTab(nextTab);
+		queryTabsController.close(tab);
 	}
 
 	function scrollQueryTabsWithWheel(event: WheelEvent) {
@@ -492,78 +490,30 @@
 		}, LOG_ANALYTICS_SIGN_IN_TIP_DELAY_MS);
 	}
 
+	function syncConnectionState() {
+		const state = connectionLifecycle.state;
+		databaseSchema = state.databaseSchema;
+		connectionStatus = state.connectionStatus;
+		isClusterSwitching = state.isClusterSwitching;
+		showLogAnalyticsSignInTip = state.showLogAnalyticsSignInTip;
+		connectionError = state.connectionError;
+		failedClusterId = state.failedClusterId;
+		selectedDatabase = state.selectedDatabase;
+		selectedTable = state.selectedTable;
+		selectedFunction = state.selectedFunction;
+		activeClusterId = state.activeClusterId;
+		activeClusterUrl = state.activeClusterUrl;
+		selectedClusterId = state.selectedClusterId;
+	}
+
 	async function refreshSchema() {
-		const requestId = ++schemaRequestId;
-		const requestedCluster = clusterConnectionStore.clusters.find(
-			(cluster) => cluster.id === selectedClusterId
-		);
-		if (!requestedCluster) return;
-		const requestedClusterId = requestedCluster.id;
-		const requestedClusterUrl = requestedCluster.url;
-		const isChangingCluster = requestedClusterId !== activeClusterId;
-		connectionStatus = 'loading';
-		isClusterSwitching = isChangingCluster && Boolean(databaseSchema);
-		connectionError = '';
-		if (requestedCluster.kind === 'log-analytics') {
-			scheduleLogAnalyticsSignInTip(requestId, requestedClusterId);
-		} else {
-			clearLogAnalyticsSignInTip();
-		}
-
-		try {
-			const schema = await createConnectionRuntime(requestedCluster).loadSchema();
-			if (requestId !== schemaRequestId || requestedClusterId !== selectedClusterId) return;
-
-			const firstDatabase = Object.values(schema)[0];
-			const shouldRestoreSelection = requestedClusterId === clusterSession.activeClusterId;
-			const restoredDatabase = shouldRestoreSelection ? schema[selectedDatabase] : undefined;
-			const activeDatabase = restoredDatabase ?? firstDatabase;
-			const restoredTable = activeDatabase.tables.some((table) => table.name === selectedTable)
-				? selectedTable
-				: undefined;
-			const restoredFunction = activeDatabase.functions?.some((fn) => fn.name === selectedFunction)
-				? selectedFunction
-				: undefined;
-			const pendingQuery = shouldRestoreSelection ? clusterSession.pendingQuery : undefined;
-			clusterSession.getExplorerExpansion(requestedClusterId);
-			activeClusterId = requestedClusterId;
-			activeClusterUrl = requestedClusterUrl;
-			clusterSession.activeClusterId = requestedClusterId;
-			persistActiveClusterId(requestedClusterId);
-			databaseSchema = schema;
-			clusterSession.databaseSchema = schema;
-			selectedDatabase = activeDatabase.name;
-			selectedTable = restoredTable;
-			selectedFunction = restoredFunction;
-			if (resetTabsAfterConnection) {
-				clusterSession.resetQueryTabs(activeDatabase.name);
-				resetTabsAfterConnection = false;
-			}
-			const tab = activeQueryTab ?? clusterSession.createQueryTab(activeDatabase.name);
-			const tabQuery = pendingQuery ?? tab.query;
-			clusterSession.updateQueryTab(tab.id, { database: activeDatabase.name, query: tabQuery });
-			loadQueryTab(clusterSession.getQueryTab(tab.id) ?? tab);
-			clusterSession.pendingQuery = undefined;
-			executionState.result = undefined;
-			executionState.error = '';
-			clearLogAnalyticsSignInTip();
-			connectionStatus = 'ready';
-			isClusterSwitching = false;
-			failedClusterId = undefined;
-		} catch (error) {
-			if (requestId !== schemaRequestId) return;
-			resetTabsAfterConnection = false;
-			clearLogAnalyticsSignInTip();
-			connectionError = getKustoErrorMessage(error);
-			failedClusterId = requestedClusterId;
-			isClusterSwitching = false;
-			if (databaseSchema) {
-				selectedClusterId = activeClusterId;
-				connectionStatus = 'error';
-			} else {
-				connectionStatus = 'error';
-			}
-		}
+		const state = connectionLifecycle.state;
+		state.selectedClusterId = selectedClusterId;
+		state.selectedDatabase = selectedDatabase;
+		state.selectedTable = selectedTable;
+		state.selectedFunction = selectedFunction;
+		await connectionLifecycle.refresh();
+		syncConnectionState();
 	}
 
 	function switchCluster(clusterId: string) {
@@ -575,48 +525,33 @@
 			return;
 		}
 
-		queryExecution.reset();
-		resetTabsAfterConnection = true;
-		selectedClusterId = clusterId;
-		void refreshSchema();
+		connectionLifecycle.switchCluster(clusterId);
+		syncConnectionState();
 	}
 
 	function addCluster(draft: NewClusterConnection) {
-		const cluster = clusterConnectionStore.add(draft);
-		switchCluster(cluster.id);
+		connectionLifecycle.addCluster(draft);
+		syncConnectionState();
 	}
 
 	function editCluster(clusterId: string, draft: NewClusterConnection) {
-		clusterConnectionStore.update(clusterId, draft);
-		if (clusterId !== selectedClusterId) return;
-
-		queryExecution.reset();
-		void refreshSchema();
+		connectionLifecycle.editCluster(clusterId, draft);
+		syncConnectionState();
 	}
 
 	async function removeCluster(clusterId: string) {
-		const wasSelected = clusterId === selectedClusterId || clusterId === activeClusterId;
-		const removedCluster = clusters.find((cluster) => cluster.id === clusterId);
-		if (removedCluster?.kind === 'emulated') {
-			await releaseClusterRuntime(clusterId);
-			if (removedCluster.emulatedStorage?.mode === 'opfs') {
-				await deletePersistentDuckDbStorage(removedCluster.emulatedStorage.storageId);
-			}
-		}
-		clusterConnectionStore.remove(clusterId);
-		if (wasSelected) switchCluster(clusters[0].id);
+		await connectionLifecycle.removeCluster(clusterId);
+		syncConnectionState();
 	}
 
 	function retryFailedCluster() {
-		if (!failedClusterId) return;
-		selectedClusterId = failedClusterId;
-		void refreshSchema();
+		connectionLifecycle.retry();
+		syncConnectionState();
 	}
 
 	function dismissConnectionFailure() {
-		connectionStatus = 'ready';
-		connectionError = '';
-		failedClusterId = undefined;
+		connectionLifecycle.dismissFailure();
+		syncConnectionState();
 	}
 
 	function loadRecentQuery(query: ExplorerQuery) {

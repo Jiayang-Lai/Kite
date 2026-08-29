@@ -24,12 +24,10 @@
 		getClusterConnectionStore,
 		type NewClusterConnection
 	} from '$lib/cluster/cluster-connection-store.svelte';
-	import { createConnectionRuntime, releaseClusterRuntime } from '$lib/cluster/cluster-runtime';
+	import { createConnectionLifecycleController } from '$lib/query/connection-lifecycle-controller.svelte';
 	import { getConnectionCapabilities } from '$lib/cluster/connection-capabilities';
 	import { usesBuiltInMockCatalog } from '$lib/cluster/mock-cluster-schema';
 	import { MOCK_RECENT_QUERIES, MOCK_SAVED_QUERIES } from '$lib/data/mock-queries';
-	import { deletePersistentDuckDbStorage } from '$lib/duckdb/storage';
-	import { getKustoErrorMessage } from '$lib/kusto/query-client';
 	import { getRecentQueryStore } from '$lib/query/recent-query-store.svelte';
 	import { getSavedQueryStore } from '$lib/query/saved-query-store.svelte';
 
@@ -55,11 +53,22 @@
 	let isTableMutating = $state(false);
 	let selectedClusterId = $state(clusterSession.activeClusterId);
 	let failedClusterId = $state<string>();
-	let schemaRequestId = 0;
 	let explorerFilter = $state('');
 	let selectedDatabase = $state(clusterSession.selectedDatabase);
 	let selectedTable = $state(clusterSession.selectedTable);
 	let selectedFunction = $state(clusterSession.selectedFunction);
+	const initialCluster =
+		clusterConnectionStore.clusters.find(
+			(cluster) => cluster.id === clusterSession.activeClusterId
+		) ?? clusterConnectionStore.clusters[0];
+	const connectionLifecycle = createConnectionLifecycleController({
+		store: clusterConnectionStore,
+		session: clusterSession,
+		initialCluster,
+		onQueryExecutionReset: () => undefined,
+		onSchemaReady: () => undefined,
+		onstatechange: () => syncConnectionState()
+	});
 	const databaseSchema = $derived(clusterSession.databaseSchema);
 	const databaseCount = $derived(Object.keys(databaseSchema ?? {}).length);
 	const tableCount = $derived(
@@ -156,51 +165,27 @@
 	}
 
 	async function connectCluster(clusterId = selectedClusterId) {
-		const requestId = ++schemaRequestId;
-		const cluster = clusterConnectionStore.clusters.find((item) => item.id === clusterId);
-		if (!cluster) return false;
+		const state = connectionLifecycle.state;
+		state.selectedClusterId = clusterId;
+		state.selectedDatabase = selectedDatabase;
+		state.selectedTable = selectedTable;
+		state.selectedFunction = selectedFunction;
+		await connectionLifecycle.refresh();
+		syncConnectionState();
+		return state.connectionStatus === 'ready';
+	}
 
-		connectionStatus = 'loading';
-		isClusterSwitching = Boolean(clusterSession.databaseSchema);
-		connectionError = '';
-		try {
-			const schema = await createConnectionRuntime(cluster).loadSchema();
-			if (requestId !== schemaRequestId || clusterId !== selectedClusterId) return false;
-			const firstDatabase = Object.values(schema)[0];
-			const shouldRestoreSelection = clusterId === clusterSession.activeClusterId;
-			const activeDatabase = shouldRestoreSelection
-				? (schema[selectedDatabase] ?? firstDatabase)
-				: firstDatabase;
-
-			clusterSession.getExplorerExpansion(clusterId);
-			clusterSession.activeClusterId = clusterId;
-			persistActiveClusterId(clusterId);
-			activeClusterUrl = cluster.url;
-			clusterSession.databaseSchema = schema;
-			selectedDatabase = activeDatabase.name;
-			selectedTable =
-				shouldRestoreSelection &&
-				activeDatabase.tables.some((table) => table.name === selectedTable)
-					? selectedTable
-					: undefined;
-			selectedFunction =
-				shouldRestoreSelection &&
-				activeDatabase.functions?.some((fn) => fn.name === selectedFunction)
-					? selectedFunction
-					: undefined;
-			connectionStatus = 'ready';
-			isClusterSwitching = false;
-			failedClusterId = undefined;
-			return true;
-		} catch (error) {
-			if (requestId !== schemaRequestId) return false;
-			connectionError = getKustoErrorMessage(error);
-			connectionStatus = 'error';
-			isClusterSwitching = false;
-			failedClusterId = clusterId;
-			selectedClusterId = clusterSession.activeClusterId;
-			return false;
-		}
+	function syncConnectionState() {
+		const state = connectionLifecycle.state;
+		connectionStatus = state.connectionStatus;
+		isClusterSwitching = state.isClusterSwitching;
+		connectionError = state.connectionError;
+		failedClusterId = state.failedClusterId;
+		selectedClusterId = state.selectedClusterId;
+		activeClusterUrl = state.activeClusterUrl;
+		selectedDatabase = state.selectedDatabase;
+		selectedTable = state.selectedTable;
+		selectedFunction = state.selectedFunction;
 	}
 
 	function switchCluster(clusterId: string) {
@@ -220,29 +205,20 @@
 	}
 
 	async function removeCluster(clusterId: string) {
-		const wasSelected =
-			clusterId === selectedClusterId || clusterId === clusterSession.activeClusterId;
-		const removedCluster = clusters.find((cluster) => cluster.id === clusterId);
-		if (removedCluster?.kind === 'emulated') {
-			await releaseClusterRuntime(clusterId);
-			if (removedCluster.emulatedStorage?.mode === 'opfs') {
-				await deletePersistentDuckDbStorage(removedCluster.emulatedStorage.storageId);
-			}
-		}
-		clusterConnectionStore.remove(clusterId);
-		if (wasSelected) switchCluster(clusters[0].id);
+		await connectionLifecycle.removeCluster(clusterId);
+		selectedClusterId = connectionLifecycle.state.selectedClusterId;
 	}
 
 	function retryFailedCluster() {
-		if (!failedClusterId) return;
-		selectedClusterId = failedClusterId;
-		void connectCluster(failedClusterId);
+		connectionLifecycle.retry();
+		void connectCluster(connectionLifecycle.state.selectedClusterId);
 	}
 
 	function dismissConnectionFailure() {
-		connectionStatus = 'ready';
-		connectionError = '';
-		failedClusterId = undefined;
+		connectionLifecycle.dismissFailure();
+		connectionStatus = connectionLifecycle.state.connectionStatus;
+		connectionError = connectionLifecycle.state.connectionError;
+		failedClusterId = connectionLifecycle.state.failedClusterId;
 	}
 
 	$effect(() => {
@@ -351,9 +327,6 @@
 			clusterId={clusterSession.activeClusterId}
 			clusterUrl={activeClusterUrl}
 			clusterName={activeClusterName}
-			{isMockCluster}
-			{isEmulatedCluster}
-			{isLogAnalyticsCluster}
 			isLoading={connectionStatus === 'loading'}
 			onrefreshschema={async (clusterId) => {
 				if (!(await connectCluster(clusterId))) {

@@ -63,8 +63,16 @@ export function createQueryExecutionController(options: QueryExecutionController
 		resultsCollapsed: false
 	});
 	if (options.state) state = options.state;
-	const operation = createCancellableOperation();
-	let activeTabId: string | undefined;
+	const operations = new Map<string, ReturnType<typeof createCancellableOperation>>();
+
+	function operationFor(tabId: string) {
+		let operation = operations.get(tabId);
+		if (!operation) {
+			operation = createCancellableOperation();
+			operations.set(tabId, operation);
+		}
+		return operation;
+	}
 
 	function loadTab(tab: QueryTab) {
 		state.queryText = tab.query;
@@ -93,7 +101,7 @@ export function createQueryExecutionController(options: QueryExecutionController
 		state.errorRaw = undefined;
 		state.resultsCollapsed = false;
 		state.isRunning = true;
-		activeTabId = tab.id;
+		const operation = operationFor(tab.id);
 		options.updateTab(tab.id, {
 			isRunning: true,
 			result: undefined,
@@ -137,11 +145,9 @@ export function createQueryExecutionController(options: QueryExecutionController
 			}
 		);
 
-		if (activeTabId === tab.id) {
-			activeTabId = undefined;
-			options.updateTab(tab.id, { isRunning: false });
-			if (options.getActiveTab()?.id === tab.id) state.isRunning = false;
-		}
+		options.updateTab(tab.id, { isRunning: false });
+		if (options.getActiveTab()?.id === tab.id) state.isRunning = false;
+		if (operations.get(tab.id) === operation) operations.delete(tab.id);
 	}
 
 	return {
@@ -152,19 +158,23 @@ export function createQueryExecutionController(options: QueryExecutionController
 		updateQuery,
 		run,
 		cancel() {
-			if (activeTabId === options.getActiveTab()?.id) operation.cancel();
+			const tab = options.getActiveTab();
+			if (tab) operations.get(tab.id)?.cancel();
 		},
 		cancelTab(tabId: string) {
-			if (activeTabId === tabId) operation.cancel();
+			operations.get(tabId)?.cancel();
 		},
 		reset() {
-			operation.cancelAndInvalidate();
-			activeTabId = undefined;
+			for (const [tabId, operation] of operations) {
+				operation.cancelAndInvalidate();
+				options.updateTab(tabId, { isRunning: false });
+			}
+			operations.clear();
 			state.isRunning = false;
 		},
 		dispose() {
-			operation.dispose();
-			activeTabId = undefined;
+			for (const operation of operations.values()) operation.dispose();
+			operations.clear();
 		}
 	};
 }

@@ -58,6 +58,7 @@ export type NewClusterConnection =
 export type ClusterConnectionStore = {
 	readonly clusters: KustoClusterConnection[];
 	readonly customClusters: KustoClusterConnection[];
+	readonly hydrated: boolean;
 	hydrate: () => void;
 	add: (draft: NewClusterConnection) => KustoClusterConnection;
 	update: (clusterId: string, draft: NewClusterConnection) => KustoClusterConnection;
@@ -246,7 +247,7 @@ export function createClusterConnectionStore(): ClusterConnectionStore {
 	const builtInClusters = getKustoClusters();
 	const builtInIds = new Set(builtInClusters.map((cluster) => cluster.id));
 	let clusters = $state<KustoClusterConnection[]>(builtInClusters);
-	let hydrated = false;
+	let hydrated = $state(false);
 
 	function registerClusterStorage(nextClusters: KustoClusterConnection[]) {
 		for (const cluster of nextClusters) {
@@ -476,6 +477,9 @@ export function createClusterConnectionStore(): ClusterConnectionStore {
 		},
 		get customClusters() {
 			return clusters.filter((cluster) => !builtInIds.has(cluster.id));
+		},
+		get hydrated() {
+			return hydrated;
 		},
 		hydrate,
 		add,

@@ -5,10 +5,7 @@ import {
 	releaseClusterRuntime,
 	type ConnectionRuntime
 } from '$lib/cluster/cluster-runtime';
-import {
-	getPersistedActiveClusterId,
-	persistActiveClusterId
-} from '$lib/cluster/active-cluster-preference';
+import { persistActiveClusterId } from '$lib/cluster/active-cluster-preference';
 import type {
 	ClusterConnectionStore,
 	NewClusterConnection
@@ -205,19 +202,6 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 		state.failedClusterId = undefined;
 	}
 
-	function hydrateAndRefresh(maxSchemaAge: number) {
-		store.hydrate();
-		const persisted = getPersistedActiveClusterId();
-		if (
-			!session.databaseSchema &&
-			persisted &&
-			store.clusters.some((cluster) => cluster.id === persisted)
-		) {
-			state.selectedClusterId = persisted;
-		}
-		if (!session.isSchemaFresh(state.selectedClusterId, maxSchemaAge)) void refresh();
-	}
-
 	return {
 		state,
 		get activeCluster() {
@@ -234,7 +218,6 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 		removeCluster,
 		retry,
 		dismissFailure,
-		hydrateAndRefresh,
 		syncSessionSelection() {
 			session.selectedDatabase = state.selectedDatabase;
 			session.selectedTable = state.selectedTable;

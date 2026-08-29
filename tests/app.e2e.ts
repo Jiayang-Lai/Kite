@@ -464,6 +464,85 @@ test('compares, edits, and runs either side of two query tabs', async ({ page })
 	await expect(comparison).toHaveCount(0);
 });
 
+test('persists, reopens, updates, and deletes a saved query', async ({ page }) => {
+	test.setTimeout(60_000);
+	await page.goto('/explorer/query');
+	await page.getByRole('button', { name: /Mock cluster/ }).click();
+	await page.getByRole('menuitem').filter({ hasText: 'Emulated cluster' }).click();
+	await expect(page.getByText('memory', { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+
+	const editorSurface = page.locator('.monaco-editor').first();
+	await editorSurface.click();
+	await page.keyboard.insertText('print Message = "Saved before reload"');
+	await page.locator('button[title="Save query locally"]').click();
+	const saveQueryDialog = page.getByRole('dialog', { name: 'Save query' });
+	await saveQueryDialog.getByLabel('Query name').fill('Persistent saved query');
+	await saveQueryDialog.getByRole('button', { name: 'Save query' }).click();
+
+	await page.reload();
+	await page.goto('/explorer/query/saved');
+	await expect(page.getByText('Persistent saved query', { exact: true })).toBeVisible();
+	await expect(
+		page.getByText('print Message = "Saved before reload"', { exact: true })
+	).toBeVisible();
+	await page.getByRole('button', { name: 'Open query' }).click();
+	await expect(page).toHaveURL(/\/explorer\/query$/);
+	await expect(page.getByRole('tab', { name: /Persistent saved query/ })).toBeVisible();
+
+	await editorSurface.click();
+	await page.keyboard.press('Control+A');
+	await page.keyboard.insertText('print Message = "Updated after reload"');
+	await page.locator('button[title="Update Persistent saved query"]').click();
+	await page.goto('/explorer/query/saved');
+	await expect(
+		page.getByText('print Message = "Updated after reload"', { exact: true })
+	).toBeVisible();
+
+	await page.getByRole('button', { name: 'Delete Persistent saved query' }).click();
+	await expect(page.getByText('No saved queries', { exact: true })).toBeVisible();
+});
+
+test('restores a selected custom cluster in Explorer after a full reload', async ({ page }) => {
+	await page.goto('/');
+	await page.evaluate((storageKey) => {
+		localStorage.setItem(
+			storageKey,
+			JSON.stringify([
+				{
+					id: 'e2e-restored-mock',
+					name: 'Restored mock',
+					description: 'Persisted custom catalog',
+					url: 'mock://kite/e2e-restored-mock',
+					kind: 'mock',
+					mockSchemaRevision: 0,
+					mockSchema: {
+						RestoredDb: {
+							name: 'RestoredDb',
+							tables: [
+								{
+									name: 'RestoredEvents',
+									columns: [{ name: 'Value', type: 'string' }]
+								}
+							],
+							functions: []
+						}
+					}
+				}
+			])
+		);
+		document.cookie = 'kite_active_cluster_id=e2e-restored-mock; path=/; samesite=lax';
+	}, CLUSTER_CONNECTIONS_STORAGE_KEY);
+
+	await page.goto('/explorer/query');
+	await expect(page.getByRole('button', { name: /Restored mock/ })).toBeVisible();
+	await expect(page.getByText('RestoredDb', { exact: true }).first()).toBeVisible();
+
+	await page.reload();
+
+	await expect(page.getByRole('button', { name: /Restored mock/ })).toBeVisible();
+	await expect(page.getByText('RestoredEvents', { exact: true }).first()).toBeVisible();
+});
+
 test('releases inactive DuckDB workers and keeps at most one emulated session', async ({
 	page
 }) => {

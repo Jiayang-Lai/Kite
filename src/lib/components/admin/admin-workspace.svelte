@@ -1,7 +1,5 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
-
 	import AppHeader from '$lib/components/app/app-header.svelte';
 	import AppShell from '$lib/components/app/app-shell.svelte';
 	import ClusterConnectionSelector from '$lib/components/cluster/cluster-connection-selector.svelte';
@@ -70,6 +68,7 @@
 	let selectedDatabase = $state(clusterSession.selectedDatabase);
 	let selectedTable = $state(clusterSession.selectedTable);
 	let selectedFunction = $state(clusterSession.selectedFunction);
+	let hasInitializedConnection = false;
 	const initialCluster =
 		clusterConnectionStore.clusters.find(
 			(cluster) => cluster.id === clusterSession.activeClusterId
@@ -244,8 +243,9 @@
 		explorerExpansion = clusterSession.getExplorerExpansion(clusterSession.activeClusterId);
 	});
 
-	onMount(() => {
-		clusterConnectionStore.hydrate();
+	$effect(() => {
+		if (!clusterConnectionStore.hydrated || hasInitializedConnection) return;
+		hasInitializedConnection = true;
 		const persistedClusterId = getPersistedActiveClusterId();
 		if (
 			!clusterSession.databaseSchema &&

@@ -108,6 +108,7 @@
 	let connectionError = $state('');
 	let failedClusterId = $state<string>();
 	let explorerFilter = $state('');
+	let hasInitializedConnection = false;
 	let selectedDatabase = $state(clusterSession.selectedDatabase);
 	let selectedTable = $state(clusterSession.selectedTable);
 	let selectedFunction = $state(clusterSession.selectedFunction);
@@ -733,8 +734,9 @@
 		}
 	}
 
-	onMount(() => {
-		clusterConnectionStore.hydrate();
+	$effect(() => {
+		if (!clusterConnectionStore.hydrated || hasInitializedConnection) return;
+		hasInitializedConnection = true;
 		const persistedClusterId = getPersistedActiveClusterId();
 		if (
 			!clusterSession.databaseSchema &&
@@ -751,6 +753,9 @@
 		) {
 			void refreshSchema();
 		}
+	});
+
+	onMount(() => {
 		window.addEventListener('beforeunload', preventRefreshWithQuery);
 		return () => {
 			schemaRequestId += 1;

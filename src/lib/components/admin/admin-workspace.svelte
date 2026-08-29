@@ -4,13 +4,10 @@
 
 	import AppHeader from '$lib/components/app/app-header.svelte';
 	import AppShell from '$lib/components/app/app-shell.svelte';
-	import AdminHero from '$lib/components/admin/admin-hero.svelte';
-	import DataIngestionWorkspace from '$lib/components/admin/data-ingestion-workspace.svelte';
-	import DatabaseManagement from '$lib/components/admin/database-management.svelte';
-	import ManagementCommandWorkspace from '$lib/components/admin/management-command-workspace.svelte';
 	import ClusterConnectionSelector from '$lib/components/cluster/cluster-connection-selector.svelte';
 	import ConnectionFailureDialog from '$lib/components/cluster/connection-failure-dialog.svelte';
 	import DatabaseExplorer from '$lib/components/query/database-explorer.svelte';
+	import { Spinner } from '$lib/components/ui/spinner';
 	import type {
 		ExplorerQuery,
 		ExplorerSelection
@@ -38,6 +35,22 @@
 	};
 
 	let { view = 'overview' }: AdminWorkspaceProps = $props();
+	const adminHeroModule = $derived(
+		view === 'overview' ? import('$lib/components/admin/admin-hero.svelte') : undefined
+	);
+	const databaseManagementModule = $derived(
+		view === 'databases' ? import('$lib/components/admin/database-management.svelte') : undefined
+	);
+	const managementCommandModule = $derived(
+		view === 'commands'
+			? import('$lib/components/admin/management-command-workspace.svelte')
+			: undefined
+	);
+	const dataIngestionModule = $derived(
+		view === 'ingestion'
+			? import('$lib/components/admin/data-ingestion-workspace.svelte')
+			: undefined
+	);
 	const clusterConnectionStore = getClusterConnectionStore();
 	const clusters = $derived(clusterConnectionStore.clusters);
 	const customClusters = $derived(clusterConnectionStore.customClusters);
@@ -312,64 +325,99 @@
 	</AppHeader>
 
 	{#if view === 'overview'}
-		<AdminHero
-			clusterName={activeClusterName}
-			{databaseCount}
-			{tableCount}
-			emulatedStorage={activeCluster?.emulatedStorage}
-		/>
+		{#if adminHeroModule}
+			{#await adminHeroModule}
+				<div class="grid min-h-48 flex-1 place-items-center" aria-label="Loading admin overview">
+					<Spinner />
+				</div>
+			{:then module}
+				<module.default
+					clusterName={activeClusterName}
+					{databaseCount}
+					{tableCount}
+					{connectionStatus}
+					{connectionError}
+					capabilities={activeCapabilities}
+					emulatedStorage={activeCluster?.emulatedStorage}
+				/>
+			{/await}
+		{/if}
 	{:else if view === 'databases'}
-		<DatabaseManagement
-			databases={databaseSchema}
-			bind:selectedDatabase
-			expansionState={explorerExpansion}
-			onexpansionchange={updateExplorerExpansion}
-			clusterId={clusterSession.activeClusterId}
-			clusterUrl={activeClusterUrl}
-			clusterName={activeClusterName}
-			isLoading={connectionStatus === 'loading'}
-			onrefreshschema={async (clusterId) => {
-				if (!(await connectCluster(clusterId))) {
-					throw new Error('The backend schema refresh did not complete.');
-				}
-			}}
-			onmutationstatechange={(running) => (isTableMutating = running)}
-			onopenquery={(database) =>
-				openInQuery({
-					database
-				})}
-		/>
+		{#if databaseManagementModule}
+			{#await databaseManagementModule}
+				<div class="grid min-h-48 flex-1 place-items-center" aria-label="Loading databases">
+					<Spinner />
+				</div>
+			{:then module}
+				<module.default
+					databases={databaseSchema}
+					bind:selectedDatabase
+					expansionState={explorerExpansion}
+					onexpansionchange={updateExplorerExpansion}
+					clusterId={clusterSession.activeClusterId}
+					clusterUrl={activeClusterUrl}
+					clusterName={activeClusterName}
+					isLoading={connectionStatus === 'loading'}
+					onrefreshschema={async (clusterId) => {
+						if (!(await connectCluster(clusterId))) {
+							throw new Error('The backend schema refresh did not complete.');
+						}
+					}}
+					onmutationstatechange={(running) => (isTableMutating = running)}
+					onopenquery={(database) =>
+						openInQuery({
+							database
+						})}
+				/>
+			{/await}
+		{/if}
 	{:else if view === 'commands'}
-		<ManagementCommandWorkspace
-			databases={databaseSchema}
-			bind:selectedDatabase
-			clusterUrl={activeClusterUrl}
-			clusterName={activeClusterName}
-			{isMockCluster}
-			{isEmulatedCluster}
-			{isLogAnalyticsCluster}
-			managementCommands={activeCapabilities.managementCommands}
-			onrefreshschema={async () => {
-				await connectCluster(clusterSession.activeClusterId);
-			}}
-		/>
+		{#if managementCommandModule}
+			{#await managementCommandModule}
+				<div class="grid min-h-48 flex-1 place-items-center" aria-label="Loading commands">
+					<Spinner />
+				</div>
+			{:then module}
+				<module.default
+					databases={databaseSchema}
+					bind:selectedDatabase
+					clusterUrl={activeClusterUrl}
+					clusterName={activeClusterName}
+					{isMockCluster}
+					{isEmulatedCluster}
+					{isLogAnalyticsCluster}
+					managementCommands={activeCapabilities.managementCommands}
+					onrefreshschema={async () => {
+						await connectCluster(clusterSession.activeClusterId);
+					}}
+				/>
+			{/await}
+		{/if}
 	{:else}
-		{#key clusterSession.activeClusterId}
-			<DataIngestionWorkspace
-				databases={databaseSchema}
-				bind:selectedDatabase
-				bind:selectedTable
-				clusterId={clusterSession.activeClusterId}
-				clusterUrl={activeClusterUrl}
-				clusterName={activeClusterName}
-				ingestion={activeCluster?.ingestion}
-				emulatedStorage={activeCluster?.emulatedStorage}
-				{isMockCluster}
-				{isEmulatedCluster}
-				ingestionEnabled={activeCapabilities.ingestion !== 'none'}
-				isLoading={connectionStatus === 'loading'}
-			/>
-		{/key}
+		{#if dataIngestionModule}
+			{#await dataIngestionModule}
+				<div class="grid min-h-48 flex-1 place-items-center" aria-label="Loading ingestion">
+					<Spinner />
+				</div>
+			{:then module}
+				{#key clusterSession.activeClusterId}
+					<module.default
+						databases={databaseSchema}
+						bind:selectedDatabase
+						bind:selectedTable
+						clusterId={clusterSession.activeClusterId}
+						clusterUrl={activeClusterUrl}
+						clusterName={activeClusterName}
+						ingestion={activeCluster?.ingestion}
+						emulatedStorage={activeCluster?.emulatedStorage}
+						{isMockCluster}
+						{isEmulatedCluster}
+						ingestionEnabled={activeCapabilities.ingestion !== 'none'}
+						isLoading={connectionStatus === 'loading'}
+					/>
+				{/key}
+			{/await}
+		{/if}
 	{/if}
 
 	{#if connectionStatus === 'error' && connectionError && databaseSchema}

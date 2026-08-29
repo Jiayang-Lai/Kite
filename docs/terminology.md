@@ -26,7 +26,7 @@ This glossary defines the words Kite uses in product copy, documentation, and co
 | **Mock** (`mock`) | A browser-local in-memory schema catalog used for exploration, demos, and editor language features. | None | Built-in or custom mock schema |
 | **Emulated** (`emulated`) | A browser-local KQL-to-DuckDB environment. It is an emulation, not a Kusto server. | KQL translated to DuckDB SQL, then DuckDB-WASM | Live DuckDB catalog |
 
-For the detailed behavior of the emulated kind, see [Browser-emulated cluster](emulated-cluster.md). For Log Analytics sign-in terminology, see [Azure authentication terminology](azure-authentication-terminology.md).
+For the detailed behavior of the emulated kind, see [Browser-emulated cluster](emulated-cluster.md). Log Analytics sign-in terms are defined under [Ingestion and authentication](#ingestion-and-authentication).
 
 ## Capabilities and execution
 
@@ -62,9 +62,17 @@ For the detailed behavior of the emulated kind, see [Browser-emulated cluster](e
 | **Kustainer ingestion configuration** | Remote-connection settings identifying a mounted container directory and safe limits for browser-generated inline ingestion commands. Its presence enables the Kustainer ingestion feature. |
 | **Mounted file** | A source file already visible inside Kustainer's configured container directory. This is distinct from a file selected in the browser. |
 | **Inline file ingestion** | Browser-selected CSV data sent to Kustainer in bounded, generated management-command chunks. |
-| **Authentication profile** | A reusable browser-local Microsoft Entra configuration used by a Log Analytics connection. It stores no tokens or client secrets. See [Azure authentication terminology](azure-authentication-terminology.md). |
+| **Authentication profile** | Kite's reusable browser-local Microsoft Entra configuration: its name, tenant, application client ID, and remembered MSAL account binding. It stores no tokens or client secrets. |
+| **MSAL client** | The Microsoft Authentication Library application instance for one tenant and application client ID pair. |
+| **MSAL account** | An MSAL `AccountInfo` identity record remembered for an authentication profile. It is not proof that a usable access token is currently available. |
+| **Microsoft Entra browser session** | The upstream Entra/SSO browser session. This is the only authentication context in which Kite uses the unqualified word “session.” |
+| **Access token** | A short-lived token acquired by MSAL for the Log Analytics API. Kite does not persist it in an authentication profile. |
 | **Workspace ID** | The immutable GUID of a Log Analytics workspace. |
 | **Workspace resource ID** | The Azure Resource Manager path for a Log Analytics workspace, used for resource-scoped metadata requests. |
+
+An authentication profile is configuration, not proof of a live login. Kite considers it signed in only when its MSAL account can be resolved and a usable access token can be acquired.
+
+Removing an authentication profile removes Kite's local configuration only. **Clear Kite sign-in** clears the remembered account binding for all profiles representing the same Entra account and clears relevant MSAL caches. **Sign out** also opens Microsoft Entra's server sign-out page for the selected account.
 
 ## Preferred wording
 

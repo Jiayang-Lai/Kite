@@ -20,17 +20,13 @@
 	import AppShell from '$lib/components/app/app-shell.svelte';
 	import ClusterConnectionSelector from '$lib/components/cluster/cluster-connection-selector.svelte';
 	import ConnectionFailureDialog from '$lib/components/cluster/connection-failure-dialog.svelte';
-	import ExplorerHero from '$lib/components/explorer/explorer-hero.svelte';
 	import ConnectionStatus from '$lib/components/query/connection-status.svelte';
 	import DatabaseExplorer from '$lib/components/query/database-explorer.svelte';
 	import type {
 		ExplorerQuery,
 		ExplorerSelection
 	} from '$lib/components/query/database-explorer/cluster-explorer-types';
-	import DatabaseSchema from '$lib/components/cluster/database-schema.svelte';
-	import MonacoEditor, { type EditorDiagnostic } from '$lib/components/query/monaco-editor.svelte';
-	import QueryResults from '$lib/components/query/query-results.svelte';
-	import SavedQueriesPage from '$lib/components/query/saved-queries-page.svelte';
+	import type { EditorDiagnostic } from '$lib/components/query/monaco-editor.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -77,6 +73,21 @@
 	};
 
 	let { view = 'editor' }: QueryWorkspaceProps = $props();
+	const explorerHeroModule = $derived(
+		view === 'overview' ? import('$lib/components/explorer/explorer-hero.svelte') : undefined
+	);
+	const savedQueriesPageModule = $derived(
+		view === 'saved-queries' ? import('$lib/components/query/saved-queries-page.svelte') : undefined
+	);
+	const monacoEditorModule = $derived(
+		view === 'editor' ? import('$lib/components/query/monaco-editor.svelte') : undefined
+	);
+	const queryResultsModule = $derived(
+		view === 'editor' ? import('$lib/components/query/query-results.svelte') : undefined
+	);
+	const databaseSchemaModule = $derived(
+		view === 'editor' ? import('$lib/components/cluster/database-schema.svelte') : undefined
+	);
 	const clusterConnectionStore = getClusterConnectionStore();
 	const initialClusters = clusterConnectionStore.clusters;
 	const clusters = $derived(clusterConnectionStore.clusters);
@@ -818,466 +829,503 @@
 	/>
 
 	{#if view === 'overview'}
-		<ExplorerHero
-			clusterName={activeClusterName}
-			databaseCount={connectionStatistics.databaseCount}
-			tableCount={connectionStatistics.tableCount}
-			emulatedStorage={activeCluster?.emulatedStorage}
-		/>
+		{#if explorerHeroModule}
+			{#await explorerHeroModule}
+				<div class="grid min-h-48 flex-1 place-items-center" aria-label="Loading Explorer overview">
+					<Spinner />
+				</div>
+			{:then module}
+				<module.default
+					clusterName={activeClusterName}
+					databaseCount={connectionStatistics.databaseCount}
+					tableCount={connectionStatistics.tableCount}
+					functionCount={connectionStatistics.functionCount}
+					databases={databaseSchema ?? {}}
+					{recentQueries}
+					{savedQueries}
+					emulatedStorage={activeCluster?.emulatedStorage}
+					onqueryopen={openQuery}
+					onselectionopen={openExplorerSelection}
+				/>
+			{/await}
+		{/if}
 	{:else if view === 'saved-queries'}
-		<SavedQueriesPage queries={savedQueries} onopen={openQuery} delete={deleteSavedQuery} />
+		{#if savedQueriesPageModule}
+			{#await savedQueriesPageModule}
+				<div class="grid min-h-48 flex-1 place-items-center" aria-label="Loading saved queries">
+					<Spinner />
+				</div>
+			{:then module}
+				<module.default queries={savedQueries} onopen={openQuery} delete={deleteSavedQuery} />
+			{/await}
+		{/if}
 	{:else}
-		<Resizable.PaneGroup
-			direction="horizontal"
-			autoSaveId="kite-cluster-layout"
-			class="min-h-0 flex-1 overflow-hidden bg-muted/20 shadow-xs"
-		>
-			{#if databaseSchema}
-				<Resizable.Pane defaultSize={75} minSize={45}>
-					<div class="relative h-full min-h-0">
-						<Resizable.PaneGroup
-							direction="vertical"
-							autoSaveId="kite-query-layout"
-							class="min-h-0"
-						>
-							<Resizable.Pane defaultSize={66} minSize={25}>
-								<div
-									class="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card"
-									aria-busy={isClusterSwitching}
+		{#if monacoEditorModule && queryResultsModule && databaseSchemaModule}
+			{#await Promise.all([monacoEditorModule, queryResultsModule, databaseSchemaModule])}
+				<div class="grid min-h-48 flex-1 place-items-center" aria-label="Loading query workspace">
+					<Spinner />
+				</div>
+			{:then [monacoModule, resultsModule, schemaModule]}
+				<Resizable.PaneGroup
+					direction="horizontal"
+					autoSaveId="kite-cluster-layout"
+					class="min-h-0 flex-1 overflow-hidden bg-muted/20 shadow-xs"
+				>
+					{#if databaseSchema}
+						<Resizable.Pane defaultSize={75} minSize={45}>
+							<div class="relative h-full min-h-0">
+								<Resizable.PaneGroup
+									direction="vertical"
+									autoSaveId="kite-query-layout"
+									class="min-h-0"
 								>
-									<div class="flex h-9 shrink-0 items-stretch border-b bg-card">
-										<div class="relative min-w-0 flex-1">
-											<div
-												bind:this={queryTabList}
-												class:cursor-grabbing={queryTabDragPointerId !== undefined}
-												class="flex h-full min-w-0 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-												role="tablist"
-												aria-label="Query tabs"
-												tabindex="0"
-												onwheel={scrollQueryTabsWithWheel}
-												onpointerdown={startQueryTabDrag}
-												onpointermove={dragQueryTabs}
-												onpointerup={stopQueryTabDrag}
-												onpointercancel={stopQueryTabDrag}
-											>
-												{#each queryTabs as tab (tab.id)}
-													{@const isComparedTab = Boolean(
-														comparisonOriginalTab && tab.id === comparisonOriginalTab.id
-													)}
-													{@const isComparisonModifiedTab = Boolean(
-														comparisonOriginalTab && tab.id === comparisonModifiedTab?.id
-													)}
-													{@const isQueryTabLocked = Boolean(
-														comparisonOriginalTab &&
-														comparisonModifiedTab &&
-														tab.id !== comparisonOriginalTab.id &&
-														tab.id !== comparisonModifiedTab.id
-													)}
+									<Resizable.Pane defaultSize={66} minSize={25}>
+										<div
+											class="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card"
+											aria-busy={isClusterSwitching}
+										>
+											<div class="flex h-9 shrink-0 items-stretch border-b bg-card">
+												<div class="relative min-w-0 flex-1">
 													<div
-														data-query-tab-id={tab.id}
-														class="group flex h-full min-w-0 shrink-0 items-center border-r border-t-2 border-t-transparent px-2 text-xs transition-colors {tab.id ===
-														activeQueryTabId
-															? 'border-t-primary bg-primary/10 text-foreground'
-															: isComparisonModifiedTab
-																? 'border-t-primary/70 bg-primary/10 text-foreground'
-																: isComparedTab
-																	? 'border-t-amber-500/70 bg-amber-500/10 text-foreground'
-																	: isQueryTabLocked
-																		? 'cursor-not-allowed text-muted-foreground opacity-50'
-																		: 'text-muted-foreground hover:bg-muted'}"
-														role="tab"
-														aria-selected={tab.id === activeQueryTabId}
-														aria-disabled={isQueryTabLocked}
-														aria-label={`${getQueryTabTitle(tab)}${isComparedTab ? ', comparison original' : isComparisonModifiedTab ? ', comparison modified' : ''}`}
+														bind:this={queryTabList}
+														class:cursor-grabbing={queryTabDragPointerId !== undefined}
+														class="flex h-full min-w-0 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+														role="tablist"
+														aria-label="Query tabs"
+														tabindex="0"
+														onwheel={scrollQueryTabsWithWheel}
+														onpointerdown={startQueryTabDrag}
+														onpointermove={dragQueryTabs}
+														onpointerup={stopQueryTabDrag}
+														onpointercancel={stopQueryTabDrag}
 													>
-														<button
-															type="button"
-															class="flex h-full max-w-32 min-w-0 items-center text-left outline-none"
-															disabled={isQueryTabLocked}
-															onclick={(event) => {
-																if (ignoreQueryTabClick) return;
-																if (event.shiftKey) {
-																	compareWithQueryTab(tab);
-																	return;
-																}
-																selectQueryTab(tab);
-															}}
-															title={isQueryTabLocked
-																? 'Close diff to select this query'
-																: `${getQueryTabTitle(tab)}${
-																		activeQueryTab &&
-																		tab.id !== activeQueryTab.id &&
-																		tab.database.trim().toLowerCase() ===
-																			activeQueryTab.database.trim().toLowerCase()
-																			? ' (Shift-click to compare)'
-																			: ''
-																	}`}
-														>
-															{#if isQueryTabDirty(tab)}
-																<span
-																	class="bg-primary mr-1 inline-block size-1.5 shrink-0 rounded-full"
-																	aria-hidden="true"
-																></span>
-																<span class="sr-only">Unsaved changes </span>
-															{/if}
-															<span class="min-w-0 truncate">{getQueryTabTitle(tab)}</span>
-														</button>
+														{#each queryTabs as tab (tab.id)}
+															{@const isComparedTab = Boolean(
+																comparisonOriginalTab && tab.id === comparisonOriginalTab.id
+															)}
+															{@const isComparisonModifiedTab = Boolean(
+																comparisonOriginalTab && tab.id === comparisonModifiedTab?.id
+															)}
+															{@const isQueryTabLocked = Boolean(
+																comparisonOriginalTab &&
+																comparisonModifiedTab &&
+																tab.id !== comparisonOriginalTab.id &&
+																tab.id !== comparisonModifiedTab.id
+															)}
+															<div
+																data-query-tab-id={tab.id}
+																class="group flex h-full min-w-0 shrink-0 items-center border-r border-t-2 border-t-transparent px-2 text-xs transition-colors {tab.id ===
+																activeQueryTabId
+																	? 'border-t-primary bg-primary/10 text-foreground'
+																	: isComparisonModifiedTab
+																		? 'border-t-primary/70 bg-primary/10 text-foreground'
+																		: isComparedTab
+																			? 'border-t-amber-500/70 bg-amber-500/10 text-foreground'
+																			: isQueryTabLocked
+																				? 'cursor-not-allowed text-muted-foreground opacity-50'
+																				: 'text-muted-foreground hover:bg-muted'}"
+																role="tab"
+																aria-selected={tab.id === activeQueryTabId}
+																aria-disabled={isQueryTabLocked}
+																aria-label={`${getQueryTabTitle(tab)}${isComparedTab ? ', comparison original' : isComparisonModifiedTab ? ', comparison modified' : ''}`}
+															>
+																<button
+																	type="button"
+																	class="flex h-full max-w-32 min-w-0 items-center text-left outline-none"
+																	disabled={isQueryTabLocked}
+																	onclick={(event) => {
+																		if (ignoreQueryTabClick) return;
+																		if (event.shiftKey) {
+																			compareWithQueryTab(tab);
+																			return;
+																		}
+																		selectQueryTab(tab);
+																	}}
+																	title={isQueryTabLocked
+																		? 'Close diff to select this query'
+																		: `${getQueryTabTitle(tab)}${
+																				activeQueryTab &&
+																				tab.id !== activeQueryTab.id &&
+																				tab.database.trim().toLowerCase() ===
+																					activeQueryTab.database.trim().toLowerCase()
+																					? ' (Shift-click to compare)'
+																					: ''
+																			}`}
+																>
+																	{#if isQueryTabDirty(tab)}
+																		<span
+																			class="bg-primary mr-1 inline-block size-1.5 shrink-0 rounded-full"
+																			aria-hidden="true"
+																		></span>
+																		<span class="sr-only">Unsaved changes </span>
+																	{/if}
+																	<span class="min-w-0 truncate">{getQueryTabTitle(tab)}</span>
+																</button>
+																<Button
+																	variant="ghost"
+																	size="icon-xs"
+																	class="-mr-1 size-6 rounded-none opacity-60 group-hover:opacity-100"
+																	aria-label={`Close ${getQueryTabTitle(tab)}`}
+																	onpointerdown={(event) => event.stopPropagation()}
+																	onclick={(event) => {
+																		event.stopPropagation();
+																		closeQueryTab(tab);
+																	}}
+																>
+																	<XIcon />
+																</Button>
+															</div>
+														{/each}
+													</div>
+													{#if queryTabListCanScrollLeft}
 														<Button
 															variant="ghost"
-															size="icon-xs"
-															class="-mr-1 size-6 rounded-none opacity-60 group-hover:opacity-100"
-															aria-label={`Close ${getQueryTabTitle(tab)}`}
+															size="icon-sm"
+															class="absolute inset-y-0 left-0 z-10 h-full w-8 rounded-none border-0 border-r bg-card"
+															aria-label="Show earlier query tabs"
+															title="Show earlier query tabs"
 															onpointerdown={(event) => event.stopPropagation()}
-															onclick={(event) => {
-																event.stopPropagation();
-																closeQueryTab(tab);
-															}}
+															onclick={() => scrollQueryTabs('left')}
 														>
-															<XIcon />
+															<ChevronLeftIcon />
 														</Button>
-													</div>
-												{/each}
-											</div>
-											{#if queryTabListCanScrollLeft}
-												<Button
-													variant="ghost"
-													size="icon-sm"
-													class="absolute inset-y-0 left-0 z-10 h-full w-8 rounded-none border-0 border-r bg-card"
-													aria-label="Show earlier query tabs"
-													title="Show earlier query tabs"
-													onpointerdown={(event) => event.stopPropagation()}
-													onclick={() => scrollQueryTabs('left')}
-												>
-													<ChevronLeftIcon />
-												</Button>
-											{/if}
-											{#if queryTabListCanScrollRight}
-												<Button
-													variant="ghost"
-													size="icon-sm"
-													class="absolute inset-y-0 right-0 z-10 h-full w-8 rounded-none border-0 border-l bg-card"
-													aria-label="Show later query tabs"
-													title="Show later query tabs"
-													onpointerdown={(event) => event.stopPropagation()}
-													onclick={() => scrollQueryTabs('right')}
-												>
-													<ChevronRightIcon />
-												</Button>
-											{/if}
-										</div>
-										<div class="flex shrink-0 items-stretch border-l bg-card">
-											<Button
-												variant="ghost"
-												size="icon-sm"
-												class="h-full w-9 rounded-none border-0 border-r"
-												aria-label="New query tab"
-												onclick={() => createQueryTab()}
-											>
-												<PlusIcon />
-											</Button>
-											<Button
-												variant="ghost"
-												size="icon-sm"
-												class="h-full w-9 rounded-none border-0 border-r"
-												aria-label={databaseSchemaCollapsed
-													? 'Show database schema'
-													: 'Hide database schema'}
-												title={databaseSchemaCollapsed
-													? 'Show database schema'
-													: 'Hide database schema'}
-												onclick={toggleDatabaseSchema}
-											>
-												{#if databaseSchemaCollapsed}
-													<PanelRightOpenIcon />
-												{:else}
-													<PanelRightCloseIcon />
-												{/if}
-											</Button>
-
-											<Button
-												variant="outline"
-												size="sm"
-												class="h-full rounded-none border-0 border-r px-2.5 shadow-none"
-												disabled={!comparisonOriginalTab && !compareCandidates.length}
-												onclick={comparisonOriginalTab ? stopQueryComparison : startQueryComparison}
-												title={comparisonOriginalTab
-													? 'Close query comparison'
-													: compareCandidates.length
-														? 'Compare with another query in this database'
-														: 'Open another query tab for this database to compare queries'}
-											>
-												<ArrowLeftRightIcon />
-												{comparisonOriginalTab ? 'Close diff' : 'Compare'}
-											</Button>
-											<Button
-												variant="outline"
-												size="sm"
-												class="h-full rounded-none border-0 border-r px-2.5 shadow-none"
-												disabled={!canSaveTargetQuery ||
-													Boolean(saveTargetSavedQuery && !isSaveTargetSavedQueryDirty)}
-												onclick={() => saveQuery()}
-												title={saveTargetSavedQuery
-													? isSaveTargetSavedQueryDirty
-														? `Update ${saveTargetSavedQuery.name}`
-														: 'No saved-query changes'
-													: 'Save query locally'}
-											>
-												<BookmarkPlusIcon />
-												Save
-											</Button>
-											{#if executionState.isRunning}
-												<Button
-													variant="outline"
-													size="sm"
-													class="h-full rounded-none border-0 border-r px-2.5 shadow-none"
-													onclick={cancelQuery}
-												>
-													<CircleStopIcon />
-													Cancel
-												</Button>
-											{:else}
-												<Separator orientation="vertical" />
-												<Button
-													size="sm"
-													class="h-full rounded-none border-0 px-3 shadow-none"
-													onclick={() =>
-														void (comparisonOriginalTab && comparisonModifiedTab
-															? runComparisonQuery()
-															: runQuery())}
-													disabled={!(comparisonOriginalTab && comparisonModifiedTab
-														? tabComparisonState.focusedComparisonSide === 'left'
-															? comparisonOriginalTab.query.trim()
-															: comparisonModifiedTab.query.trim()
-														: executionState.queryText.trim()) || !isQueryable}
-													title={isMockCluster
-														? 'Query execution is unavailable for the mock cluster'
-														: 'Run query (Shift+Enter)'}
-													aria-keyshortcuts={isQueryable ? 'Shift+Enter' : undefined}
-												>
-													<PlayIcon />
-													Run
-												</Button>
-											{/if}
-										</div>
-									</div>
-
-									{#if comparisonOriginalTab && comparisonModifiedTab}
-										<section class="flex min-h-0 flex-1 flex-col" aria-label="Query comparison">
-											<div
-												class="flex h-10 shrink-0 items-center gap-3 border-b bg-muted/20 px-3 text-xs"
-											>
-												<div class="flex min-w-0 flex-1 items-center gap-2">
-													<span class="hidden shrink-0 font-medium text-muted-foreground sm:inline"
-														>Diff</span
-													>
-													<span class="hidden shrink-0 text-muted-foreground md:inline"
-														>Reference</span
-													>
-													<label class="sr-only" for="comparison-original-tab"
-														>Reference query</label
-													>
-													<Select.Root
-														type="single"
-														bind:value={tabComparisonState.comparisonOriginalTabId}
-													>
-														<Select.Trigger id="comparison-original-tab" size="sm" class="max-w-44">
-															<span data-slot="select-value" class="min-w-0 truncate">
-																{comparisonOriginalTab
-																	? getQueryTabTitle(comparisonOriginalTab)
-																	: 'Choose reference query'}
-															</span>
-														</Select.Trigger>
-														<Select.Content>
-															<Select.Group>
-																{#each compareCandidates as tab (tab.id)}
-																	<Select.Item value={tab.id} label={getQueryTabTitle(tab)} />
-																{/each}
-															</Select.Group>
-														</Select.Content>
-													</Select.Root>
-													<ArrowRightIcon class="shrink-0 text-muted-foreground" />
-													<span class="hidden shrink-0 text-muted-foreground md:inline"
-														>Current</span
-													>
-													<span
-														class="max-w-44 truncate rounded-sm bg-primary/10 px-1.5 py-1 font-medium text-foreground ring-1 ring-primary/30"
-														title={getQueryTabTitle(comparisonModifiedTab)}
-														>{getQueryTabTitle(comparisonModifiedTab)}</span
-													>
+													{/if}
+													{#if queryTabListCanScrollRight}
+														<Button
+															variant="ghost"
+															size="icon-sm"
+															class="absolute inset-y-0 right-0 z-10 h-full w-8 rounded-none border-0 border-l bg-card"
+															aria-label="Show later query tabs"
+															title="Show later query tabs"
+															onpointerdown={(event) => event.stopPropagation()}
+															onclick={() => scrollQueryTabs('right')}
+														>
+															<ChevronRightIcon />
+														</Button>
+													{/if}
 												</div>
-												<div
-													class="hidden shrink-0 border-l pl-3 font-mono text-muted-foreground lg:block"
-													title={comparisonModifiedTab.database}
-												>
-													DB: {comparisonModifiedTab.database}
+												<div class="flex shrink-0 items-stretch border-l bg-card">
+													<Button
+														variant="ghost"
+														size="icon-sm"
+														class="h-full w-9 rounded-none border-0 border-r"
+														aria-label="New query tab"
+														onclick={() => createQueryTab()}
+													>
+														<PlusIcon />
+													</Button>
+													<Button
+														variant="ghost"
+														size="icon-sm"
+														class="h-full w-9 rounded-none border-0 border-r"
+														aria-label={databaseSchemaCollapsed
+															? 'Show database schema'
+															: 'Hide database schema'}
+														title={databaseSchemaCollapsed
+															? 'Show database schema'
+															: 'Hide database schema'}
+														onclick={toggleDatabaseSchema}
+													>
+														{#if databaseSchemaCollapsed}
+															<PanelRightOpenIcon />
+														{:else}
+															<PanelRightCloseIcon />
+														{/if}
+													</Button>
+
+													<Button
+														variant="outline"
+														size="sm"
+														class="h-full rounded-none border-0 border-r px-2.5 shadow-none"
+														disabled={!comparisonOriginalTab && !compareCandidates.length}
+														onclick={comparisonOriginalTab
+															? stopQueryComparison
+															: startQueryComparison}
+														title={comparisonOriginalTab
+															? 'Close query comparison'
+															: compareCandidates.length
+																? 'Compare with another query in this database'
+																: 'Open another query tab for this database to compare queries'}
+													>
+														<ArrowLeftRightIcon />
+														{comparisonOriginalTab ? 'Close diff' : 'Compare'}
+													</Button>
+													<Button
+														variant="outline"
+														size="sm"
+														class="h-full rounded-none border-0 border-r px-2.5 shadow-none"
+														disabled={!canSaveTargetQuery ||
+															Boolean(saveTargetSavedQuery && !isSaveTargetSavedQueryDirty)}
+														onclick={() => saveQuery()}
+														title={saveTargetSavedQuery
+															? isSaveTargetSavedQueryDirty
+																? `Update ${saveTargetSavedQuery.name}`
+																: 'No saved-query changes'
+															: 'Save query locally'}
+													>
+														<BookmarkPlusIcon />
+														Save
+													</Button>
+													{#if executionState.isRunning}
+														<Button
+															variant="outline"
+															size="sm"
+															class="h-full rounded-none border-0 border-r px-2.5 shadow-none"
+															onclick={cancelQuery}
+														>
+															<CircleStopIcon />
+															Cancel
+														</Button>
+													{:else}
+														<Separator orientation="vertical" />
+														<Button
+															size="sm"
+															class="h-full rounded-none border-0 px-3 shadow-none"
+															onclick={() =>
+																void (comparisonOriginalTab && comparisonModifiedTab
+																	? runComparisonQuery()
+																	: runQuery())}
+															disabled={!(comparisonOriginalTab && comparisonModifiedTab
+																? tabComparisonState.focusedComparisonSide === 'left'
+																	? comparisonOriginalTab.query.trim()
+																	: comparisonModifiedTab.query.trim()
+																: executionState.queryText.trim()) || !isQueryable}
+															title={isMockCluster
+																? 'Query execution is unavailable for the mock cluster'
+																: 'Run query (Shift+Enter)'}
+															aria-keyshortcuts={isQueryable ? 'Shift+Enter' : undefined}
+														>
+															<PlayIcon />
+															Run
+														</Button>
+													{/if}
 												</div>
 											</div>
-											{#key `${comparisonModifiedTab.id}:${comparisonOriginalTab.id}`}
-												<MonacoEditor
-													bind:this={editorComponent}
-													value={comparisonModifiedTab.query}
-													originalValue={comparisonOriginalTab.query}
-													class="min-h-0 flex-1"
-													database={comparisonModifiedTab.database}
-													height="100%"
-													{databaseSchema}
-													clusterUrl={activeClusterUrl}
-													theme={editorTheme}
-													syncValue={false}
-													onexecute={(side) => void runComparisonQuery(side)}
-													onvaluechange={updateComparisonModifiedQuery}
-													onoriginalvaluechange={updateComparisonOriginalQuery}
-													onactivesidechange={(side) =>
-														(tabComparisonState.focusedComparisonSide = side)}
-													onlanguagestatuschange={(status) => (languageServiceStatus = status)}
-												/>
-											{/key}
-										</section>
-									{:else}
-										{#key activeQueryTabId}
-											<MonacoEditor
-												bind:this={editorComponent}
-												value={executionState.queryText}
-												class="min-h-0 flex-1"
-												database={selectedDatabase}
-												height="100%"
-												{databaseSchema}
-												clusterUrl={activeClusterUrl}
-												theme={editorTheme}
-												syncValue={false}
-												onexecute={() => void runQuery()}
-												onvaluechange={updateActiveQuery}
-												onlanguagestatuschange={(status) => (languageServiceStatus = status)}
-											/>
-										{/key}
-									{/if}
 
-									{#if isClusterSwitching}
-										<div
-											class="absolute inset-0 z-20 grid place-items-center bg-background/70 backdrop-blur-[1px]"
-										>
-											<div
-												class="text-muted-foreground flex flex-col items-center gap-2 rounded-md border bg-background px-3 py-2 text-xs shadow-sm"
-											>
-												<Spinner class="size-4" />
-												<span>Switching to {selectedClusterName}…</span>
-												{#if isSelectedLogAnalyticsCluster && showLogAnalyticsSignInTip}
+											{#if comparisonOriginalTab && comparisonModifiedTab}
+												<section class="flex min-h-0 flex-1 flex-col" aria-label="Query comparison">
 													<div
-														class="flex max-w-xs items-start gap-2 rounded-md border bg-muted/50 px-3 py-2 text-left text-xs"
+														class="flex h-10 shrink-0 items-center gap-3 border-b bg-muted/20 px-3 text-xs"
 													>
-														<LightbulbIcon class="mt-0.5 size-3.5 shrink-0 text-primary" />
-														<p>
-															<span class="font-medium">Tip:</span> Check for the Microsoft Entra sign-in
-															pop-up to continue.
-														</p>
+														<div class="flex min-w-0 flex-1 items-center gap-2">
+															<span
+																class="hidden shrink-0 font-medium text-muted-foreground sm:inline"
+																>Diff</span
+															>
+															<span class="hidden shrink-0 text-muted-foreground md:inline"
+																>Reference</span
+															>
+															<label class="sr-only" for="comparison-original-tab"
+																>Reference query</label
+															>
+															<Select.Root
+																type="single"
+																bind:value={tabComparisonState.comparisonOriginalTabId}
+															>
+																<Select.Trigger
+																	id="comparison-original-tab"
+																	size="sm"
+																	class="max-w-44"
+																>
+																	<span data-slot="select-value" class="min-w-0 truncate">
+																		{comparisonOriginalTab
+																			? getQueryTabTitle(comparisonOriginalTab)
+																			: 'Choose reference query'}
+																	</span>
+																</Select.Trigger>
+																<Select.Content>
+																	<Select.Group>
+																		{#each compareCandidates as tab (tab.id)}
+																			<Select.Item value={tab.id} label={getQueryTabTitle(tab)} />
+																		{/each}
+																	</Select.Group>
+																</Select.Content>
+															</Select.Root>
+															<ArrowRightIcon class="shrink-0 text-muted-foreground" />
+															<span class="hidden shrink-0 text-muted-foreground md:inline"
+																>Current</span
+															>
+															<span
+																class="max-w-44 truncate rounded-sm bg-primary/10 px-1.5 py-1 font-medium text-foreground ring-1 ring-primary/30"
+																title={getQueryTabTitle(comparisonModifiedTab)}
+																>{getQueryTabTitle(comparisonModifiedTab)}</span
+															>
+														</div>
+														<div
+															class="hidden shrink-0 border-l pl-3 font-mono text-muted-foreground lg:block"
+															title={comparisonModifiedTab.database}
+														>
+															DB: {comparisonModifiedTab.database}
+														</div>
 													</div>
-												{/if}
-											</div>
+													{#key `${comparisonModifiedTab.id}:${comparisonOriginalTab.id}`}
+														<monacoModule.default
+															bind:this={editorComponent}
+															value={comparisonModifiedTab.query}
+															originalValue={comparisonOriginalTab.query}
+															class="min-h-0 flex-1"
+															database={comparisonModifiedTab.database}
+															height="100%"
+															{databaseSchema}
+															clusterUrl={activeClusterUrl}
+															theme={editorTheme}
+															syncValue={false}
+															onexecute={(side) => void runComparisonQuery(side)}
+															onvaluechange={updateComparisonModifiedQuery}
+															onoriginalvaluechange={updateComparisonOriginalQuery}
+															onactivesidechange={(side) =>
+																(tabComparisonState.focusedComparisonSide = side)}
+															onlanguagestatuschange={(status) => (languageServiceStatus = status)}
+														/>
+													{/key}
+												</section>
+											{:else}
+												{#key activeQueryTabId}
+													<monacoModule.default
+														bind:this={editorComponent}
+														value={executionState.queryText}
+														class="min-h-0 flex-1"
+														database={selectedDatabase}
+														height="100%"
+														{databaseSchema}
+														clusterUrl={activeClusterUrl}
+														theme={editorTheme}
+														syncValue={false}
+														onexecute={() => void runQuery()}
+														onvaluechange={updateActiveQuery}
+														onlanguagestatuschange={(status) => (languageServiceStatus = status)}
+													/>
+												{/key}
+											{/if}
+
+											{#if isClusterSwitching}
+												<div
+													class="absolute inset-0 z-20 grid place-items-center bg-background/70 backdrop-blur-[1px]"
+												>
+													<div
+														class="text-muted-foreground flex flex-col items-center gap-2 rounded-md border bg-background px-3 py-2 text-xs shadow-sm"
+													>
+														<Spinner class="size-4" />
+														<span>Switching to {selectedClusterName}…</span>
+														{#if isSelectedLogAnalyticsCluster && showLogAnalyticsSignInTip}
+															<div
+																class="flex max-w-xs items-start gap-2 rounded-md border bg-muted/50 px-3 py-2 text-left text-xs"
+															>
+																<LightbulbIcon class="mt-0.5 size-3.5 shrink-0 text-primary" />
+																<p>
+																	<span class="font-medium">Tip:</span> Check for the Microsoft Entra
+																	sign-in pop-up to continue.
+																</p>
+															</div>
+														{/if}
+													</div>
+												</div>
+											{/if}
 										</div>
-									{/if}
-								</div>
-							</Resizable.Pane>
+									</Resizable.Pane>
 
-							<Resizable.Handle />
+									<Resizable.Handle />
 
-							<Resizable.Pane
-								bind:this={resultsPane}
-								defaultSize={34}
-								minSize={5}
-								collapsible
-								collapsedSize={5}
-								onCollapse={() => (executionState.resultsCollapsed = true)}
-								onExpand={() => (executionState.resultsCollapsed = false)}
-							>
-								<QueryResults
-									class="h-full min-h-0 rounded-none border-0"
-									result={executionState.result}
-									error={executionState.error}
-									errorRequestId={executionState.errorRequestId}
-									errorRaw={executionState.errorRaw}
-									isRunning={executionState.isRunning}
-									collapsed={executionState.resultsCollapsed}
-									oncollapsedchange={setResultsCollapsed}
-								/>
-							</Resizable.Pane>
-						</Resizable.PaneGroup>
-					</div>
-				</Resizable.Pane>
-
-				<Resizable.Handle
-					class={databaseSchemaCollapsed ? 'invisible pointer-events-none' : undefined}
-					tabindex={databaseSchemaCollapsed ? -1 : 0}
-				/>
-
-				<Resizable.Pane
-					bind:this={databaseSchemaPane}
-					defaultSize={25}
-					minSize={15}
-					maxSize={40}
-					collapsible
-					collapsedSize={0}
-					onCollapse={() => (databaseSchemaCollapsed = true)}
-					onExpand={() => (databaseSchemaCollapsed = false)}
-				>
-					<DatabaseSchema
-						class={isClusterSwitching
-							? 'pointer-events-none h-full min-h-0 rounded-none border-0 opacity-60 shadow-none'
-							: 'h-full min-h-0 rounded-none border-0 shadow-none'}
-						database={databaseSchema[selectedDatabase]}
-						expansionState={explorerExpansion}
-						onexpansionchange={updateExplorerExpansion}
-						bind:selectedTable
-						bind:selectedFunction
-						height="100%"
-					/>
-				</Resizable.Pane>
-			{:else}
-				<Resizable.Pane defaultSize={82} minSize={35}>
-					<section
-						class="flex h-full min-h-0 items-center justify-center bg-background p-6"
-						aria-live="polite"
-					>
-						{#if connectionStatus === 'loading'}
-							<div class="text-muted-foreground flex flex-col items-center gap-3 text-sm">
-								<Spinner class="size-6" />
-								<p>Connecting to {selectedClusterName}…</p>
-								{#if isSelectedLogAnalyticsCluster && showLogAnalyticsSignInTip}
-									<div
-										class="flex max-w-sm items-start gap-2 rounded-md border bg-muted/50 px-3 py-2 text-left text-xs"
+									<Resizable.Pane
+										bind:this={resultsPane}
+										defaultSize={34}
+										minSize={5}
+										collapsible
+										collapsedSize={5}
+										onCollapse={() => (executionState.resultsCollapsed = true)}
+										onExpand={() => (executionState.resultsCollapsed = false)}
 									>
-										<LightbulbIcon class="mt-0.5 size-4 shrink-0 text-primary" />
-										<p>
-											<span class="font-medium">Tip:</span> Check for potential Microsoft Entra sign-in
-											pop-up to continue.
-										</p>
+										<resultsModule.default
+											class="h-full min-h-0 rounded-none border-0"
+											result={executionState.result}
+											error={executionState.error}
+											errorRequestId={executionState.errorRequestId}
+											errorRaw={executionState.errorRaw}
+											isRunning={executionState.isRunning}
+											collapsed={executionState.resultsCollapsed}
+											oncollapsedchange={setResultsCollapsed}
+										/>
+									</Resizable.Pane>
+								</Resizable.PaneGroup>
+							</div>
+						</Resizable.Pane>
+
+						<Resizable.Handle
+							class={databaseSchemaCollapsed ? 'invisible pointer-events-none' : undefined}
+							tabindex={databaseSchemaCollapsed ? -1 : 0}
+						/>
+
+						<Resizable.Pane
+							bind:this={databaseSchemaPane}
+							defaultSize={25}
+							minSize={15}
+							maxSize={40}
+							collapsible
+							collapsedSize={0}
+							onCollapse={() => (databaseSchemaCollapsed = true)}
+							onExpand={() => (databaseSchemaCollapsed = false)}
+						>
+							<schemaModule.default
+								class={isClusterSwitching
+									? 'pointer-events-none h-full min-h-0 rounded-none border-0 opacity-60 shadow-none'
+									: 'h-full min-h-0 rounded-none border-0 shadow-none'}
+								database={databaseSchema[selectedDatabase]}
+								expansionState={explorerExpansion}
+								onexpansionchange={updateExplorerExpansion}
+								bind:selectedTable
+								bind:selectedFunction
+								height="100%"
+							/>
+						</Resizable.Pane>
+					{:else}
+						<Resizable.Pane defaultSize={82} minSize={35}>
+							<section
+								class="flex h-full min-h-0 items-center justify-center bg-background p-6"
+								aria-live="polite"
+							>
+								{#if connectionStatus === 'loading'}
+									<div class="text-muted-foreground flex flex-col items-center gap-3 text-sm">
+										<Spinner class="size-6" />
+										<p>Connecting to {selectedClusterName}…</p>
+										{#if isSelectedLogAnalyticsCluster && showLogAnalyticsSignInTip}
+											<div
+												class="flex max-w-sm items-start gap-2 rounded-md border bg-muted/50 px-3 py-2 text-left text-xs"
+											>
+												<LightbulbIcon class="mt-0.5 size-4 shrink-0 text-primary" />
+												<p>
+													<span class="font-medium">Tip:</span> Check for potential Microsoft Entra sign-in
+													pop-up to continue.
+												</p>
+											</div>
+										{/if}
+									</div>
+								{:else}
+									<div class="max-w-md text-center">
+										<h2 class="font-semibold">Could not connect to Kusto</h2>
+										<p class="text-muted-foreground mt-2 text-sm">{connectionError}</p>
+										<Button class="mt-4" variant="outline" onclick={() => void refreshSchema()}>
+											<RefreshCwIcon />
+											Retry
+										</Button>
 									</div>
 								{/if}
-							</div>
-						{:else}
-							<div class="max-w-md text-center">
-								<h2 class="font-semibold">Could not connect to Kusto</h2>
-								<p class="text-muted-foreground mt-2 text-sm">{connectionError}</p>
-								<Button class="mt-4" variant="outline" onclick={() => void refreshSchema()}>
-									<RefreshCwIcon />
-									Retry
-								</Button>
-							</div>
-						{/if}
-					</section>
-				</Resizable.Pane>
-			{/if}
-		</Resizable.PaneGroup>
+							</section>
+						</Resizable.Pane>
+					{/if}
+				</Resizable.PaneGroup>
 
-		<ConnectionStatus
-			status={connectionStatus}
-			{...connectionStatistics}
-			database={selectedDatabase}
-			{languageServiceStatus}
-			{isQueryable}
-			emulatedStorage={activeCluster?.emulatedStorage}
-			emulatedResultsWarning={isEmulatedCluster}
-			onretry={failedClusterId ? retryFailedCluster : undefined}
-		/>
+				<ConnectionStatus
+					status={connectionStatus}
+					{...connectionStatistics}
+					database={selectedDatabase}
+					{languageServiceStatus}
+					{isQueryable}
+					emulatedStorage={activeCluster?.emulatedStorage}
+					emulatedResultsWarning={isEmulatedCluster}
+					onretry={failedClusterId ? retryFailedCluster : undefined}
+				/>
+			{/await}
+		{/if}
 	{/if}
 
 	{#if connectionStatus === 'error' && connectionError && databaseSchema}

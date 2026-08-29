@@ -212,7 +212,7 @@ jobs:
 
       - name: Check direct application routes and translator asset
         run: |
-          routes="/ /admin /admin/commands /admin/databases /admin/ingestion /explorer /explorer/query /explorer/query/saved /labs/kql-to-sql"
+          routes="/ /admin /admin/commands /admin/databases /admin/ingestion /explorer /explorer/query /explorer/query/saved"
           for route in $routes; do
             curl --fail --silent --show-error --retry 3 --retry-delay 1 --retry-all-errors "http://127.0.0.1:3000$route" --output /dev/null
           done

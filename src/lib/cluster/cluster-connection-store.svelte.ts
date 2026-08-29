@@ -2,16 +2,16 @@ import { browser } from '$app/environment';
 import { getContext, setContext } from 'svelte';
 
 import {
-	createStarterMockSchema,
-	getMockClusterSchema,
-	normalizeMockSchema
-} from '$lib/cluster/mock-cluster-schema';
-import {
 	EMULATED_KUSTO_CLUSTER_URL,
 	getKustoClusters,
 	MOCK_KUSTO_CLUSTER_URL,
 	type KustoClusterConnection
-} from '$lib/kusto/query-client';
+} from '$lib/cluster/connections';
+import {
+	createStarterMockSchema,
+	getMockClusterSchema,
+	normalizeMockSchema
+} from '$lib/cluster/mock-cluster-schema';
 import {
 	createEmulatedStorage,
 	normalizeEmulatedStorage,
@@ -66,7 +66,10 @@ export type ClusterConnectionStore = {
 		expectedRevision: number,
 		mutation: (schema: KustoDatabaseSchema) => KustoDatabaseSchema
 	) => KustoClusterConnection;
-	linkLogAnalyticsAuthenticationProfile: (clusterId: string, authenticationProfileId: string) => void;
+	linkLogAnalyticsAuthenticationProfile: (
+		clusterId: string,
+		authenticationProfileId: string
+	) => void;
 	remove: (clusterId: string) => void;
 };
 
@@ -440,7 +443,10 @@ export function createClusterConnectionStore(): ClusterConnectionStore {
 		return updatedCluster;
 	}
 
-	function linkLogAnalyticsAuthenticationProfile(clusterId: string, authenticationProfileId: string) {
+	function linkLogAnalyticsAuthenticationProfile(
+		clusterId: string,
+		authenticationProfileId: string
+	) {
 		const cluster = clusters.find((item) => item.id === clusterId);
 		if (cluster?.kind !== 'log-analytics' || !cluster.logAnalytics) {
 			throw new Error('This cluster is not an Azure Log Analytics connection.');

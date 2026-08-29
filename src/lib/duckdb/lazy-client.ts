@@ -28,10 +28,6 @@ export async function executeDuckDbQuery(...args: Parameters<DuckDbClient['execu
 	return (await loadClient()).executeDuckDbQuery(...args);
 }
 
-export async function getDuckDbCatalog(...args: Parameters<DuckDbClient['getDuckDbCatalog']>) {
-	return (await loadClient()).getDuckDbCatalog(...args);
-}
-
 export async function isPersistentDuckDbSession(
 	...args: Parameters<DuckDbClient['isPersistentDuckDbSession']>
 ) {
@@ -85,7 +81,7 @@ export function startDuckDbFileQuery(options: DuckDbFileQueryOptions): QueryExec
 }
 
 /** Do not import DuckDB merely to dispose a runtime that was never created. */
-export async function disposeDuckDb(sessionId?: string) {
+export async function disposeDuckDb(sessionId: string) {
 	if (!clientPromise) return;
 	return (await clientPromise).disposeDuckDb(sessionId);
 }

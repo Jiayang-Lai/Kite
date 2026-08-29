@@ -25,8 +25,7 @@ const APPLICATION_ROUTES = [
 	'/admin/ingestion',
 	'/explorer',
 	'/explorer/query',
-	'/explorer/query/saved',
-	'/labs/kql-to-sql'
+	'/explorer/query/saved'
 ];
 
 async function openAzureAuthenticationProfiles(page: Page) {
@@ -69,11 +68,15 @@ test('serves the production build and opens the query explorer', async ({ page }
 	await expect(page).toHaveTitle('Kite');
 	await expect(
 		page.getByRole('heading', {
-			name: 'Explore data and operate your local Kusto clusters.'
+			name: 'Explore data and operate Kusto from one focused workspace.'
 		})
 	).toBeVisible();
 
-	await page.getByRole('link', { name: 'Open Query Explorer' }).click();
+	await page.getByRole('link', { name: 'Open Explorer' }).click();
+	await expect(page).toHaveURL(/\/explorer$/);
+	await expect(page.getByRole('heading', { name: 'Explore Mock cluster' })).toBeVisible();
+
+	await page.getByRole('link', { name: 'New query' }).click();
 	await expect(page).toHaveURL(/\/explorer\/query$/);
 	await expect(page.getByRole('tablist', { name: 'Query tabs' })).toBeVisible();
 	await expectDuckDbWorkerCount(page, 0);
@@ -360,68 +363,6 @@ test('shows cluster switch failures from the Explorer overview', async ({ page }
 	await expect(page.getByRole('alert')).toContainText('continue working with Mock cluster');
 });
 
-test('translates KQL to DuckDB SQL and executes it in the browser', async ({ page }) => {
-	const forbiddenRequestHost = process.env.KITE_E2E_FORBID_REQUEST_HOST;
-	const requireLocalDuckDbAssets = process.env.KITE_E2E_REQUIRE_LOCAL_DUCKDB_ASSETS === 'true';
-	const forbiddenRequestUrls: string[] = [];
-	const duckDbWorkerUrls = new Set<string>();
-	const duckDbWasmUrls = new Set<string>();
-	page.context().on('request', (request) => {
-		const requestUrl = new URL(request.url());
-		if (forbiddenRequestHost && requestUrl.hostname === forbiddenRequestHost) {
-			forbiddenRequestUrls.push(request.url());
-		}
-		if (/\/duckdb-browser-(?:eh|mvp)\.worker\.[^/]+\.js$/.test(requestUrl.pathname)) {
-			duckDbWorkerUrls.add(request.url());
-		}
-		if (/\/duckdb-(?:eh|mvp)\.[^/]+\.wasm$/.test(requestUrl.pathname)) {
-			duckDbWasmUrls.add(request.url());
-		}
-	});
-
-	const wasmLoader = await page.request.get('/kql-wasm/_framework/dotnet.js');
-	expect(wasmLoader.ok()).toBe(true);
-	await page.goto('/labs/kql-to-sql');
-
-	await expect(page).toHaveTitle('KQL to SQL WASM validation');
-	await expect(page.getByTestId('duckdb-catalog')).toContainText('memory', {
-		timeout: 30_000
-	});
-	await expect(page.getByTestId('duckdb-catalog')).toContainText('No user tables.');
-	await expect(page.getByTestId('translation-output')).toContainText(
-		"SELECT * FROM (VALUES ('Texas', CAST(12 AS BIGINT)), ('Ohio', CAST(8 AS BIGINT))) AS t(State, Events) ORDER BY Events DESC LIMIT 1",
-		{ timeout: 30_000 }
-	);
-	const resultDrawer = page.getByTestId('duckdb-results');
-	await expect(resultDrawer).toContainText('Run a duckdb query to see its results.');
-	await page.getByRole('button', { name: 'Run query' }).click();
-	await expect(resultDrawer.getByRole('cell', { name: 'Texas' })).toBeVisible({
-		timeout: 30_000
-	});
-	await expect(resultDrawer.getByRole('cell', { name: '12' })).toBeVisible();
-	await resultDrawer.getByRole('button', { name: 'Inspect row details' }).click();
-	await expect(resultDrawer.getByRole('button', { name: 'Collapse row details' })).toBeVisible();
-	await expect(resultDrawer.locator('pre').filter({ hasText: 'Texas' })).toBeVisible();
-	expect(
-		forbiddenRequestUrls,
-		`Requests to ${forbiddenRequestHost ?? 'the forbidden host'} are not allowed`
-	).toEqual([]);
-	if (requireLocalDuckDbAssets) {
-		const applicationOrigin = new URL(page.url()).origin;
-		expect(duckDbWorkerUrls.size, 'The browser must request a DuckDB worker').toBeGreaterThan(0);
-		expect(
-			duckDbWasmUrls.size,
-			'The browser must request a DuckDB runtime WASM file'
-		).toBeGreaterThan(0);
-		expect(
-			[...duckDbWorkerUrls, ...duckDbWasmUrls].every(
-				(assetUrl) => new URL(assetUrl).origin === applicationOrigin
-			),
-			'DuckDB worker and runtime WASM requests must use the Kite origin'
-		).toBe(true);
-	}
-});
-
 test('runs KQL through the emulated cluster and disables Kusto commands', async ({ page }) => {
 	const wasmLoader = await page.request.get('/kql-wasm/_framework/dotnet.js');
 	expect(wasmLoader.ok()).toBe(true);
@@ -564,7 +505,7 @@ test('releases inactive DuckDB workers and keeps at most one emulated session', 
 	await page.getByRole('link', { name: 'Kite', exact: true }).click();
 	await expect(
 		page.getByRole('heading', {
-			name: 'Explore data and operate your local Kusto clusters.'
+			name: 'Explore data and operate Kusto from one focused workspace.'
 		})
 	).toBeVisible();
 	await expectDuckDbWorkerCount(page, 0);

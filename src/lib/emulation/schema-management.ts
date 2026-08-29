@@ -4,7 +4,12 @@ import {
 	dropDuckDbDatabase,
 	executeDuckDbSql
 } from '$lib/duckdb/lazy-client';
-import { loadEmulatedSchema, quoteDuckDbIdentifier } from '$lib/emulation/cluster';
+import { loadEmulatedSchema } from '$lib/emulation/cluster';
+import {
+	qualifyDuckDbTable,
+	quoteDuckDbIdentifier,
+	quoteDuckDbString
+} from '$lib/emulation/sql-format';
 import {
 	compareTableSnapshots,
 	snapshotLoadedTable,
@@ -27,14 +32,6 @@ const KUSTO_TO_DUCKDB_TYPE: Record<KustoScalarType, string> = {
 	timespan: 'INTERVAL'
 };
 
-function quoteDuckDbString(value: string) {
-	return `'${value.replaceAll("'", "''")}'`;
-}
-
-function qualifiedTable(database: string, table: string) {
-	return `${quoteDuckDbIdentifier(database)}.main.${quoteDuckDbIdentifier(table)}`;
-}
-
 async function runTransaction(clusterId: string, statements: readonly string[]) {
 	await executeDuckDbSql('BEGIN TRANSACTION', clusterId);
 	try {
@@ -52,14 +49,14 @@ async function runTransaction(clusterId: string, statements: readonly string[]) 
 }
 
 function tableCommentStatement(database: string, table: string, comment: string) {
-	return `COMMENT ON TABLE ${qualifiedTable(database, table)} IS ${
+	return `COMMENT ON TABLE ${qualifyDuckDbTable(database, table)} IS ${
 		comment ? quoteDuckDbString(comment) : 'NULL'
 	}`;
 }
 
 function columnCommentStatement(database: string, table: string, column: string, comment?: string) {
 	if (!comment) return '';
-	return `COMMENT ON COLUMN ${qualifiedTable(database, table)}.${quoteDuckDbIdentifier(column)} IS ${quoteDuckDbString(comment)}`;
+	return `COMMENT ON COLUMN ${qualifyDuckDbTable(database, table)}.${quoteDuckDbIdentifier(column)} IS ${quoteDuckDbString(comment)}`;
 }
 
 async function assertCurrentSnapshot(clusterId: string, expectedSnapshot: TableSchemaSnapshot) {
@@ -113,7 +110,7 @@ export async function createEmulatedTable(
 		.map((column) => `${quoteDuckDbIdentifier(column.name)} ${KUSTO_TO_DUCKDB_TYPE[column.type]}`)
 		.join(', ');
 	await runTransaction(clusterId, [
-		`CREATE TABLE ${qualifiedTable(databaseName, plan.tableName)} (${columns})`,
+		`CREATE TABLE ${qualifyDuckDbTable(databaseName, plan.tableName)} (${columns})`,
 		tableCommentStatement(databaseName, plan.tableName, plan.docstring),
 		...plan.columns
 			.map((column) =>
@@ -131,7 +128,7 @@ export async function dropEmulatedTable(
 	expectedSnapshot: TableSchemaSnapshot
 ) {
 	await assertCurrentSnapshot(clusterId, expectedSnapshot);
-	await executeDuckDbSql(`DROP TABLE ${qualifiedTable(databaseName, tableName)}`, clusterId);
+	await executeDuckDbSql(`DROP TABLE ${qualifyDuckDbTable(databaseName, tableName)}`, clusterId);
 	await checkpointDuckDb(clusterId);
 }
 
@@ -144,7 +141,7 @@ export async function mutateEmulatedTable(
 	plan: TableMutationPlan
 ) {
 	await assertCurrentSnapshot(clusterId, expectedSnapshot);
-	const table = qualifiedTable(databaseName, tableName);
+	const table = qualifyDuckDbTable(databaseName, tableName);
 	const statements: string[] = [];
 
 	switch (plan.kind) {
@@ -179,7 +176,7 @@ export async function mutateEmulatedTable(
 			break;
 		case 'reorder-table-columns': {
 			const temporaryName = `__kite_reorder_${crypto.randomUUID().replaceAll('-', '')}`;
-			const temporaryTable = qualifiedTable(databaseName, temporaryName);
+			const temporaryTable = qualifyDuckDbTable(databaseName, temporaryName);
 			const selectedColumns = plan.columns
 				.map((column) => quoteDuckDbIdentifier(column.name))
 				.join(', ');

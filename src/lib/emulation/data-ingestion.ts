@@ -1,5 +1,6 @@
 import { startDuckDbFileQuery, type DuckDbRegisteredFileSource } from '$lib/duckdb/lazy-client';
-import { loadEmulatedSchema, quoteDuckDbIdentifier } from '$lib/emulation/cluster';
+import { loadEmulatedSchema } from '$lib/emulation/cluster';
+import { qualifyDuckDbTable, quoteDuckDbString } from '$lib/emulation/sql-format';
 import type { QueryExecution, QueryResult } from '$lib/types/query-result';
 
 export type EmulatedIngestionFormat = 'csv' | 'parquet';
@@ -15,14 +16,6 @@ export type EmulatedIngestionRequest = {
 	hasHeader?: boolean;
 	source: EmulatedIngestionSource;
 };
-
-function quoteDuckDbString(value: string) {
-	return `'${value.replaceAll("'", "''")}'`;
-}
-
-function qualifiedTable(database: string, table: string) {
-	return `${quoteDuckDbIdentifier(database)}.main.${quoteDuckDbIdentifier(table)}`;
-}
 
 export function resolveEmulatedRemoteUrl(value: string) {
 	const input = value.trim();
@@ -59,7 +52,7 @@ export function buildEmulatedIngestionSql(
 		format === 'csv'
 			? `read_csv(${quoteDuckDbString(virtualPath)}, header = ${hasHeader}, auto_detect = true)`
 			: `read_parquet(${quoteDuckDbString(virtualPath)})`;
-	return `INSERT INTO ${qualifiedTable(database, table)} SELECT * FROM ${source}`;
+	return `INSERT INTO ${qualifyDuckDbTable(database, table)} SELECT * FROM ${source}`;
 }
 
 function prepareSource(request: EmulatedIngestionRequest): {

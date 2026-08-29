@@ -12,6 +12,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import { createReviewablePlan } from '$lib/admin/reviewable-plan.svelte';
 	import {
 		buildTableMutationPlan,
 		KUSTO_SCALAR_TYPES,
@@ -59,29 +60,17 @@
 	let initializedTarget = '';
 	let docstring = $state('');
 	let newColumns = $state<NewColumnDraft[]>([]);
-	let reviewing = $state(false);
-	let confirmationText = $state('');
 	const isBusy = $derived(isPreparing || isRunning);
 
-	const preparedPlan = $derived.by(() => {
-		try {
-			return {
-				plan: buildTableMutationPlan({
-					tableName: table.name,
-					currentDocstring: table.docstring,
-					nextDocstring: docstring,
-					existingColumnNames: table.columns.map((column) => column.name),
-					newColumns
-				}),
-				error: ''
-			};
-		} catch (error) {
-			return {
-				plan: undefined,
-				error: error instanceof Error ? error.message : String(error)
-			};
-		}
-	});
+	const reviewPlan = createReviewablePlan(() =>
+		buildTableMutationPlan({
+			tableName: table.name,
+			currentDocstring: table.docstring,
+			nextDocstring: docstring,
+			existingColumnNames: table.columns.map((column) => column.name),
+			newColumns
+		})
+	);
 
 	$effect(() => {
 		const target = open ? `${databaseName}\u0000${table.name}` : '';
@@ -90,8 +79,7 @@
 		initializedTarget = target;
 		docstring = table.docstring ?? '';
 		newColumns = [];
-		reviewing = false;
-		confirmationText = '';
+		reviewPlan.reset();
 	});
 
 	$effect(() => {
@@ -104,32 +92,27 @@
 			...newColumns,
 			{ id: nextColumnId++, name: '', type: 'string' as KustoScalarType }
 		];
-		reviewing = false;
-		confirmationText = '';
+		reviewPlan.reset();
 	}
 
 	function removeColumn(columnId: number) {
 		if (isBusy) return;
 		newColumns = newColumns.filter((column) => column.id !== columnId);
-		reviewing = false;
-		confirmationText = '';
+		reviewPlan.reset();
 	}
 
 	function reviewChanges() {
-		if (!preparedPlan.plan || !preflightReady || isBusy) return;
-		confirmationText = '';
-		reviewing = true;
+		reviewPlan.startReview(preflightReady && !isBusy);
 	}
 
 	function returnToEditor() {
-		if (isBusy) return;
-		confirmationText = '';
-		reviewing = false;
+		reviewPlan.returnToEditor(!isBusy);
 	}
 
 	function submitChanges() {
-		if (!preparedPlan.plan || !preflightReady || confirmationText !== 'RUN' || isBusy) return;
-		onsubmit?.(preparedPlan.plan);
+		const plan = reviewPlan.prepared.plan;
+		if (!plan || !reviewPlan.canSubmit('RUN', preflightReady && !isBusy)) return;
+		onsubmit?.(plan);
 	}
 </script>
 
@@ -140,9 +123,11 @@
 		aria-describedby="table-editor-description"
 	>
 		<Dialog.Header class="border-b p-5 pr-14">
-			<Dialog.Title>{reviewing ? 'Review table update' : `Edit ${table.name}`}</Dialog.Title>
+			<Dialog.Title
+				>{reviewPlan.state.reviewing ? 'Review table update' : `Edit ${table.name}`}</Dialog.Title
+			>
 			<Dialog.Description id="table-editor-description">
-				{reviewing
+				{reviewPlan.state.reviewing
 					? 'Confirm the target and generated management command.'
 					: 'Update the description or append columns without replacing the existing schema.'}
 			</Dialog.Description>
@@ -155,7 +140,7 @@
 			scrollbarYClasses="py-1"
 		>
 			<div class="p-4 pr-5">
-				{#if reviewing && preparedPlan.plan}
+				{#if reviewPlan.state.reviewing && reviewPlan.prepared.plan}
 					<div class="space-y-5">
 						<dl class="divide-y rounded-lg border text-sm">
 							<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3 p-3">
@@ -172,12 +157,13 @@
 							</div>
 							<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3 p-3">
 								<dt class="text-muted-foreground">Changes</dt>
-								<dd>{preparedPlan.plan.summary}</dd>
+								<dd>{reviewPlan.prepared.plan.summary}</dd>
 							</div>
 							<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3 p-3">
 								<dt class="text-muted-foreground">Risk</dt>
 								<dd>
-									<Badge variant="outline" class="capitalize">{preparedPlan.plan.risk}</Badge>
+									<Badge variant="outline" class="capitalize">{reviewPlan.prepared.plan.risk}</Badge
+									>
 								</dd>
 							</div>
 							{#if snapshot}
@@ -204,8 +190,8 @@
 						<div>
 							<h3 class="mb-2 text-sm font-medium">Management command</h3>
 							<pre
-								class="bg-muted max-h-48 overflow-auto rounded-lg border p-3 font-mono text-xs whitespace-pre-wrap">{preparedPlan
-									.plan.command}</pre>
+								class="bg-muted max-h-48 overflow-auto rounded-lg border p-3 font-mono text-xs whitespace-pre-wrap">{reviewPlan
+									.prepared.plan.command}</pre>
 						</div>
 
 						<div class="border-warning/40 bg-warning/10 rounded-lg border p-3">
@@ -228,7 +214,7 @@
 							<Input
 								id="confirm-table-update"
 								class="mt-2"
-								bind:value={confirmationText}
+								bind:value={reviewPlan.state.confirmationText}
 								disabled={isBusy}
 								autocomplete="off"
 							/>
@@ -401,14 +387,17 @@
 				<Button disabled>
 					<Spinner /> Updating table
 				</Button>
-			{:else if reviewing}
+			{:else if reviewPlan.state.reviewing}
 				<Button variant="outline" onclick={returnToEditor}>Back</Button>
-				<Button disabled={!preflightReady || confirmationText !== 'RUN'} onclick={submitChanges}>
+				<Button
+					disabled={!preflightReady || reviewPlan.state.confirmationText !== 'RUN'}
+					onclick={submitChanges}
+				>
 					<SaveIcon /> Update table
 				</Button>
 			{:else}
 				<Button variant="outline" onclick={() => (open = false)}>Cancel</Button>
-				<Button disabled={!preparedPlan.plan || !preflightReady} onclick={reviewChanges}>
+				<Button disabled={!reviewPlan.prepared.plan || !preflightReady} onclick={reviewChanges}>
 					Review changes
 				</Button>
 			{/if}

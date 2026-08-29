@@ -1,0 +1,245 @@
+import { deletePersistentDuckDbStorage } from '$lib/duckdb/storage';
+import type { ClusterSession } from '$lib/cluster/cluster-session.svelte';
+import {
+	createConnectionRuntime,
+	releaseClusterRuntime,
+	type ConnectionRuntime
+} from '$lib/cluster/cluster-runtime';
+import {
+	getPersistedActiveClusterId,
+	persistActiveClusterId
+} from '$lib/cluster/active-cluster-preference';
+import type {
+	ClusterConnectionStore,
+	NewClusterConnection
+} from '$lib/cluster/cluster-connection-store.svelte';
+import { getKustoErrorMessage, type KustoClusterConnection } from '$lib/kusto/query-client';
+import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
+
+export type ConnectionState = 'loading' | 'ready' | 'error';
+
+export type ConnectionLifecycleState = {
+	databaseSchema?: KustoDatabaseSchema;
+	connectionStatus: ConnectionState;
+	isClusterSwitching: boolean;
+	showLogAnalyticsSignInTip: boolean;
+	connectionError: string;
+	failedClusterId?: string;
+	selectedDatabase: string;
+	selectedTable?: string;
+	selectedFunction?: string;
+	activeClusterId: string;
+	activeClusterUrl: string;
+	selectedClusterId: string;
+};
+
+type ConnectionLifecycleOptions = {
+	store: ClusterConnectionStore;
+	session: ClusterSession;
+	initialCluster: KustoClusterConnection;
+	onQueryExecutionReset: () => void;
+	onSchemaReady: (database: string, query: string | undefined) => void;
+};
+
+const SIGN_IN_TIP_DELAY_MS = 10_000;
+
+/** Owns cluster selection, schema loading, and stale connection-response handling. */
+export function createConnectionLifecycleController(options: ConnectionLifecycleOptions) {
+	const { store, session, initialCluster } = options;
+	const state = $state<ConnectionLifecycleState>({
+		databaseSchema: session.databaseSchema,
+		connectionStatus: 'loading',
+		isClusterSwitching: false,
+		showLogAnalyticsSignInTip: false,
+		connectionError: '',
+		selectedDatabase: session.selectedDatabase,
+		selectedTable: session.selectedTable,
+		selectedFunction: session.selectedFunction,
+		activeClusterId: initialCluster.id,
+		activeClusterUrl: initialCluster.url,
+		selectedClusterId: initialCluster.id
+	});
+	let requestId = 0;
+	let resetTabsAfterConnection = false;
+	let signInTipTimeout: number | undefined;
+
+	function activeCluster() {
+		return store.clusters.find((cluster) => cluster.id === state.activeClusterId);
+	}
+
+	function selectedCluster() {
+		return store.clusters.find((cluster) => cluster.id === state.selectedClusterId);
+	}
+
+	function runtime(): ConnectionRuntime | undefined {
+		const cluster = activeCluster();
+		return cluster ? createConnectionRuntime(cluster) : undefined;
+	}
+
+	function clearSignInTip() {
+		if (signInTipTimeout !== undefined) window.clearTimeout(signInTipTimeout);
+		signInTipTimeout = undefined;
+		state.showLogAnalyticsSignInTip = false;
+	}
+
+	function scheduleSignInTip(currentRequestId: number, clusterId: string) {
+		clearSignInTip();
+		signInTipTimeout = window.setTimeout(() => {
+			signInTipTimeout = undefined;
+			if (
+				currentRequestId === requestId &&
+				clusterId === state.selectedClusterId &&
+				state.connectionStatus === 'loading'
+			) {
+				state.showLogAnalyticsSignInTip = true;
+			}
+		}, SIGN_IN_TIP_DELAY_MS);
+	}
+
+	async function refresh() {
+		const currentRequestId = ++requestId;
+		const cluster = selectedCluster();
+		if (!cluster) return;
+		const switching = cluster.id !== state.activeClusterId;
+		state.connectionStatus = 'loading';
+		state.isClusterSwitching = switching && Boolean(state.databaseSchema);
+		state.connectionError = '';
+		if (cluster.kind === 'log-analytics') scheduleSignInTip(currentRequestId, cluster.id);
+		else clearSignInTip();
+
+		try {
+			const schema = await createConnectionRuntime(cluster).loadSchema();
+			if (currentRequestId !== requestId || cluster.id !== state.selectedClusterId) return;
+			const firstDatabase = Object.values(schema)[0];
+			const restore = cluster.id === session.activeClusterId;
+			const database = (restore ? schema[state.selectedDatabase] : undefined) ?? firstDatabase;
+			const table = database.tables.some((item) => item.name === state.selectedTable)
+				? state.selectedTable
+				: undefined;
+			const fn = database.functions?.some((item) => item.name === state.selectedFunction)
+				? state.selectedFunction
+				: undefined;
+			const pendingQuery = restore ? session.pendingQuery : undefined;
+			session.getExplorerExpansion(cluster.id);
+			state.activeClusterId = cluster.id;
+			state.activeClusterUrl = cluster.url;
+			session.activeClusterId = cluster.id;
+			persistActiveClusterId(cluster.id);
+			state.databaseSchema = schema;
+			session.databaseSchema = schema;
+			state.selectedDatabase = database.name;
+			state.selectedTable = table;
+			state.selectedFunction = fn;
+			if (resetTabsAfterConnection) {
+				session.resetQueryTabs(database.name);
+				resetTabsAfterConnection = false;
+			}
+			options.onSchemaReady(database.name, pendingQuery);
+			session.pendingQuery = undefined;
+			clearSignInTip();
+			state.connectionStatus = 'ready';
+			state.isClusterSwitching = false;
+			state.failedClusterId = undefined;
+		} catch (error) {
+			if (currentRequestId !== requestId) return;
+			resetTabsAfterConnection = false;
+			clearSignInTip();
+			state.connectionError = getKustoErrorMessage(error);
+			state.failedClusterId = cluster.id;
+			state.isClusterSwitching = false;
+			if (state.databaseSchema) state.selectedClusterId = state.activeClusterId;
+			state.connectionStatus = 'error';
+		}
+	}
+
+	function switchCluster(clusterId: string) {
+		if (clusterId === state.selectedClusterId) return;
+		if (
+			session.queryTabs.some((tab) => tab.query.trim()) &&
+			!window.confirm('Switching connections will close all query tabs. Continue?')
+		)
+			return;
+		options.onQueryExecutionReset();
+		resetTabsAfterConnection = true;
+		state.selectedClusterId = clusterId;
+		void refresh();
+	}
+
+	function addCluster(draft: NewClusterConnection) {
+		switchCluster(store.add(draft).id);
+	}
+
+	function editCluster(clusterId: string, draft: NewClusterConnection) {
+		store.update(clusterId, draft);
+		if (clusterId !== state.selectedClusterId) return;
+		options.onQueryExecutionReset();
+		void refresh();
+	}
+
+	async function removeCluster(clusterId: string) {
+		const wasSelected =
+			clusterId === state.selectedClusterId || clusterId === state.activeClusterId;
+		const cluster = store.clusters.find((item) => item.id === clusterId);
+		if (cluster?.kind === 'emulated') {
+			await releaseClusterRuntime(clusterId);
+			if (cluster.emulatedStorage?.mode === 'opfs') {
+				await deletePersistentDuckDbStorage(cluster.emulatedStorage.storageId);
+			}
+		}
+		store.remove(clusterId);
+		if (wasSelected) switchCluster(store.clusters[0].id);
+	}
+
+	function retry() {
+		if (!state.failedClusterId) return;
+		state.selectedClusterId = state.failedClusterId;
+		void refresh();
+	}
+
+	function dismissFailure() {
+		state.connectionStatus = 'ready';
+		state.connectionError = '';
+		state.failedClusterId = undefined;
+	}
+
+	function hydrateAndRefresh(maxSchemaAge: number) {
+		store.hydrate();
+		const persisted = getPersistedActiveClusterId();
+		if (
+			!session.databaseSchema &&
+			persisted &&
+			store.clusters.some((cluster) => cluster.id === persisted)
+		) {
+			state.selectedClusterId = persisted;
+		}
+		if (!session.isSchemaFresh(state.selectedClusterId, maxSchemaAge)) void refresh();
+	}
+
+	return {
+		state,
+		get activeCluster() {
+			return activeCluster();
+		},
+		get selectedCluster() {
+			return selectedCluster();
+		},
+		runtime,
+		refresh,
+		switchCluster,
+		addCluster,
+		editCluster,
+		removeCluster,
+		retry,
+		dismissFailure,
+		hydrateAndRefresh,
+		syncSessionSelection() {
+			session.selectedDatabase = state.selectedDatabase;
+			session.selectedTable = state.selectedTable;
+			session.selectedFunction = state.selectedFunction;
+		},
+		dispose() {
+			requestId += 1;
+			clearSignInTip();
+		}
+	};
+}

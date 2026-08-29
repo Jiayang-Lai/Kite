@@ -25,20 +25,11 @@
 	import { getClusterConnectionStore } from '$lib/cluster/cluster-connection-store.svelte';
 	import { getConnectionCapabilities } from '$lib/cluster/connection-capabilities';
 	import {
-		applyMockCreateDatabase,
-		applyMockCreateTable,
-		applyMockDropDatabase,
-		applyMockDropTable,
-		applyMockRenameDatabase,
-		applyMockTableMutation
-	} from '$lib/cluster/mock-schema-management';
-	import {
-		createEmulatedDatabase,
-		createEmulatedTable,
-		dropEmulatedDatabase,
-		dropEmulatedTable,
-		mutateEmulatedTable
-	} from '$lib/emulation/schema-management';
+		createSchemaMutationAdapter,
+		type SchemaMutationOutcome,
+		type TableMutationOutcome,
+		type TableVerification
+	} from '$lib/admin/schema-mutation-adapter';
 	import type {
 		ExplorerExpansionChange,
 		ExplorerExpansionState
@@ -49,17 +40,8 @@
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import * as Tooltip from '$lib/components/ui/tooltip';
-	import { quoteKustoEntity, quoteKustoString } from '$lib/kusto/command-format';
+	import { getKustoErrorMessage } from '$lib/kusto/query-client';
 	import {
-		getKustoErrorMessage,
-		startKustoManagementCommand,
-		startKustoReadOnlyManagementCommandBatch
-	} from '$lib/kusto/query-client';
-	import {
-		buildTablePreflightCommands,
-		buildDropTableCommand,
-		compareTableSnapshots,
-		parseTablePreflightResults,
 		snapshotLoadedTable,
 		type CreateTablePlan,
 		type TableMutationPlan,
@@ -318,11 +300,32 @@
 		tableDropOpen = true;
 	}
 
+	function getMutationAdapter(
+		onstage?: (stage: 'table-created' | 'column-docstrings-applied') => void
+	) {
+		const cluster = clusterConnectionStore.clusters.find((candidate) => candidate.id === clusterId);
+		if (!cluster) throw new Error('This cluster no longer exists.');
+		return createSchemaMutationAdapter({
+			cluster,
+			mockSchemaStore: clusterConnectionStore,
+			mockSchemaRevision: editorMockSchemaRevision,
+			onexecution: (execution) => {
+				activeCancel = execution.cancel;
+			},
+			onstage
+		});
+	}
+
+	function isConflict(
+		outcome: SchemaMutationOutcome | TableMutationOutcome | TableVerification
+	): outcome is Extract<TableVerification, { kind: 'conflict' }> {
+		return 'kind' in outcome && outcome.kind === 'conflict';
+	}
+
 	async function removeTable() {
 		if (!tableDropSnapshot || isDroppingTable) return;
 		const requestId = ++mutationRequestId;
 		const targetClusterId = clusterId;
-		const targetClusterUrl = clusterUrl;
 		const targetDatabase = tableDropDatabaseName;
 		const targetTable = tableDropTableName;
 		const originalSnapshot = tableDropSnapshot;
@@ -331,49 +334,22 @@
 		isDroppingTable = true;
 		onmutationstatechange?.(true);
 		try {
-			if (isMockCluster) {
-				const updatedCluster = clusterConnectionStore.updateMockSchema(
-					targetClusterId,
-					editorMockSchemaRevision,
-					(schema) => applyMockDropTable(schema, targetDatabase, targetTable, originalSnapshot)
+			const outcome = await getMutationAdapter().dropTable(
+				targetDatabase,
+				targetTable,
+				originalSnapshot
+			);
+			if (requestId !== mutationRequestId) return;
+			if (isConflict(outcome)) {
+				await onrefreshschema?.(targetClusterId);
+				throw new Error(
+					`Removal blocked because the table changed after the schema was loaded:\n\n${outcome.conflicts
+						.map((conflict) => `• ${conflict.message}`)
+						.join('\n')}\n\nReview the refreshed schema before trying again.`
 				);
-				editorMockSchemaRevision = updatedCluster.mockSchemaRevision ?? editorMockSchemaRevision;
-				commandCompleted = true;
-			} else if (isEmulatedCluster) {
-				await dropEmulatedTable(targetClusterId, targetDatabase, targetTable, originalSnapshot);
-				if (requestId !== mutationRequestId) return;
-				commandCompleted = true;
-			} else {
-				const preflight = startKustoReadOnlyManagementCommandBatch(
-					targetDatabase,
-					buildTablePreflightCommands(targetTable),
-					targetClusterUrl
-				);
-				activeCancel = preflight.cancel;
-				const preflightResults = await preflight.promise;
-				if (requestId !== mutationRequestId) return;
-
-				const currentSnapshot = parseTablePreflightResults(preflightResults);
-				const conflicts = compareTableSnapshots(originalSnapshot, currentSnapshot);
-				if (conflicts.length) {
-					await onrefreshschema?.(targetClusterId);
-					throw new Error(
-						`Removal blocked because the table changed after the schema was loaded:\n\n${conflicts
-							.map((conflict) => `• ${conflict.message}`)
-							.join('\n')}\n\nReview the refreshed schema before trying again.`
-					);
-				}
-
-				const execution = startKustoManagementCommand(
-					targetDatabase,
-					buildDropTableCommand(targetTable),
-					targetClusterUrl
-				);
-				activeCancel = execution.cancel;
-				await execution.promise;
-				if (requestId !== mutationRequestId) return;
-				commandCompleted = true;
 			}
+			if (outcome.mockSchemaRevision != null) editorMockSchemaRevision = outcome.mockSchemaRevision;
+			commandCompleted = true;
 
 			await onrefreshschema?.(targetClusterId);
 			await tick();
@@ -408,7 +384,6 @@
 		if (isDatabaseMutating) return;
 		const requestId = ++mutationRequestId;
 		const targetClusterId = clusterId;
-		const targetClusterUrl = clusterUrl;
 		const targetDatabase = databaseDialogTarget;
 		const action = databaseDialogAction;
 		const requestedName = request.name?.trim() ?? '';
@@ -420,88 +395,43 @@
 		isDatabaseMutating = true;
 		onmutationstatechange?.(true);
 		try {
-			if (targetCluster.kind === 'mock') {
-				const updatedCluster = clusterConnectionStore.updateMockSchema(
-					targetClusterId,
-					editorMockSchemaRevision,
-					(schema) => {
-						switch (action) {
-							case 'create':
-								return applyMockCreateDatabase(schema, requestedName);
-							case 'rename':
-								return applyMockRenameDatabase(schema, targetDatabase, requestedName);
-							case 'drop':
-								return applyMockDropDatabase(schema, targetDatabase);
-						}
-					}
-				);
-				editorMockSchemaRevision = updatedCluster.mockSchemaRevision ?? editorMockSchemaRevision;
-				const nextDatabase =
-					action === 'create' || action === 'rename'
-						? requestedName
-						: Object.keys(updatedCluster.mockSchema ?? {})[0];
-				selectedDatabase = nextDatabase;
+			if (targetCluster.kind === 'remote') {
 				await onrefreshschema?.(targetClusterId);
+				await tick();
 				if (requestId !== mutationRequestId) return;
-				mutationSuccess =
-					action === 'create'
-						? `Database ${nextDatabase} created.`
-						: action === 'rename'
-							? `Database ${targetDatabase} renamed to ${nextDatabase}.`
-							: `Database ${targetDatabase} deleted.`;
-				return;
+				if (
+					!Object.keys(databases ?? {}).some(
+						(candidate) => candidate.toLowerCase() === targetDatabase.toLowerCase()
+					)
+				) {
+					throw new Error(
+						`Database “${targetDatabase}” changed or no longer exists. The schema was refreshed.`
+					);
+				}
 			}
-			if (targetCluster.kind === 'emulated') {
-				if (action === 'rename') {
-					throw new Error('DuckDB does not support renaming an attached database.');
-				}
-				if (action === 'create') {
-					await createEmulatedDatabase(targetClusterId, requestedName);
-				} else {
-					await dropEmulatedDatabase(targetClusterId, targetDatabase);
-				}
-				if (requestId !== mutationRequestId) return;
-				await onrefreshschema?.(targetClusterId);
-				if (requestId !== mutationRequestId) return;
-				selectedDatabase =
-					action === 'create'
-						? requestedName
-						: (Object.keys(databases ?? {}).find((name) => name !== targetDatabase) ?? '');
-				mutationSuccess =
-					action === 'create'
-						? `Database ${requestedName} created.`
+
+			const outcome = await getMutationAdapter().mutateDatabase(
+				action,
+				targetDatabase,
+				requestedName
+			);
+			if (outcome.mockSchemaRevision != null) editorMockSchemaRevision = outcome.mockSchemaRevision;
+
+			if (requestId !== mutationRequestId) return;
+			await onrefreshschema?.(targetClusterId);
+			await tick();
+			if (requestId !== mutationRequestId) return;
+			const nextDatabase =
+				action === 'create' || action === 'rename'
+					? requestedName
+					: (Object.keys(databases ?? {}).find((name) => name !== targetDatabase) ?? '');
+			selectedDatabase = nextDatabase;
+			mutationSuccess =
+				action === 'create'
+					? `Database ${nextDatabase} created.`
+					: action === 'rename'
+						? `Database ${targetDatabase} ${targetCluster.kind === 'remote' ? 'display name changed to' : 'renamed to'} ${nextDatabase}.`
 						: `Database ${targetDatabase} deleted.`;
-				return;
-			}
-
-			await onrefreshschema?.(targetClusterId);
-			await tick();
-			if (requestId !== mutationRequestId) return;
-
-			if (action !== 'rename') {
-				throw new Error('The local backend does not support remote database creation or deletion.');
-			}
-			if (
-				!Object.keys(databases ?? {}).some(
-					(candidate) => candidate.toLowerCase() === targetDatabase.toLowerCase()
-				)
-			) {
-				throw new Error(
-					`Database “${targetDatabase}” changed or no longer exists. The schema was refreshed.`
-				);
-			}
-
-			const command = `.alter database ${quoteKustoEntity(targetDatabase)} prettyname ${quoteKustoString(requestedName)}`;
-			const execution = startKustoManagementCommand(targetDatabase, command, targetClusterUrl);
-			activeCancel = execution.cancel;
-			await execution.promise;
-
-			if (requestId !== mutationRequestId) return;
-			await onrefreshschema?.(targetClusterId);
-			await tick();
-			if (requestId !== mutationRequestId) return;
-
-			mutationSuccess = `Database ${targetDatabase} display name changed to ${requestedName}.`;
 		} catch (error) {
 			throw new Error(getKustoErrorMessage(error));
 		} finally {
@@ -514,37 +444,15 @@
 	async function prepareTableEditor(table: KustoTable, databaseName: string) {
 		const requestId = ++mutationRequestId;
 		const targetClusterId = clusterId;
-		const targetClusterUrl = clusterUrl;
 		const loadedSnapshot = snapshotLoadedTable(databaseName, table);
 		let closeAfterRefresh = false;
 
 		isPreparingEditor = true;
 		onmutationstatechange?.(true);
 		try {
-			if (isMockCluster) {
-				editorSnapshot = loadedSnapshot;
-				editorMockSchemaRevision =
-					clusterConnectionStore.clusters.find((cluster) => cluster.id === targetClusterId)
-						?.mockSchemaRevision ?? 0;
-				return;
-			}
-			if (isEmulatedCluster) {
-				editorSnapshot = loadedSnapshot;
-				return;
-			}
-
-			const execution = startKustoReadOnlyManagementCommandBatch(
-				databaseName,
-				buildTablePreflightCommands(table.name),
-				targetClusterUrl
-			);
-			activeCancel = execution.cancel;
-			const results = await execution.promise;
+			const verification = await getMutationAdapter().prepareTable(databaseName, loadedSnapshot);
 			if (requestId !== mutationRequestId) return;
-
-			const currentSnapshot = parseTablePreflightResults(results);
-			const conflicts = compareTableSnapshots(loadedSnapshot, currentSnapshot);
-			if (conflicts.length) {
+			if (isConflict(verification)) {
 				await onrefreshschema?.(targetClusterId);
 				if (requestId !== mutationRequestId) return;
 				mutationSuccess =
@@ -552,7 +460,12 @@
 				closeAfterRefresh = true;
 				return;
 			}
-			editorSnapshot = currentSnapshot;
+			if (isMockCluster) {
+				editorMockSchemaRevision =
+					clusterConnectionStore.clusters.find((cluster) => cluster.id === targetClusterId)
+						?.mockSchemaRevision ?? 0;
+			}
+			editorSnapshot = verification.snapshot;
 		} catch (error) {
 			if (requestId !== mutationRequestId) return;
 			const message = getKustoErrorMessage(error);
@@ -580,7 +493,6 @@
 
 		const requestId = ++mutationRequestId;
 		const targetClusterId = clusterId;
-		const targetClusterUrl = clusterUrl;
 		const targetDatabase = editorDatabaseName;
 		const targetTable = editorTable.name;
 		const originalSnapshot = editorSnapshot;
@@ -592,52 +504,16 @@
 		isMutating = true;
 		onmutationstatechange?.(true);
 		try {
-			if (isMockCluster) {
-				const updatedCluster = clusterConnectionStore.updateMockSchema(
-					targetClusterId,
-					editorMockSchemaRevision,
-					(schema) =>
-						applyMockTableMutation(schema, targetDatabase, targetTable, originalSnapshot, plan)
-				);
-				editorMockSchemaRevision = updatedCluster.mockSchemaRevision ?? editorMockSchemaRevision;
-				commandCompleted = true;
-				await onrefreshschema?.(targetClusterId);
-				if (requestId !== mutationRequestId) return;
-				mutationSuccess = `${targetDatabase}.${targetTable}: ${plan.summary}.`;
-				succeeded = true;
-				return;
-			}
-			if (isEmulatedCluster) {
-				await mutateEmulatedTable(
-					targetClusterId,
-					targetDatabase,
-					targetTable,
-					originalSnapshot,
-					plan
-				);
-				if (requestId !== mutationRequestId) return;
-				commandCompleted = true;
-				await onrefreshschema?.(targetClusterId);
-				if (requestId !== mutationRequestId) return;
-				mutationSuccess = `${targetDatabase}.${targetTable}: ${plan.summary}.`;
-				succeeded = true;
-				return;
-			}
-
-			const preflight = startKustoReadOnlyManagementCommandBatch(
+			const outcome = await getMutationAdapter().mutateTable(
 				targetDatabase,
-				buildTablePreflightCommands(targetTable),
-				targetClusterUrl
+				targetTable,
+				originalSnapshot,
+				plan
 			);
-			activeCancel = preflight.cancel;
-			const preflightResults = await preflight.promise;
 			if (requestId !== mutationRequestId) return;
-
-			const currentSnapshot = parseTablePreflightResults(preflightResults);
-			const conflicts = compareTableSnapshots(originalSnapshot, currentSnapshot);
-			if (conflicts.length) {
+			if (isConflict(outcome)) {
 				editorSnapshot = undefined;
-				mutationError = `Update blocked because the table changed while this editor was open:\n\n${conflicts.map((conflict) => `• ${conflict.message}`).join('\n')}\n\nClose and reopen the editor to review the latest schema.`;
+				mutationError = `Update blocked because the table changed while this editor was open:\n\n${outcome.conflicts.map((conflict) => `• ${conflict.message}`).join('\n')}\n\nClose and reopen the editor to review the latest schema.`;
 				try {
 					await onrefreshschema?.(targetClusterId);
 				} catch (error) {
@@ -645,11 +521,7 @@
 				}
 				return;
 			}
-
-			const execution = startKustoManagementCommand(targetDatabase, plan.command, targetClusterUrl);
-			activeCancel = execution.cancel;
-			await execution.promise;
-			if (requestId !== mutationRequestId) return;
+			if (outcome.mockSchemaRevision != null) editorMockSchemaRevision = outcome.mockSchemaRevision;
 			commandCompleted = true;
 
 			await onrefreshschema?.(targetClusterId);
@@ -684,7 +556,6 @@
 
 		const requestId = ++mutationRequestId;
 		const targetClusterId = clusterId;
-		const targetClusterUrl = clusterUrl;
 		const targetDatabase = editorDatabaseName;
 		let commandCompleted = false;
 		let columnDocstringsApplied = !plan.columnDocstringsCommand;
@@ -695,19 +566,7 @@
 		isCreatingTable = true;
 		onmutationstatechange?.(true);
 		try {
-			if (isMockCluster) {
-				const updatedCluster = clusterConnectionStore.updateMockSchema(
-					targetClusterId,
-					editorMockSchemaRevision,
-					(schema) => applyMockCreateTable(schema, targetDatabase, plan)
-				);
-				editorMockSchemaRevision = updatedCluster.mockSchemaRevision ?? editorMockSchemaRevision;
-				commandCompleted = true;
-			} else if (isEmulatedCluster) {
-				await createEmulatedTable(targetClusterId, targetDatabase, plan);
-				if (requestId !== mutationRequestId) return;
-				commandCompleted = true;
-			} else {
+			if (!isMockCluster && !isEmulatedCluster) {
 				await onrefreshschema?.(targetClusterId);
 				await tick();
 				if (requestId !== mutationRequestId) return;
@@ -721,28 +580,15 @@
 					createTableError = `Creation blocked because “${plan.tableName}” now exists in ${targetDatabase}. Choose another name.`;
 					return;
 				}
-
-				const execution = startKustoManagementCommand(
-					targetDatabase,
-					plan.command,
-					targetClusterUrl
-				);
-				activeCancel = execution.cancel;
-				await execution.promise;
-				if (requestId !== mutationRequestId) return;
-				commandCompleted = true;
-				if (plan.columnDocstringsCommand) {
-					const columnDocstringsExecution = startKustoManagementCommand(
-						targetDatabase,
-						plan.columnDocstringsCommand,
-						targetClusterUrl
-					);
-					activeCancel = columnDocstringsExecution.cancel;
-					await columnDocstringsExecution.promise;
-					if (requestId !== mutationRequestId) return;
-					columnDocstringsApplied = true;
-				}
 			}
+			const outcome = await getMutationAdapter((stage) => {
+				if (stage === 'table-created') commandCompleted = true;
+				if (stage === 'column-docstrings-applied') columnDocstringsApplied = true;
+			}).createTable(targetDatabase, plan);
+			if (requestId !== mutationRequestId) return;
+			if (outcome.mockSchemaRevision != null) editorMockSchemaRevision = outcome.mockSchemaRevision;
+			commandCompleted = true;
+			columnDocstringsApplied = true;
 
 			await onrefreshschema?.(targetClusterId);
 			await tick();

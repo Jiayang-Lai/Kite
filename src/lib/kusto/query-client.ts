@@ -1,6 +1,7 @@
 import type { CancellableExecution, QueryExecution, QueryResult } from '$lib/types/query-result';
 import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 import type { EmulatedStorage } from '$lib/emulation/storage';
+import { normalizeResultValue } from '$lib/query/result-value';
 import { Client as KustoClient, ClientRequestProperties } from 'azure-kusto-data';
 
 /** Browser-visible endpoint for Kite's default Kusto connection. */
@@ -123,21 +124,6 @@ export function getKustoClusterUrl() {
 }
 
 /** Converts values produced by the SDK into stable values suitable for UI rendering. */
-function normalizeCell(value: unknown): unknown {
-	if (value instanceof Date) return value.toISOString();
-	if (typeof value === 'bigint') return value.toString();
-	if (Array.isArray(value)) return value.map(normalizeCell);
-	if (value && typeof value === 'object') {
-		return Object.fromEntries(
-			Object.entries(value as Record<string, unknown>).map(([key, item]) => [
-				key,
-				normalizeCell(item)
-			])
-		);
-	}
-	return value;
-}
-
 type ErrorResponse = {
 	status?: number;
 	statusText?: string;
@@ -297,7 +283,7 @@ function normalizeResponse(
 	const rows: unknown[][] = [];
 	for (const row of primaryResult.rows()) {
 		if (rows.length >= MAX_RENDERED_ROWS) break;
-		rows.push(columns.map((_, index) => normalizeCell(row.getValueAt(index))));
+		rows.push(columns.map((_, index) => normalizeResultValue(row.getValueAt(index))));
 	}
 
 	return {

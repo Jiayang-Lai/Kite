@@ -58,6 +58,8 @@
 	import { getKustoErrorMessage } from '$lib/kusto/query-client';
 	import { disposeKqlTranslator } from '$lib/kql/wasm-translator';
 	import { getRecentQueryStore } from '$lib/query/recent-query-store.svelte';
+	import { createQueryExecutionController } from '$lib/query/query-execution-controller.svelte';
+	import { createQueryTabController } from '$lib/query/query-tab-controller.svelte';
 	import { getSavedQueryStore } from '$lib/query/saved-query-store.svelte';
 	import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 	import type { QueryExecution, QueryResult } from '$lib/types/query-result';
@@ -97,23 +99,23 @@
 	let selectedDatabase = $state(clusterSession.selectedDatabase);
 	let selectedTable = $state(clusterSession.selectedTable);
 	let selectedFunction = $state(clusterSession.selectedFunction);
-	let queryText = $state('');
-	let queryResult = $state<QueryResult>();
-	let queryError = $state('');
-	let queryErrorRequestId = $state<string>();
-	let queryErrorRaw = $state<unknown>();
+	const executionState = $state({
+		queryText: '',
+		result: undefined as QueryResult | undefined,
+		error: '',
+		errorRequestId: undefined as string | undefined,
+		errorRaw: undefined as unknown,
+		isRunning: false,
+		resultsCollapsed: false
+	});
 	let languageServiceStatus = $state<'idle' | 'loading' | 'ready'>('idle');
 	let saveQueryDialogOpen = $state(false);
 	let savedQueryName = $state('');
 	let savedQueryNameError = $state('');
 	let pendingSaveTabId = $state<string>();
-	let resultsCollapsed = $state(false);
 	let resultsPane = $state<PaneAPI>();
 	let databaseSchemaPane = $state<PaneAPI>();
 	let databaseSchemaCollapsed = $state(false);
-	let isQueryRunning = $state(false);
-	let activeExecution: QueryExecution | undefined;
-	let activeExecutionTabId: string | undefined;
 	let resetTabsAfterConnection = false;
 	let editorComponent = $state<{ getDiagnostics: () => EditorDiagnostic[] }>();
 	let queryTabList = $state<HTMLDivElement>();
@@ -123,11 +125,12 @@
 	let queryTabDragStartX = 0;
 	let queryTabDragStartScrollLeft = 0;
 	let ignoreQueryTabClick = false;
-	let compareOriginalTabId = $state<string>();
-	let compareModifiedTabId = $state<string>();
-	let focusedComparisonSide = $state<ComparisonSide>('right');
+	const tabComparisonState = $state({
+		comparisonOriginalTabId: undefined as string | undefined,
+		comparisonModifiedTabId: undefined as string | undefined,
+		focusedComparisonSide: 'right' as ComparisonSide
+	});
 	let schemaRequestId = 0;
-	let queryRequestId = 0;
 	let logAnalyticsSignInTipTimeout: number | undefined;
 
 	let activeClusterId = $state(initialCluster.id);
@@ -138,7 +141,9 @@
 	const activeQueryTabId = $derived(clusterSession.activeQueryTabId);
 	const activeQueryTab = $derived(clusterSession.getQueryTab(activeQueryTabId));
 	const comparisonModifiedTab = $derived(
-		compareModifiedTabId ? queryTabs.find((tab) => tab.id === compareModifiedTabId) : activeQueryTab
+		tabComparisonState.comparisonModifiedTabId
+			? queryTabs.find((tab) => tab.id === tabComparisonState.comparisonModifiedTabId)
+			: activeQueryTab
 	);
 	const compareCandidates = $derived(
 		comparisonModifiedTab
@@ -151,15 +156,15 @@
 			: []
 	);
 	const comparisonOriginalTab = $derived(
-		compareOriginalTabId
-			? compareCandidates.find((tab) => tab.id === compareOriginalTabId)
+		tabComparisonState.comparisonOriginalTabId
+			? compareCandidates.find((tab) => tab.id === tabComparisonState.comparisonOriginalTabId)
 			: undefined
 	);
 	const saveTargetTab = $derived(
 		pendingSaveTabId
 			? queryTabs.find((tab) => tab.id === pendingSaveTabId)
 			: comparisonOriginalTab && comparisonModifiedTab
-				? focusedComparisonSide === 'left'
+				? tabComparisonState.focusedComparisonSide === 'left'
 					? comparisonOriginalTab
 					: comparisonModifiedTab
 				: activeQueryTab
@@ -193,6 +198,30 @@
 	const hasBuiltInMockSamples = $derived(usesBuiltInMockCatalog(activeCluster));
 	let explorerExpansion = $state(clusterSession.getExplorerExpansion(initialCluster.id));
 	const isQueryable = $derived(hasCluster && activeCapabilities.queryExecutor !== 'none');
+	const queryExecution = createQueryExecutionController({
+		state: executionState,
+		recentQueries: recentQueryStore,
+		getActiveTab: () => activeQueryTab,
+		getActiveClusterId: () => activeClusterId,
+		getSelectedDatabase: () => selectedDatabase,
+		getRuntime: () => activeRuntime,
+		canExecute: () => activeCapabilities.queryExecutor !== 'none',
+		getDiagnostics: () => editorComponent?.getDiagnostics() ?? [],
+		updateTab: (tabId, update) => clusterSession.updateQueryTab(tabId, update)
+	});
+	const queryTabsController = createQueryTabController({
+		state: tabComparisonState,
+		session: clusterSession,
+		savedQueries: savedQueryStore,
+		getSelectedDatabase: () => selectedDatabase,
+		setSelectedDatabase: (database) => (selectedDatabase = database),
+		clearSchemaSelection: () => {
+			selectedTable = undefined;
+			selectedFunction = undefined;
+		},
+		onTabLoaded: (tab) => queryExecution.loadTab(tab),
+		onTabClosing: (tabId) => queryExecution.cancelTab(tabId)
+	});
 	const canSaveTargetQuery = $derived(
 		Boolean(saveTargetTab?.query.trim() && saveTargetTab.database)
 	);
@@ -247,8 +276,10 @@
 
 	$effect(() => {
 		if (
-			compareOriginalTabId &&
-			(!comparisonOriginalTab || !compareModifiedTabId || !comparisonModifiedTab)
+			tabComparisonState.comparisonOriginalTabId &&
+			(!comparisonOriginalTab ||
+				!tabComparisonState.comparisonModifiedTabId ||
+				!comparisonModifiedTab)
 		) {
 			stopQueryComparison();
 		}
@@ -305,12 +336,7 @@
 	}
 
 	function getQueryTabTitle(tab: QueryTab) {
-		if (tab.savedQueryName) return tab.savedQueryName;
-		const firstLine = tab.query
-			.split('\n')
-			.find((line) => line.trim())
-			?.trim();
-		return firstLine?.replaceAll(/\s+/g, ' ').slice(0, 32) || 'Untitled query';
+		return queryTabsController.titleFor(tab);
 	}
 
 	function loadQueryTab(tab: QueryTab) {
@@ -318,12 +344,7 @@
 		if (tab.database && databaseSchema?.[tab.database]) selectedDatabase = tab.database;
 		selectedTable = undefined;
 		selectedFunction = undefined;
-		queryText = tab.query;
-		queryResult = tab.result;
-		queryError = tab.error ?? '';
-		queryErrorRequestId = tab.errorRequestId;
-		queryErrorRaw = tab.errorRaw;
-		isQueryRunning = tab.isRunning;
+		queryExecution.loadTab(tab);
 		requestAnimationFrame(() => {
 			queryTabList
 				?.querySelector<HTMLElement>(`[data-query-tab-id="${tab.id}"]`)
@@ -336,71 +357,42 @@
 		query = '',
 		savedQuery?: Pick<QueryTab, 'savedQueryId' | 'savedQueryName'>
 	) {
-		const activeTabIdBeforeCreate = activeQueryTabId;
-		const keepActiveTab = Boolean(comparisonOriginalTab && comparisonModifiedTab);
-		const tab = clusterSession.createQueryTab(database, query, savedQuery);
-		if (keepActiveTab) {
-			clusterSession.activeQueryTabId = activeTabIdBeforeCreate;
-			return;
-		}
-		loadQueryTab(tab);
+		queryTabsController.create(database, query, savedQuery);
 	}
 
 	function startQueryComparison() {
-		if (!activeQueryTab) return;
-		compareModifiedTabId = activeQueryTab.id;
-		const candidates = queryTabs.filter(
-			(tab) =>
-				tab.id !== activeQueryTab.id &&
-				tab.database.trim().toLowerCase() === activeQueryTab.database.trim().toLowerCase()
-		);
-		if (!candidates.length) {
-			compareModifiedTabId = undefined;
-			return;
-		}
-		compareOriginalTabId = candidates[0].id;
-		focusedComparisonSide = 'right';
+		queryTabsController.startComparison();
 	}
 
 	function compareWithQueryTab(tab: QueryTab) {
-		if (!activeQueryTab || tab.id === activeQueryTab.id) return;
-		if (tab.database.trim().toLowerCase() !== activeQueryTab.database.trim().toLowerCase()) return;
-		compareModifiedTabId = activeQueryTab.id;
-		compareOriginalTabId = tab.id;
-		focusedComparisonSide = 'right';
+		queryTabsController.compareWith(tab);
 	}
 
 	function selectQueryTab(tab: QueryTab) {
-		const isComparedTab =
-			tab.id === comparisonOriginalTab?.id || tab.id === comparisonModifiedTab?.id;
-		if (comparisonOriginalTab && comparisonModifiedTab && !isComparedTab) return;
-		loadQueryTab(tab);
+		queryTabsController.select(tab);
 	}
 
 	function stopQueryComparison() {
-		compareOriginalTabId = undefined;
-		compareModifiedTabId = undefined;
-		focusedComparisonSide = 'right';
+		queryTabsController.stopComparison();
 	}
 
 	function updateActiveQuery(value: string) {
-		queryText = value;
-		if (activeQueryTab) clusterSession.updateQueryTab(activeQueryTab.id, { query: value });
+		queryExecution.updateQuery(value);
 	}
 
 	function updateComparisonModifiedQuery(value: string) {
 		if (!comparisonModifiedTab) return;
-		clusterSession.updateQueryTab(comparisonModifiedTab.id, { query: value });
-		if (comparisonModifiedTab.id === activeQueryTabId) queryText = value;
+		queryTabsController.updateComparisonQuery('right', value);
+		if (comparisonModifiedTab.id === activeQueryTabId) executionState.queryText = value;
 	}
 
 	function updateComparisonOriginalQuery(value: string) {
 		if (!comparisonOriginalTab) return;
-		clusterSession.updateQueryTab(comparisonOriginalTab.id, { query: value });
-		if (comparisonOriginalTab.id === activeQueryTabId) queryText = value;
+		queryTabsController.updateComparisonQuery('left', value);
+		if (comparisonOriginalTab.id === activeQueryTabId) executionState.queryText = value;
 	}
 
-	async function runComparisonQuery(side = focusedComparisonSide) {
+	async function runComparisonQuery(side = tabComparisonState.focusedComparisonSide) {
 		const tab = side === 'left' ? comparisonOriginalTab : comparisonModifiedTab;
 		if (!tab) return;
 		if (tab.id !== activeQueryTabId) {
@@ -411,13 +403,7 @@
 	}
 
 	function isQueryTabDirty(tab: QueryTab) {
-		if (!tab.query.trim()) return false;
-		if (!tab.savedQueryId) return true;
-
-		const savedQuery = savedQueryStore.queries.find((query) => query.id === tab.savedQueryId);
-		return (
-			!savedQuery || tab.database !== savedQuery.database || tab.query.trim() !== savedQuery.query
-		);
+		return queryTabsController.isDirty(tab);
 	}
 
 	function closeQueryTab(tab: QueryTab) {
@@ -433,9 +419,13 @@
 		) {
 			return;
 		}
-		if (activeExecutionTabId === tab.id) activeExecution?.cancel();
+		queryExecution.cancelTab(tab.id);
 		clusterSession.closeQueryTab(tab.id);
-		if (compareOriginalTabId === tab.id || compareModifiedTabId === tab.id) stopQueryComparison();
+		if (
+			tabComparisonState.comparisonOriginalTabId === tab.id ||
+			tabComparisonState.comparisonModifiedTabId === tab.id
+		)
+			stopQueryComparison();
 		const nextTab = clusterSession.getQueryTab(clusterSession.activeQueryTabId);
 		if (nextTab) loadQueryTab(nextTab);
 	}
@@ -554,8 +544,8 @@
 			clusterSession.updateQueryTab(tab.id, { database: activeDatabase.name, query: tabQuery });
 			loadQueryTab(clusterSession.getQueryTab(tab.id) ?? tab);
 			clusterSession.pendingQuery = undefined;
-			queryResult = undefined;
-			queryError = '';
+			executionState.result = undefined;
+			executionState.error = '';
 			clearLogAnalyticsSignInTip();
 			connectionStatus = 'ready';
 			isClusterSwitching = false;
@@ -585,11 +575,7 @@
 			return;
 		}
 
-		queryRequestId += 1;
-		activeExecution?.cancel();
-		activeExecution = undefined;
-		activeExecutionTabId = undefined;
-		isQueryRunning = false;
+		queryExecution.reset();
 		resetTabsAfterConnection = true;
 		selectedClusterId = clusterId;
 		void refreshSchema();
@@ -604,10 +590,7 @@
 		clusterConnectionStore.update(clusterId, draft);
 		if (clusterId !== selectedClusterId) return;
 
-		queryRequestId += 1;
-		activeExecution?.cancel();
-		activeExecution = undefined;
-		isQueryRunning = false;
+		queryExecution.reset();
 		void refreshSchema();
 	}
 
@@ -742,7 +725,7 @@
 			query: updatedQuery.query,
 			database: updatedQuery.database
 		});
-		if (tab.id === activeQueryTabId) queryText = updatedQuery.query;
+		if (tab.id === activeQueryTabId) executionState.queryText = updatedQuery.query;
 	}
 
 	function saveCurrentQuery() {
@@ -768,7 +751,7 @@
 			savedQueryName: savedQuery.name,
 			query: savedQuery.query
 		});
-		if (tab.id === activeQueryTabId) queryText = savedQuery.query;
+		if (tab.id === activeQueryTabId) executionState.queryText = savedQuery.query;
 		saveQueryDialogOpen = false;
 		pendingSaveTabId = undefined;
 	}
@@ -779,101 +762,16 @@
 		event.returnValue = '';
 	}
 
-	function getRecentQueryName(query: string) {
-		const firstLine = query.split('\n').find((line) => line.trim());
-		return firstLine?.trim().replaceAll(/\s+/g, ' ').slice(0, 48) || 'Query';
-	}
-
-	function formatQueryFailure(serverMessage: string) {
-		const diagnostics = editorComponent?.getDiagnostics() ?? [];
-		const actionableDiagnostics = diagnostics.filter(
-			(diagnostic) => diagnostic.severity === 'error' || diagnostic.severity === 'warning'
-		);
-		if (!actionableDiagnostics.length) return serverMessage;
-
-		const diagnosticLines = actionableDiagnostics.map((diagnostic) => {
-			const code = diagnostic.code ? ` [${diagnostic.code}]` : '';
-			return `Line ${diagnostic.line}, column ${diagnostic.column}${code}: ${diagnostic.message}`;
-		});
-		return `${serverMessage}\n\nEditor diagnostics:\n${diagnosticLines.join('\n')}`;
-	}
-
 	async function runQuery() {
-		const tab = activeQueryTab;
-		const query = queryText.trim();
-		if (
-			!tab ||
-			!query ||
-			!selectedDatabase ||
-			tab.isRunning ||
-			activeCapabilities.queryExecutor === 'none'
-		)
-			return;
-		if (!activeRuntime) return;
-
-		const requestId = ++queryRequestId;
-		queryError = '';
-		queryErrorRequestId = undefined;
-		queryErrorRaw = undefined;
-		resultsCollapsed = false;
-		isQueryRunning = true;
-		clusterSession.updateQueryTab(tab.id, {
-			isRunning: true,
-			result: undefined,
-			error: undefined,
-			errorRequestId: undefined,
-			errorRaw: undefined
-		});
-		activeExecution = activeRuntime.startQuery(selectedDatabase, query);
-		activeExecutionTabId = tab.id;
-		recentQueryStore.record({
-			clusterId: activeClusterId,
-			database: selectedDatabase,
-			name: getRecentQueryName(query),
-			query
-		});
-
-		try {
-			const result = await activeExecution.promise;
-			if (requestId === queryRequestId) {
-				clusterSession.updateQueryTab(tab.id, { result });
-				if (activeQueryTabId === tab.id) queryResult = result;
-			}
-		} catch (error) {
-			if (requestId === queryRequestId) {
-				const message = formatQueryFailure(getKustoErrorMessage(error));
-				const errorUpdate: Partial<Omit<QueryTab, 'id'>> = {
-					result: undefined,
-					error: message
-				};
-				if (error instanceof LogAnalyticsQueryRequestError) {
-					errorUpdate.errorRequestId = error.requestId;
-					errorUpdate.errorRaw = error.response;
-				}
-				clusterSession.updateQueryTab(tab.id, errorUpdate);
-				if (activeQueryTabId === tab.id) {
-					queryResult = undefined;
-					queryError = message;
-					queryErrorRequestId = errorUpdate.errorRequestId;
-					queryErrorRaw = errorUpdate.errorRaw;
-				}
-			}
-		} finally {
-			if (requestId === queryRequestId) {
-				activeExecution = undefined;
-				activeExecutionTabId = undefined;
-				clusterSession.updateQueryTab(tab.id, { isRunning: false });
-				if (activeQueryTabId === tab.id) isQueryRunning = false;
-			}
-		}
+		await queryExecution.run();
 	}
 
 	function cancelQuery() {
-		if (activeExecutionTabId === activeQueryTabId) activeExecution?.cancel();
+		queryExecution.cancel();
 	}
 
 	function setResultsCollapsed(collapsed: boolean) {
-		resultsCollapsed = collapsed;
+		executionState.resultsCollapsed = collapsed;
 		if (collapsed) {
 			resultsPane?.collapse();
 		} else {
@@ -910,10 +808,8 @@
 		window.addEventListener('beforeunload', preventRefreshWithQuery);
 		return () => {
 			schemaRequestId += 1;
-			queryRequestId += 1;
 			clearLogAnalyticsSignInTip();
-			activeExecution?.cancel();
-			activeExecutionTabId = undefined;
+			queryExecution.dispose();
 			disposeKqlTranslator();
 			window.removeEventListener('beforeunload', preventRefreshWithQuery);
 		};
@@ -1194,7 +1090,7 @@
 												<BookmarkPlusIcon />
 												Save
 											</Button>
-											{#if isQueryRunning}
+											{#if executionState.isRunning}
 												<Button
 													variant="outline"
 													size="sm"
@@ -1214,10 +1110,10 @@
 															? runComparisonQuery()
 															: runQuery())}
 													disabled={!(comparisonOriginalTab && comparisonModifiedTab
-														? focusedComparisonSide === 'left'
+														? tabComparisonState.focusedComparisonSide === 'left'
 															? comparisonOriginalTab.query.trim()
 															: comparisonModifiedTab.query.trim()
-														: queryText.trim()) || !isQueryable}
+														: executionState.queryText.trim()) || !isQueryable}
 													title={isMockCluster
 														? 'Query execution is unavailable for the mock cluster'
 														: 'Run query (Shift+Enter)'}
@@ -1245,7 +1141,10 @@
 													<label class="sr-only" for="comparison-original-tab"
 														>Reference query</label
 													>
-													<Select.Root type="single" bind:value={compareOriginalTabId}>
+													<Select.Root
+														type="single"
+														bind:value={tabComparisonState.comparisonOriginalTabId}
+													>
 														<Select.Trigger id="comparison-original-tab" size="sm" class="max-w-44">
 															<span data-slot="select-value" class="min-w-0 truncate">
 																{comparisonOriginalTab
@@ -1293,7 +1192,8 @@
 													onexecute={(side) => void runComparisonQuery(side)}
 													onvaluechange={updateComparisonModifiedQuery}
 													onoriginalvaluechange={updateComparisonOriginalQuery}
-													onactivesidechange={(side) => (focusedComparisonSide = side)}
+													onactivesidechange={(side) =>
+														(tabComparisonState.focusedComparisonSide = side)}
 													onlanguagestatuschange={(status) => (languageServiceStatus = status)}
 												/>
 											{/key}
@@ -1302,7 +1202,7 @@
 										{#key activeQueryTabId}
 											<MonacoEditor
 												bind:this={editorComponent}
-												value={queryText}
+												value={executionState.queryText}
 												class="min-h-0 flex-1"
 												database={selectedDatabase}
 												height="100%"
@@ -1351,17 +1251,17 @@
 								minSize={5}
 								collapsible
 								collapsedSize={5}
-								onCollapse={() => (resultsCollapsed = true)}
-								onExpand={() => (resultsCollapsed = false)}
+								onCollapse={() => (executionState.resultsCollapsed = true)}
+								onExpand={() => (executionState.resultsCollapsed = false)}
 							>
 								<QueryResults
 									class="h-full min-h-0 rounded-none border-0"
-									result={queryResult}
-									error={queryError}
-									errorRequestId={queryErrorRequestId}
-									errorRaw={queryErrorRaw}
-									isRunning={isQueryRunning}
-									collapsed={resultsCollapsed}
+									result={executionState.result}
+									error={executionState.error}
+									errorRequestId={executionState.errorRequestId}
+									errorRaw={executionState.errorRaw}
+									isRunning={executionState.isRunning}
+									collapsed={executionState.resultsCollapsed}
 									oncollapsedchange={setResultsCollapsed}
 								/>
 							</Resizable.Pane>

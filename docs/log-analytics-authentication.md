@@ -2,7 +2,7 @@
 
 Kite can query an Azure Log Analytics workspace directly from the browser. The connection is query-only: it supports KQL queries, workspace metadata, query statistics, and render details, but it does not support Kusto management commands, schema changes, or data ingestion.
 
-See [Azure authentication terminology](azure-authentication-terminology.md) for the distinction between Kite authentication profiles, MSAL accounts, Entra browser sessions, and access tokens.
+See [Kite terminology and glossary](terminology.md#ingestion-and-authentication) for the distinction between Kite authentication profiles, MSAL accounts, Entra browser sessions, and access tokens.
 
 Kite uses Microsoft Entra authorization-code authentication with PKCE in a popup. It does not send access tokens through a Kite backend and does not accept or store a client secret.
 

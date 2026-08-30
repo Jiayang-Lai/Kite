@@ -127,7 +127,7 @@ Use a remote Kustainer connection when shared/server-managed durability, Kusto m
 
 ## Troubleshooting
 
-- **Translator failed to start:** confirm that `/kql-wasm/_framework/dotnet.js` returns JavaScript rather than a 404 page. Open `/labs/kql-to-sql` to test translation and DuckDB independently of the cluster workspace.
+- **Translator failed to start:** confirm that `/kql-wasm/_framework/dotnet.js` returns JavaScript rather than a 404 page, then select the Emulated cluster and run a small query such as `print Message = "Connected"`. Inspect the browser console and network panel for translator or DuckDB worker failures.
 - **DuckDB worker fails during development:** clear Vite's dependency cache and restart the dev server. Kite creates DuckDB workers as JavaScript modules; do not replace the worker construction with a classic worker.
 - **A database disappeared:** confirm that the custom connection was created with persistent browser storage and that the app is running on the same origin. Ephemeral connections intentionally start empty after a reload.
 - **Cluster already open:** close the other tab using the persistent connection, then retry. Kite allows only one active DuckDB-WASM writer for an OPFS cluster.

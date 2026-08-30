@@ -13,6 +13,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import { createReviewablePlan } from '$lib/admin/reviewable-plan.svelte';
 	import {
 		buildCreateTablePlan,
 		KUSTO_SCALAR_TYPES,
@@ -56,32 +57,14 @@
 	let docstring = $state('');
 	let folder = $state('');
 	let columns = $state<NewColumnDraft[]>([]);
-	let reviewing = $state(false);
-	let confirmationText = $state('');
 	let templateImportError = $state('');
 	let importedTemplateName = $state('');
 	let templateInput = $state<HTMLInputElement>();
 	const confirmationPhrase = $derived(`CREATE ${tableName.trim()}`);
 
-	const preparedPlan = $derived.by(() => {
-		try {
-			return {
-				plan: buildCreateTablePlan({
-					tableName,
-					existingTableNames,
-					columns,
-					docstring,
-					folder
-				}),
-				error: ''
-			};
-		} catch (error) {
-			return {
-				plan: undefined,
-				error: error instanceof Error ? error.message : String(error)
-			};
-		}
-	});
+	const reviewPlan = createReviewablePlan(() =>
+		buildCreateTablePlan({ tableName, existingTableNames, columns, docstring, folder })
+	);
 
 	$effect(() => {
 		const target = open ? databaseName : '';
@@ -91,8 +74,7 @@
 		docstring = '';
 		folder = '';
 		columns = [{ id: nextColumnId++, name: '', type: 'string', docstring: '' }];
-		reviewing = false;
-		confirmationText = '';
+		reviewPlan.reset();
 		templateImportError = '';
 		importedTemplateName = '';
 	});
@@ -112,26 +94,17 @@
 	}
 
 	function reviewTable() {
-		if (!preparedPlan.plan || isRunning) return;
-		confirmationText = '';
-		reviewing = true;
+		reviewPlan.startReview(!isRunning);
 	}
 
 	function returnToEditor() {
-		if (isRunning) return;
-		confirmationText = '';
-		reviewing = false;
+		reviewPlan.returnToEditor(!isRunning);
 	}
 
 	function submitTable() {
-		if (
-			!preparedPlan.plan ||
-			confirmationText !== `CREATE ${preparedPlan.plan.tableName}` ||
-			isRunning
-		) {
-			return;
-		}
-		onsubmit?.(preparedPlan.plan);
+		const plan = reviewPlan.prepared.plan;
+		if (!plan || !reviewPlan.canSubmit(`CREATE ${plan.tableName}`, !isRunning)) return;
+		onsubmit?.(plan);
 	}
 
 	function openTemplatePicker() {
@@ -170,9 +143,9 @@
 		aria-describedby="create-table-dialog-description"
 	>
 		<Dialog.Header class="border-b p-5 pr-14">
-			<Dialog.Title>{reviewing ? 'Review new table' : 'New table'}</Dialog.Title>
+			<Dialog.Title>{reviewPlan.state.reviewing ? 'Review new table' : 'New table'}</Dialog.Title>
 			<Dialog.Description id="create-table-dialog-description">
-				{reviewing
+				{reviewPlan.state.reviewing
 					? 'Confirm the initial schema and generated management command.'
 					: `Create an empty table in ${databaseName} with an explicit initial schema.`}
 			</Dialog.Description>
@@ -185,7 +158,7 @@
 			scrollbarYClasses="py-1"
 		>
 			<div class="space-y-5 p-4 pr-5">
-				{#if reviewing && preparedPlan.plan}
+				{#if reviewPlan.state.reviewing && reviewPlan.prepared.plan}
 					<dl class="divide-y rounded-lg border text-sm">
 						<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3 p-3">
 							<dt class="text-muted-foreground">Cluster</dt>
@@ -197,13 +170,13 @@
 						</div>
 						<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3 p-3">
 							<dt class="text-muted-foreground">Table</dt>
-							<dd class="break-all font-mono">{preparedPlan.plan.tableName}</dd>
+							<dd class="break-all font-mono">{reviewPlan.prepared.plan.tableName}</dd>
 						</div>
 						<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3 p-3">
 							<dt class="text-muted-foreground">Schema</dt>
 							<dd>
-								{preparedPlan.plan.columns.length}
-								{preparedPlan.plan.columns.length === 1 ? 'column' : 'columns'}
+								{reviewPlan.prepared.plan.columns.length}
+								{reviewPlan.prepared.plan.columns.length === 1 ? 'column' : 'columns'}
 							</dd>
 						</div>
 						<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3 p-3">
@@ -215,7 +188,7 @@
 					<div>
 						<h3 class="mb-2 text-sm font-medium">Initial columns</h3>
 						<div class="divide-y overflow-hidden rounded-lg border">
-							{#each preparedPlan.plan.columns as column, index (column.name)}
+							{#each reviewPlan.prepared.plan.columns as column, index (column.name)}
 								<div class="flex items-start gap-3 px-3 py-2.5">
 									<span class="text-muted-foreground w-5 font-mono text-xs">{index + 1}</span>
 									<div class="min-w-0 flex-1">
@@ -233,10 +206,10 @@
 					<div>
 						<h3 class="mb-2 text-sm font-medium">Management command</h3>
 						<pre
-							class="bg-muted max-h-48 overflow-auto rounded-lg border p-3 font-mono text-xs whitespace-pre-wrap">{preparedPlan
-								.plan.columnDocstringsCommand
-								? `${preparedPlan.plan.command}\n${preparedPlan.plan.columnDocstringsCommand}`
-								: preparedPlan.plan.command}</pre>
+							class="bg-muted max-h-48 overflow-auto rounded-lg border p-3 font-mono text-xs whitespace-pre-wrap">{reviewPlan
+								.prepared.plan.columnDocstringsCommand
+								? `${reviewPlan.prepared.plan.command}\n${reviewPlan.prepared.plan.columnDocstringsCommand}`
+								: reviewPlan.prepared.plan.command}</pre>
 					</div>
 
 					<div class="border-primary/30 bg-primary/5 rounded-lg border p-3">
@@ -259,7 +232,7 @@
 						<Input
 							id="confirm-create-table"
 							class="mt-2 font-mono"
-							bind:value={confirmationText}
+							bind:value={reviewPlan.state.confirmationText}
 							disabled={isRunning}
 							autocomplete="off"
 						/>
@@ -422,8 +395,8 @@
 						</div>
 					</section>
 
-					{#if preparedPlan.error && (tableName.trim() || columns.some( (column) => column.name.trim() ))}
-						<p class="text-destructive text-xs">{preparedPlan.error}</p>
+					{#if reviewPlan.prepared.error && (tableName.trim() || columns.some( (column) => column.name.trim() ))}
+						<p class="text-destructive text-xs">{reviewPlan.prepared.error}</p>
 					{/if}
 				{/if}
 
@@ -444,18 +417,18 @@
 					<Spinner /> Stop waiting
 				</Button>
 				<Button disabled><Spinner /> Creating table</Button>
-			{:else if reviewing}
+			{:else if reviewPlan.state.reviewing}
 				<Button variant="outline" onclick={returnToEditor}>Back</Button>
 				<Button
-					disabled={!preparedPlan.plan ||
-						confirmationText !== `CREATE ${preparedPlan.plan.tableName}`}
+					disabled={!reviewPlan.prepared.plan ||
+						reviewPlan.state.confirmationText !== `CREATE ${reviewPlan.prepared.plan.tableName}`}
 					onclick={submitTable}
 				>
 					<SaveIcon /> Create table
 				</Button>
 			{:else}
 				<Button variant="outline" onclick={() => (open = false)}>Cancel</Button>
-				<Button disabled={!preparedPlan.plan} onclick={reviewTable}>Review table</Button>
+				<Button disabled={!reviewPlan.prepared.plan} onclick={reviewTable}>Review table</Button>
 			{/if}
 		</Dialog.Footer>
 	</Dialog.Content>

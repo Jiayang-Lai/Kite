@@ -7,6 +7,9 @@ import {
 import { translateKqlToSql } from '$lib/kql/wasm-translator';
 import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 import type { QueryExecution } from '$lib/types/query-result';
+import { quoteDuckDbIdentifier } from './sql-format';
+
+export { quoteDuckDbIdentifier } from './sql-format';
 
 const SCHEMA_SQL = `
 	SELECT
@@ -59,12 +62,6 @@ const PERSISTENT_SCHEMA_SQL = `
 		)
 	ORDER BY s.schema_name, t.table_name, c.column_index
 `;
-
-export function quoteDuckDbIdentifier(value: string) {
-	const name = value.trim();
-	if (!name) throw new Error('DuckDB identifiers cannot be empty.');
-	return `"${name.replaceAll('"', '""')}"`;
-}
 
 function toKustoType(type: string) {
 	const normalized = type.toUpperCase();

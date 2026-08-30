@@ -16,6 +16,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import * as Resizable from '$lib/components/ui/resizable';
+	import { createCancellableOperation } from '$lib/query/cancellable-operation.svelte';
 	import * as Select from '$lib/components/ui/select';
 	import {
 		getKustoErrorMessage,
@@ -24,7 +25,7 @@
 		startKustoManagementCommand
 	} from '$lib/kusto/query-client';
 	import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
-	import type { QueryExecution, QueryResult } from '$lib/types/query-result';
+	import type { QueryResult } from '$lib/types/query-result';
 	import type { PaneAPI } from 'paneforge';
 
 	type ManagementCommandWorkspaceProps = {
@@ -73,12 +74,11 @@
 	let templateValue = $state(templates[0].command);
 	let result = $state<QueryResult>();
 	let commandError = $state('');
-	let isRunning = $state(false);
+	const commandOperation = createCancellableOperation();
+	const isRunning = $derived(commandOperation.isRunning);
 	let resultsCollapsed = $state(false);
 	let resultsPane = $state<PaneAPI>();
 	let autoRefreshAfterChange = $state(true);
-	let activeExecution: QueryExecution | undefined;
-	let requestId = 0;
 	let showConfirmation = $state(false);
 	let confirmationText = $state('');
 
@@ -124,32 +124,32 @@
 	}
 
 	async function runCommand(command: string) {
-		const nextRequestId = ++requestId;
 		const shouldRefreshSchema =
 			autoRefreshAfterChange && !isReadOnlyManagementCommand(command) && Boolean(onrefreshschema);
 		commandError = '';
 		result = undefined;
 		resultsCollapsed = false;
-		isRunning = true;
-		try {
-			activeExecution = startKustoManagementCommand(selectedDatabase, command, clusterUrl);
-			const completedResult = await activeExecution.promise;
-			if (nextRequestId === requestId) {
-				result = completedResult;
-				if (shouldRefreshSchema) await onrefreshschema?.();
+		await commandOperation.run(
+			async (operation) => {
+				const execution = startKustoManagementCommand(selectedDatabase, command, clusterUrl);
+				operation.setExecution(execution);
+				return execution.promise;
+			},
+			{
+				onSuccess: async (completedResult, operation) => {
+					result = completedResult;
+					if (shouldRefreshSchema) await onrefreshschema?.();
+					if (!operation.isCurrent()) return;
+				},
+				onError: (error) => {
+					commandError = getKustoErrorMessage(error);
+				}
 			}
-		} catch (error) {
-			if (nextRequestId === requestId) commandError = getKustoErrorMessage(error);
-		} finally {
-			if (nextRequestId === requestId) {
-				activeExecution = undefined;
-				isRunning = false;
-			}
-		}
+		);
 	}
 
 	function cancelCommand() {
-		activeExecution?.cancel();
+		commandOperation.cancel();
 	}
 
 	function setResultsCollapsed(collapsed: boolean) {
@@ -166,8 +166,7 @@
 	}
 
 	onDestroy(() => {
-		requestId += 1;
-		activeExecution?.cancel();
+		commandOperation.dispose();
 	});
 </script>
 

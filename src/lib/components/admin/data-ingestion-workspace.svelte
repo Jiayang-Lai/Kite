@@ -27,6 +27,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import { createCancellableOperation } from '$lib/query/cancellable-operation.svelte';
 	import {
 		describeEmulatedRemoteUrl,
 		resolveEmulatedRemoteUrl,
@@ -58,7 +59,7 @@
 		type KustoIngestionConfiguration
 	} from '$lib/kusto/query-client';
 	import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
-	import type { QueryExecution, QueryResult } from '$lib/types/query-result';
+	import type { QueryResult } from '$lib/types/query-result';
 	import type { PaneAPI } from 'paneforge';
 
 	type SourceMode = 'inline' | 'inline-file' | 'file' | 'remote-file';
@@ -136,15 +137,14 @@
 	let remoteFileSkipFirstLine = $state(false);
 	let result = $state<QueryResult>();
 	let ingestionError = $state('');
-	let isRunning = $state(false);
+	const ingestionOperation = createCancellableOperation();
+	const isRunning = $derived(ingestionOperation.isRunning);
 	let resultsCollapsed = $state(false);
 	let resultsPane = $state<PaneAPI>();
 	let showConfirmation = $state(false);
 	let confirmationText = $state('');
 	let pendingCommand = $state('');
-	let activeExecution: QueryExecution | undefined;
 	let cancelRequested = false;
-	let requestId = 0;
 
 	const databaseEntries = $derived(Object.values(databases ?? {}));
 	const databaseNames = $derived(databaseEntries.map((database) => database.name));
@@ -556,40 +556,37 @@
 	}
 
 	async function runIngestion(command: string) {
-		const nextRequestId = ++requestId;
 		ingestionError = '';
 		result = undefined;
-		isRunning = true;
 		if (isEmulatedCluster && sourceMode === 'inline-file') inlineFileState = 'running';
-		try {
-			activeExecution = isEmulatedCluster
-				? startCurrentEmulatedIngestion()
-				: startKustoManagementCommand(selectedDatabase, command, clusterUrl);
-			const completedResult = await activeExecution.promise;
-			if (nextRequestId === requestId) {
-				result = completedResult;
-				if (isEmulatedCluster && sourceMode === 'inline-file') inlineFileState = 'succeeded';
-			}
-		} catch (error) {
-			if (nextRequestId === requestId) {
-				const message = getKustoErrorMessage(error);
-				ingestionError =
-					message === 'Command cancelled.'
-						? isEmulatedCluster
-							? 'Ingestion cancelled. DuckDB rolled back the active append.'
-							: 'Stopped waiting for ingestion. The Kusto operation may still complete.'
-						: message;
-				if (isEmulatedCluster && sourceMode === 'inline-file') {
-					inlineFileError = ingestionError;
-					inlineFileState = message === 'Command cancelled.' ? 'cancelled' : 'failed';
+		await ingestionOperation.run(
+			async (operation) => {
+				const execution = isEmulatedCluster
+					? startCurrentEmulatedIngestion()
+					: startKustoManagementCommand(selectedDatabase, command, clusterUrl);
+				operation.setExecution(execution);
+				return execution.promise;
+			},
+			{
+				onSuccess: (completedResult) => {
+					result = completedResult;
+					if (isEmulatedCluster && sourceMode === 'inline-file') inlineFileState = 'succeeded';
+				},
+				onError: (error) => {
+					const message = getKustoErrorMessage(error);
+					ingestionError =
+						message === 'Command cancelled.'
+							? isEmulatedCluster
+								? 'Ingestion cancelled. DuckDB rolled back the active append.'
+								: 'Stopped waiting for ingestion. The Kusto operation may still complete.'
+							: message;
+					if (isEmulatedCluster && sourceMode === 'inline-file') {
+						inlineFileError = ingestionError;
+						inlineFileState = message === 'Command cancelled.' ? 'cancelled' : 'failed';
+					}
 				}
 			}
-		} finally {
-			if (nextRequestId === requestId) {
-				activeExecution = undefined;
-				isRunning = false;
-			}
-		}
+		);
 	}
 
 	async function runInlineFileIngestion() {
@@ -599,81 +596,86 @@
 		const database = selectedDatabase;
 		if (!file || !plan || !table || !ingestion) return;
 
-		const nextRequestId = ++requestId;
 		cancelRequested = false;
 		ingestionError = '';
 		result = undefined;
-		isRunning = true;
 		inlineFileState = 'running';
-		try {
-			for (let index = completedFileChunks; index < plan.chunks.length; index += 1) {
-				if (cancelRequested || nextRequestId !== requestId) break;
-				const chunk = plan.chunks[index];
-				activeFileChunk = index;
-				const data = await readInlineCsvChunk(file, chunk);
-				const hash = await hashInlineCsvChunk(database, table, data);
-				const command = buildInlineIngestionCommand({
-					table,
-					data,
-					ingestBy: `kite-inline-file:${hash}`
-				});
-				if (new TextEncoder().encode(command).byteLength > ingestion.maxInlineCommandBytes) {
-					throw new Error(`Chunk ${index + 1} exceeds the configured inline command limit.`);
-				}
-				if (cancelRequested || nextRequestId !== requestId) break;
+		await ingestionOperation.run(
+			async (operation) => {
+				try {
+					for (let index = completedFileChunks; index < plan.chunks.length; index += 1) {
+						if (cancelRequested || !operation.isCurrent()) break;
+						const chunk = plan.chunks[index];
+						activeFileChunk = index;
+						const data = await readInlineCsvChunk(file, chunk);
+						const hash = await hashInlineCsvChunk(database, table, data);
+						const command = buildInlineIngestionCommand({
+							table,
+							data,
+							ingestBy: `kite-inline-file:${hash}`
+						});
+						if (new TextEncoder().encode(command).byteLength > ingestion.maxInlineCommandBytes) {
+							throw new Error(`Chunk ${index + 1} exceeds the configured inline command limit.`);
+						}
+						if (cancelRequested || !operation.isCurrent()) break;
 
-				activeExecution = startKustoManagementCommand(database, command, clusterUrl);
-				const completedResult = await activeExecution.promise;
-				if (nextRequestId !== requestId) return;
-				result = completedResult;
-				completedFileChunks = index + 1;
-				completedFileRecords += chunk.recordCount;
-				const extentColumn = completedResult.columns.findIndex(
-					(column) => column.name.toLowerCase() === 'extentid'
-				);
-				if (extentColumn >= 0) {
-					extentIds = [
-						...extentIds,
-						...completedResult.rows
-							.map((row) => row[extentColumn])
-							.filter((value): value is string => typeof value === 'string' && Boolean(value))
-					];
-				}
-				activeExecution = undefined;
-			}
+						const execution = startKustoManagementCommand(database, command, clusterUrl);
+						operation.setExecution(execution);
+						const completedResult = await execution.promise;
+						if (!operation.isCurrent()) return;
+						result = completedResult;
+						completedFileChunks = index + 1;
+						completedFileRecords += chunk.recordCount;
+						const extentColumn = completedResult.columns.findIndex(
+							(column) => column.name.toLowerCase() === 'extentid'
+						);
+						if (extentColumn >= 0) {
+							extentIds = [
+								...extentIds,
+								...completedResult.rows
+									.map((row) => row[extentColumn])
+									.filter((value): value is string => typeof value === 'string' && Boolean(value))
+							];
+						}
+						operation.setExecution();
+					}
 
-			if (nextRequestId !== requestId) return;
-			inlineFileState = cancelRequested
-				? 'cancelled'
-				: completedFileChunks === plan.chunks.length
-					? 'succeeded'
-					: 'partial';
-			if (cancelRequested) {
-				ingestionError =
-					'Stopped inline-file ingestion. Completed chunks remain ingested; the active chunk may also complete.';
+					if (!operation.isCurrent()) return;
+					inlineFileState = cancelRequested
+						? 'cancelled'
+						: completedFileChunks === plan.chunks.length
+							? 'succeeded'
+							: 'partial';
+					if (cancelRequested) {
+						ingestionError =
+							'Stopped inline-file ingestion. Completed chunks remain ingested; the active chunk may also complete.';
+					}
+				} finally {
+					activeFileChunk = undefined;
+				}
+			},
+			{
+				onError: (error) => {
+					const message = getKustoErrorMessage(error);
+					ingestionError =
+						message === 'Command cancelled.'
+							? 'Stopped inline-file ingestion. Completed chunks remain ingested; the active chunk may also complete.'
+							: message;
+					inlineFileError = ingestionError;
+					inlineFileState = completedFileChunks
+						? 'partial'
+						: cancelRequested
+							? 'cancelled'
+							: 'failed';
+				}
 			}
-		} catch (error) {
-			if (nextRequestId !== requestId) return;
-			const message = getKustoErrorMessage(error);
-			ingestionError =
-				message === 'Command cancelled.'
-					? 'Stopped inline-file ingestion. Completed chunks remain ingested; the active chunk may also complete.'
-					: message;
-			inlineFileError = ingestionError;
-			inlineFileState = completedFileChunks ? 'partial' : cancelRequested ? 'cancelled' : 'failed';
-		} finally {
-			if (nextRequestId === requestId) {
-				activeExecution = undefined;
-				activeFileChunk = undefined;
-				isRunning = false;
-			}
-		}
+		);
 	}
 
 	function cancelIngestion() {
 		cancelRequested = true;
 		scanController?.abort();
-		activeExecution?.cancel();
+		ingestionOperation.cancel();
 	}
 
 	function setResultsCollapsed(collapsed: boolean) {
@@ -686,11 +688,10 @@
 	}
 
 	onDestroy(() => {
-		requestId += 1;
 		scanRequestId += 1;
 		inlineDataScanRequestId += 1;
 		scanController?.abort();
-		activeExecution?.cancel();
+		ingestionOperation.dispose();
 	});
 </script>
 

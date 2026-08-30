@@ -1,16 +1,11 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
-
 	import AppHeader from '$lib/components/app/app-header.svelte';
 	import AppShell from '$lib/components/app/app-shell.svelte';
-	import AdminHero from '$lib/components/admin/admin-hero.svelte';
-	import DataIngestionWorkspace from '$lib/components/admin/data-ingestion-workspace.svelte';
-	import DatabaseManagement from '$lib/components/admin/database-management.svelte';
-	import ManagementCommandWorkspace from '$lib/components/admin/management-command-workspace.svelte';
 	import ClusterConnectionSelector from '$lib/components/cluster/cluster-connection-selector.svelte';
 	import ConnectionFailureDialog from '$lib/components/cluster/connection-failure-dialog.svelte';
 	import DatabaseExplorer from '$lib/components/query/database-explorer.svelte';
+	import { Spinner } from '$lib/components/ui/spinner';
 	import type {
 		ExplorerQuery,
 		ExplorerSelection
@@ -24,12 +19,10 @@
 		getClusterConnectionStore,
 		type NewClusterConnection
 	} from '$lib/cluster/cluster-connection-store.svelte';
-	import { createConnectionRuntime, releaseClusterRuntime } from '$lib/cluster/cluster-runtime';
+	import { createConnectionLifecycleController } from '$lib/query/connection-lifecycle-controller.svelte';
 	import { getConnectionCapabilities } from '$lib/cluster/connection-capabilities';
 	import { usesBuiltInMockCatalog } from '$lib/cluster/mock-cluster-schema';
 	import { MOCK_RECENT_QUERIES, MOCK_SAVED_QUERIES } from '$lib/data/mock-queries';
-	import { deletePersistentDuckDbStorage } from '$lib/duckdb/storage';
-	import { getKustoErrorMessage } from '$lib/kusto/query-client';
 	import { getRecentQueryStore } from '$lib/query/recent-query-store.svelte';
 	import { getSavedQueryStore } from '$lib/query/saved-query-store.svelte';
 
@@ -40,6 +33,22 @@
 	};
 
 	let { view = 'overview' }: AdminWorkspaceProps = $props();
+	const adminHeroModule = $derived(
+		view === 'overview' ? import('$lib/components/admin/admin-hero.svelte') : undefined
+	);
+	const databaseManagementModule = $derived(
+		view === 'databases' ? import('$lib/components/admin/database-management.svelte') : undefined
+	);
+	const managementCommandModule = $derived(
+		view === 'commands'
+			? import('$lib/components/admin/management-command-workspace.svelte')
+			: undefined
+	);
+	const dataIngestionModule = $derived(
+		view === 'ingestion'
+			? import('$lib/components/admin/data-ingestion-workspace.svelte')
+			: undefined
+	);
 	const clusterConnectionStore = getClusterConnectionStore();
 	const clusters = $derived(clusterConnectionStore.clusters);
 	const customClusters = $derived(clusterConnectionStore.customClusters);
@@ -55,11 +64,23 @@
 	let isTableMutating = $state(false);
 	let selectedClusterId = $state(clusterSession.activeClusterId);
 	let failedClusterId = $state<string>();
-	let schemaRequestId = 0;
 	let explorerFilter = $state('');
 	let selectedDatabase = $state(clusterSession.selectedDatabase);
 	let selectedTable = $state(clusterSession.selectedTable);
 	let selectedFunction = $state(clusterSession.selectedFunction);
+	let hasInitializedConnection = false;
+	const initialCluster =
+		clusterConnectionStore.clusters.find(
+			(cluster) => cluster.id === clusterSession.activeClusterId
+		) ?? clusterConnectionStore.clusters[0];
+	const connectionLifecycle = createConnectionLifecycleController({
+		store: clusterConnectionStore,
+		session: clusterSession,
+		initialCluster,
+		onQueryExecutionReset: () => undefined,
+		onSchemaReady: () => undefined,
+		onstatechange: () => syncConnectionState()
+	});
 	const databaseSchema = $derived(clusterSession.databaseSchema);
 	const databaseCount = $derived(Object.keys(databaseSchema ?? {}).length);
 	const tableCount = $derived(
@@ -156,51 +177,27 @@
 	}
 
 	async function connectCluster(clusterId = selectedClusterId) {
-		const requestId = ++schemaRequestId;
-		const cluster = clusterConnectionStore.clusters.find((item) => item.id === clusterId);
-		if (!cluster) return false;
+		const state = connectionLifecycle.state;
+		state.selectedClusterId = clusterId;
+		state.selectedDatabase = selectedDatabase;
+		state.selectedTable = selectedTable;
+		state.selectedFunction = selectedFunction;
+		await connectionLifecycle.refresh();
+		syncConnectionState();
+		return state.connectionStatus === 'ready';
+	}
 
-		connectionStatus = 'loading';
-		isClusterSwitching = Boolean(clusterSession.databaseSchema);
-		connectionError = '';
-		try {
-			const schema = await createConnectionRuntime(cluster).loadSchema();
-			if (requestId !== schemaRequestId || clusterId !== selectedClusterId) return false;
-			const firstDatabase = Object.values(schema)[0];
-			const shouldRestoreSelection = clusterId === clusterSession.activeClusterId;
-			const activeDatabase = shouldRestoreSelection
-				? (schema[selectedDatabase] ?? firstDatabase)
-				: firstDatabase;
-
-			clusterSession.getExplorerExpansion(clusterId);
-			clusterSession.activeClusterId = clusterId;
-			persistActiveClusterId(clusterId);
-			activeClusterUrl = cluster.url;
-			clusterSession.databaseSchema = schema;
-			selectedDatabase = activeDatabase.name;
-			selectedTable =
-				shouldRestoreSelection &&
-				activeDatabase.tables.some((table) => table.name === selectedTable)
-					? selectedTable
-					: undefined;
-			selectedFunction =
-				shouldRestoreSelection &&
-				activeDatabase.functions?.some((fn) => fn.name === selectedFunction)
-					? selectedFunction
-					: undefined;
-			connectionStatus = 'ready';
-			isClusterSwitching = false;
-			failedClusterId = undefined;
-			return true;
-		} catch (error) {
-			if (requestId !== schemaRequestId) return false;
-			connectionError = getKustoErrorMessage(error);
-			connectionStatus = 'error';
-			isClusterSwitching = false;
-			failedClusterId = clusterId;
-			selectedClusterId = clusterSession.activeClusterId;
-			return false;
-		}
+	function syncConnectionState() {
+		const state = connectionLifecycle.state;
+		connectionStatus = state.connectionStatus;
+		isClusterSwitching = state.isClusterSwitching;
+		connectionError = state.connectionError;
+		failedClusterId = state.failedClusterId;
+		selectedClusterId = state.selectedClusterId;
+		activeClusterUrl = state.activeClusterUrl;
+		selectedDatabase = state.selectedDatabase;
+		selectedTable = state.selectedTable;
+		selectedFunction = state.selectedFunction;
 	}
 
 	function switchCluster(clusterId: string) {
@@ -220,29 +217,20 @@
 	}
 
 	async function removeCluster(clusterId: string) {
-		const wasSelected =
-			clusterId === selectedClusterId || clusterId === clusterSession.activeClusterId;
-		const removedCluster = clusters.find((cluster) => cluster.id === clusterId);
-		if (removedCluster?.kind === 'emulated') {
-			await releaseClusterRuntime(clusterId);
-			if (removedCluster.emulatedStorage?.mode === 'opfs') {
-				await deletePersistentDuckDbStorage(removedCluster.emulatedStorage.storageId);
-			}
-		}
-		clusterConnectionStore.remove(clusterId);
-		if (wasSelected) switchCluster(clusters[0].id);
+		await connectionLifecycle.removeCluster(clusterId);
+		selectedClusterId = connectionLifecycle.state.selectedClusterId;
 	}
 
 	function retryFailedCluster() {
-		if (!failedClusterId) return;
-		selectedClusterId = failedClusterId;
-		void connectCluster(failedClusterId);
+		connectionLifecycle.retry();
+		void connectCluster(connectionLifecycle.state.selectedClusterId);
 	}
 
 	function dismissConnectionFailure() {
-		connectionStatus = 'ready';
-		connectionError = '';
-		failedClusterId = undefined;
+		connectionLifecycle.dismissFailure();
+		connectionStatus = connectionLifecycle.state.connectionStatus;
+		connectionError = connectionLifecycle.state.connectionError;
+		failedClusterId = connectionLifecycle.state.failedClusterId;
 	}
 
 	$effect(() => {
@@ -255,8 +243,10 @@
 		explorerExpansion = clusterSession.getExplorerExpansion(clusterSession.activeClusterId);
 	});
 
-	onMount(() => {
-		clusterConnectionStore.hydrate();
+	$effect(() => {
+		if (!clusterConnectionStore.hydrated || hasInitializedConnection) return;
+		hasInitializedConnection = true;
+		void connectionLifecycle.retryPendingCleanups();
 		const persistedClusterId = getPersistedActiveClusterId();
 		if (
 			!clusterSession.databaseSchema &&
@@ -336,67 +326,99 @@
 	</AppHeader>
 
 	{#if view === 'overview'}
-		<AdminHero
-			clusterName={activeClusterName}
-			{databaseCount}
-			{tableCount}
-			emulatedStorage={activeCluster?.emulatedStorage}
-		/>
+		{#if adminHeroModule}
+			{#await adminHeroModule}
+				<div class="grid min-h-48 flex-1 place-items-center" aria-label="Loading admin overview">
+					<Spinner />
+				</div>
+			{:then module}
+				<module.default
+					clusterName={activeClusterName}
+					{databaseCount}
+					{tableCount}
+					{connectionStatus}
+					{connectionError}
+					capabilities={activeCapabilities}
+					emulatedStorage={activeCluster?.emulatedStorage}
+				/>
+			{/await}
+		{/if}
 	{:else if view === 'databases'}
-		<DatabaseManagement
-			databases={databaseSchema}
-			bind:selectedDatabase
-			expansionState={explorerExpansion}
-			onexpansionchange={updateExplorerExpansion}
-			clusterId={clusterSession.activeClusterId}
-			clusterUrl={activeClusterUrl}
-			clusterName={activeClusterName}
-			{isMockCluster}
-			{isEmulatedCluster}
-			{isLogAnalyticsCluster}
-			isLoading={connectionStatus === 'loading'}
-			onrefreshschema={async (clusterId) => {
-				if (!(await connectCluster(clusterId))) {
-					throw new Error('The backend schema refresh did not complete.');
-				}
-			}}
-			onmutationstatechange={(running) => (isTableMutating = running)}
-			onopenquery={(database) =>
-				openInQuery({
-					database
-				})}
-		/>
+		{#if databaseManagementModule}
+			{#await databaseManagementModule}
+				<div class="grid min-h-48 flex-1 place-items-center" aria-label="Loading databases">
+					<Spinner />
+				</div>
+			{:then module}
+				<module.default
+					databases={databaseSchema}
+					bind:selectedDatabase
+					expansionState={explorerExpansion}
+					onexpansionchange={updateExplorerExpansion}
+					clusterId={clusterSession.activeClusterId}
+					clusterUrl={activeClusterUrl}
+					clusterName={activeClusterName}
+					isLoading={connectionStatus === 'loading'}
+					onrefreshschema={async (clusterId) => {
+						if (!(await connectCluster(clusterId))) {
+							throw new Error('The backend schema refresh did not complete.');
+						}
+					}}
+					onmutationstatechange={(running) => (isTableMutating = running)}
+					onopenquery={(database) =>
+						openInQuery({
+							database
+						})}
+				/>
+			{/await}
+		{/if}
 	{:else if view === 'commands'}
-		<ManagementCommandWorkspace
-			databases={databaseSchema}
-			bind:selectedDatabase
-			clusterUrl={activeClusterUrl}
-			clusterName={activeClusterName}
-			{isMockCluster}
-			{isEmulatedCluster}
-			{isLogAnalyticsCluster}
-			managementCommands={activeCapabilities.managementCommands}
-			onrefreshschema={async () => {
-				await connectCluster(clusterSession.activeClusterId);
-			}}
-		/>
+		{#if managementCommandModule}
+			{#await managementCommandModule}
+				<div class="grid min-h-48 flex-1 place-items-center" aria-label="Loading commands">
+					<Spinner />
+				</div>
+			{:then module}
+				<module.default
+					databases={databaseSchema}
+					bind:selectedDatabase
+					clusterUrl={activeClusterUrl}
+					clusterName={activeClusterName}
+					{isMockCluster}
+					{isEmulatedCluster}
+					{isLogAnalyticsCluster}
+					managementCommands={activeCapabilities.managementCommands}
+					onrefreshschema={async () => {
+						await connectCluster(clusterSession.activeClusterId);
+					}}
+				/>
+			{/await}
+		{/if}
 	{:else}
-		{#key clusterSession.activeClusterId}
-			<DataIngestionWorkspace
-				databases={databaseSchema}
-				bind:selectedDatabase
-				bind:selectedTable
-				clusterId={clusterSession.activeClusterId}
-				clusterUrl={activeClusterUrl}
-				clusterName={activeClusterName}
-				ingestion={activeCluster?.ingestion}
-				emulatedStorage={activeCluster?.emulatedStorage}
-				{isMockCluster}
-				{isEmulatedCluster}
-				ingestionEnabled={activeCapabilities.ingestion !== 'none'}
-				isLoading={connectionStatus === 'loading'}
-			/>
-		{/key}
+		{#if dataIngestionModule}
+			{#await dataIngestionModule}
+				<div class="grid min-h-48 flex-1 place-items-center" aria-label="Loading ingestion">
+					<Spinner />
+				</div>
+			{:then module}
+				{#key clusterSession.activeClusterId}
+					<module.default
+						databases={databaseSchema}
+						bind:selectedDatabase
+						bind:selectedTable
+						clusterId={clusterSession.activeClusterId}
+						clusterUrl={activeClusterUrl}
+						clusterName={activeClusterName}
+						ingestion={activeCluster?.ingestion}
+						emulatedStorage={activeCluster?.emulatedStorage}
+						{isMockCluster}
+						{isEmulatedCluster}
+						ingestionEnabled={activeCapabilities.ingestion !== 'none'}
+						isLoading={connectionStatus === 'loading'}
+					/>
+				{/key}
+			{/await}
+		{/if}
 	{/if}
 
 	{#if connectionStatus === 'error' && connectionError && databaseSchema}

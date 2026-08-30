@@ -3,6 +3,7 @@ import type { LogAnalyticsConnectionConfiguration } from '$lib/kusto/query-clien
 import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 import type { LogAnalyticsQueryError, LogAnalyticsQueryStatistics } from '$lib/types/log-analytics';
 import type { QueryExecution, QueryResult } from '$lib/types/query-result';
+import { normalizeResultValue } from '$lib/query/result-value';
 
 const ENDPOINT = 'https://api.loganalytics.azure.com/v1/workspaces';
 const METADATA_ENDPOINT = 'https://api.loganalytics.io/v1';
@@ -111,19 +112,6 @@ async function requestMetadata(
 	return payload as MetadataResponse;
 }
 
-function normalizeCell(value: unknown): unknown {
-	if (Array.isArray(value)) return value.map(normalizeCell);
-	if (value && typeof value === 'object') {
-		return Object.fromEntries(
-			Object.entries(value as Record<string, unknown>).map(([key, item]) => [
-				key,
-				normalizeCell(item)
-			])
-		);
-	}
-	return value;
-}
-
 /** Loads the Log Analytics metadata endpoint into the schema consumed by Explorer and Monaco. */
 export function parseLogAnalyticsMetadata(
 	tableResponse: MetadataResponse,
@@ -198,7 +186,7 @@ export function startLogAnalyticsQuery(
 			}));
 			const rows = (table?.rows ?? [])
 				.slice(0, MAX_RENDERED_ROWS)
-				.map((row) => row.map(normalizeCell));
+				.map((row) => row.map(normalizeResultValue));
 			return {
 				columns,
 				rows,

@@ -2,47 +2,10 @@ import * as duckdb from '@duckdb/duckdb-wasm';
 import DUCKDB_BUNDLES from '#kite-duckdb-bundles';
 
 import { getEmulatedStorage, type EmulatedStorage } from '$lib/emulation/storage';
-import type { DuckDbCatalogDatabase, DuckDbCatalogSchema, DuckDbQueryResult } from './types';
 import type { QueryExecution, QueryResult } from '$lib/types/query-result';
 import { getPersistentDuckDbFilePrefix } from './storage';
 
 export { deletePersistentDuckDbStorage, getPersistentDuckDbFilePrefix } from './storage';
-
-const CATALOG_SQL = `
-	SELECT
-		d.database_name,
-		d.database_name = current_database() AS is_current,
-		t.table_schema,
-		t.table_name
-	FROM duckdb_databases() AS d
-	LEFT JOIN information_schema.tables AS t
-		ON t.table_catalog = d.database_name
-		AND t.table_type = 'BASE TABLE'
-		AND t.table_schema NOT IN ('information_schema', 'pg_catalog')
-	WHERE NOT d.internal
-	ORDER BY d.database_name, t.table_schema, t.table_name
-`;
-
-const PERSISTENT_CATALOG_SQL = `
-	SELECT
-		s.schema_name AS database_name,
-		s.schema_name = current_schema() AS is_current,
-		'main' AS table_schema,
-		t.table_name
-	FROM information_schema.schemata AS s
-	LEFT JOIN information_schema.tables AS t
-		ON t.table_catalog = current_database()
-		AND t.table_schema = s.schema_name
-		AND t.table_type = 'BASE TABLE'
-	WHERE s.catalog_name = current_database()
-		AND s.schema_name NOT IN (
-			'information_schema',
-			'pg_catalog',
-			'main',
-			'kite_internal'
-		)
-	ORDER BY s.schema_name, t.table_name
-`;
 
 type DuckDbSession = {
 	sessionId: string;
@@ -73,7 +36,12 @@ export type DuckDbFileQueryOptions = {
 	buildSql: (virtualPath: string) => string;
 };
 
-const DEFAULT_SESSION_ID = 'kql-to-sql-lab';
+type DuckDbQueryResult = {
+	columns: Array<{ name: string; type: string }>;
+	rows: unknown[][];
+	elapsedMs: number;
+};
+
 const PERSISTENCE_SCHEMA = 'kite_internal';
 const PERSISTENCE_TABLE = 'databases';
 const PERSISTENCE_WRITE_PROBE = '__kite_opfs_write_probe';
@@ -276,7 +244,7 @@ async function createSession(sessionId: string): Promise<DuckDbSession> {
 	}
 }
 
-function getSession(sessionId = DEFAULT_SESSION_ID) {
+function getSession(sessionId: string) {
 	const existing = sessionPromises.get(sessionId);
 	if (existing) return existing;
 
@@ -401,22 +369,16 @@ function materializeResult(
 	};
 }
 
-/** Executes SQL against the validation page's in-memory DuckDB database. */
-export async function executeDuckDbSql(
-	sql: string,
-	sessionId = DEFAULT_SESSION_ID
-): Promise<DuckDbQueryResult> {
+/** Executes SQL against one emulated cluster's DuckDB session. */
+export async function executeDuckDbSql(sql: string, sessionId: string): Promise<DuckDbQueryResult> {
 	const session = await getSession(sessionId);
 	const startedAt = performance.now();
 	const table = await session.connection.query(rewritePersistentSql(session, sql));
 	return materializeResult(table, performance.now() - startedAt);
 }
 
-/** Executes SQL and adapts the response for Kite's shared result drawer. */
-export async function executeDuckDbQuery(
-	sql: string,
-	sessionId = DEFAULT_SESSION_ID
-): Promise<QueryResult> {
+/** Executes SQL and adapts the response for Kite's query result renderer. */
+export async function executeDuckDbQuery(sql: string, sessionId: string): Promise<QueryResult> {
 	const clientRequestId = `duckdb-${++nextRequestId}`;
 	const result = await executeDuckDbSql(sql, sessionId);
 
@@ -523,59 +485,8 @@ export function startDuckDbFileQuery(options: DuckDbFileQueryOptions): QueryExec
 	};
 }
 
-/** Reads the attached databases and user tables visible to the in-memory DuckDB instance. */
-export async function getDuckDbCatalog(
-	sessionId = DEFAULT_SESSION_ID
-): Promise<DuckDbCatalogDatabase[]> {
-	const persistent = await isPersistentDuckDbSession(sessionId);
-	const result = await executeDuckDbSql(
-		persistent ? PERSISTENT_CATALOG_SQL : CATALOG_SQL,
-		sessionId
-	);
-	const internalCatalogName = await getDuckDbInternalCatalogName(sessionId);
-	const columnIndexes = Object.fromEntries(
-		result.columns.map((column, index) => [column.name, index])
-	);
-	const databases = new Map<
-		string,
-		{ database: DuckDbCatalogDatabase; schemas: Map<string, DuckDbCatalogSchema> }
-	>();
-
-	for (const row of result.rows) {
-		const databaseName = String(row[columnIndexes.database_name]);
-		if (databaseName === internalCatalogName) continue;
-		let entry = databases.get(databaseName);
-		if (!entry) {
-			entry = {
-				database: {
-					name: databaseName,
-					isCurrent: Boolean(row[columnIndexes.is_current]),
-					schemas: []
-				},
-				schemas: new Map()
-			};
-			databases.set(databaseName, entry);
-		}
-
-		const schemaValue = row[columnIndexes.table_schema];
-		const tableValue = row[columnIndexes.table_name];
-		if (schemaValue == null || tableValue == null) continue;
-
-		const schemaName = String(schemaValue);
-		let schema = entry.schemas.get(schemaName);
-		if (!schema) {
-			schema = { name: schemaName, tables: [] };
-			entry.schemas.set(schemaName, schema);
-			entry.database.schemas.push(schema);
-		}
-		schema.tables.push(String(tableValue));
-	}
-
-	return Array.from(databases.values(), ({ database }) => database);
-}
-
 /** Releases one DuckDB connection, its WASM memory, and its worker. */
-export async function disposeDuckDb(sessionId = DEFAULT_SESSION_ID): Promise<void> {
+export async function disposeDuckDb(sessionId: string): Promise<void> {
 	const activeSession = sessionPromises.get(sessionId);
 	sessionPromises.delete(sessionId);
 	if (!activeSession) return;

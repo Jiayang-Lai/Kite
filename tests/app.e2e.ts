@@ -25,8 +25,7 @@ const APPLICATION_ROUTES = [
 	'/admin/ingestion',
 	'/explorer',
 	'/explorer/query',
-	'/explorer/query/saved',
-	'/labs/kql-to-sql'
+	'/explorer/query/saved'
 ];
 
 async function openAzureAuthenticationProfiles(page: Page) {
@@ -69,11 +68,15 @@ test('serves the production build and opens the query explorer', async ({ page }
 	await expect(page).toHaveTitle('Kite');
 	await expect(
 		page.getByRole('heading', {
-			name: 'Explore data and operate your local Kusto clusters.'
+			name: 'Explore data and operate Kusto from one focused workspace.'
 		})
 	).toBeVisible();
 
-	await page.getByRole('link', { name: 'Open Query Explorer' }).click();
+	await page.getByRole('link', { name: 'Open Explorer' }).click();
+	await expect(page).toHaveURL(/\/explorer$/);
+	await expect(page.getByRole('heading', { name: 'Explore Mock cluster' })).toBeVisible();
+
+	await page.getByRole('link', { name: 'New query' }).click();
 	await expect(page).toHaveURL(/\/explorer\/query$/);
 	await expect(page.getByRole('tablist', { name: 'Query tabs' })).toBeVisible();
 	await expectDuckDbWorkerCount(page, 0);
@@ -360,68 +363,6 @@ test('shows cluster switch failures from the Explorer overview', async ({ page }
 	await expect(page.getByRole('alert')).toContainText('continue working with Mock cluster');
 });
 
-test('translates KQL to DuckDB SQL and executes it in the browser', async ({ page }) => {
-	const forbiddenRequestHost = process.env.KITE_E2E_FORBID_REQUEST_HOST;
-	const requireLocalDuckDbAssets = process.env.KITE_E2E_REQUIRE_LOCAL_DUCKDB_ASSETS === 'true';
-	const forbiddenRequestUrls: string[] = [];
-	const duckDbWorkerUrls = new Set<string>();
-	const duckDbWasmUrls = new Set<string>();
-	page.context().on('request', (request) => {
-		const requestUrl = new URL(request.url());
-		if (forbiddenRequestHost && requestUrl.hostname === forbiddenRequestHost) {
-			forbiddenRequestUrls.push(request.url());
-		}
-		if (/\/duckdb-browser-(?:eh|mvp)\.worker\.[^/]+\.js$/.test(requestUrl.pathname)) {
-			duckDbWorkerUrls.add(request.url());
-		}
-		if (/\/duckdb-(?:eh|mvp)\.[^/]+\.wasm$/.test(requestUrl.pathname)) {
-			duckDbWasmUrls.add(request.url());
-		}
-	});
-
-	const wasmLoader = await page.request.get('/kql-wasm/_framework/dotnet.js');
-	expect(wasmLoader.ok()).toBe(true);
-	await page.goto('/labs/kql-to-sql');
-
-	await expect(page).toHaveTitle('KQL to SQL WASM validation');
-	await expect(page.getByTestId('duckdb-catalog')).toContainText('memory', {
-		timeout: 30_000
-	});
-	await expect(page.getByTestId('duckdb-catalog')).toContainText('No user tables.');
-	await expect(page.getByTestId('translation-output')).toContainText(
-		"SELECT * FROM (VALUES ('Texas', CAST(12 AS BIGINT)), ('Ohio', CAST(8 AS BIGINT))) AS t(State, Events) ORDER BY Events DESC LIMIT 1",
-		{ timeout: 30_000 }
-	);
-	const resultDrawer = page.getByTestId('duckdb-results');
-	await expect(resultDrawer).toContainText('Run a duckdb query to see its results.');
-	await page.getByRole('button', { name: 'Run query' }).click();
-	await expect(resultDrawer.getByRole('cell', { name: 'Texas' })).toBeVisible({
-		timeout: 30_000
-	});
-	await expect(resultDrawer.getByRole('cell', { name: '12' })).toBeVisible();
-	await resultDrawer.getByRole('button', { name: 'Inspect row details' }).click();
-	await expect(resultDrawer.getByRole('button', { name: 'Collapse row details' })).toBeVisible();
-	await expect(resultDrawer.locator('pre').filter({ hasText: 'Texas' })).toBeVisible();
-	expect(
-		forbiddenRequestUrls,
-		`Requests to ${forbiddenRequestHost ?? 'the forbidden host'} are not allowed`
-	).toEqual([]);
-	if (requireLocalDuckDbAssets) {
-		const applicationOrigin = new URL(page.url()).origin;
-		expect(duckDbWorkerUrls.size, 'The browser must request a DuckDB worker').toBeGreaterThan(0);
-		expect(
-			duckDbWasmUrls.size,
-			'The browser must request a DuckDB runtime WASM file'
-		).toBeGreaterThan(0);
-		expect(
-			[...duckDbWorkerUrls, ...duckDbWasmUrls].every(
-				(assetUrl) => new URL(assetUrl).origin === applicationOrigin
-			),
-			'DuckDB worker and runtime WASM requests must use the Kite origin'
-		).toBe(true);
-	}
-});
-
 test('runs KQL through the emulated cluster and disables Kusto commands', async ({ page }) => {
 	const wasmLoader = await page.request.get('/kql-wasm/_framework/dotnet.js');
 	expect(wasmLoader.ok()).toBe(true);
@@ -523,6 +464,85 @@ test('compares, edits, and runs either side of two query tabs', async ({ page })
 	await expect(comparison).toHaveCount(0);
 });
 
+test('persists, reopens, updates, and deletes a saved query', async ({ page }) => {
+	test.setTimeout(60_000);
+	await page.goto('/explorer/query');
+	await page.getByRole('button', { name: /Mock cluster/ }).click();
+	await page.getByRole('menuitem').filter({ hasText: 'Emulated cluster' }).click();
+	await expect(page.getByText('memory', { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+
+	const editorSurface = page.locator('.monaco-editor').first();
+	await editorSurface.click();
+	await page.keyboard.insertText('print Message = "Saved before reload"');
+	await page.locator('button[title="Save query locally"]').click();
+	const saveQueryDialog = page.getByRole('dialog', { name: 'Save query' });
+	await saveQueryDialog.getByLabel('Query name').fill('Persistent saved query');
+	await saveQueryDialog.getByRole('button', { name: 'Save query' }).click();
+
+	await page.reload();
+	await page.goto('/explorer/query/saved');
+	await expect(page.getByText('Persistent saved query', { exact: true })).toBeVisible();
+	await expect(
+		page.getByText('print Message = "Saved before reload"', { exact: true })
+	).toBeVisible();
+	await page.getByRole('button', { name: 'Open query' }).click();
+	await expect(page).toHaveURL(/\/explorer\/query$/);
+	await expect(page.getByRole('tab', { name: /Persistent saved query/ })).toBeVisible();
+
+	await editorSurface.click();
+	await page.keyboard.press('Control+A');
+	await page.keyboard.insertText('print Message = "Updated after reload"');
+	await page.locator('button[title="Update Persistent saved query"]').click();
+	await page.goto('/explorer/query/saved');
+	await expect(
+		page.getByText('print Message = "Updated after reload"', { exact: true })
+	).toBeVisible();
+
+	await page.getByRole('button', { name: 'Delete Persistent saved query' }).click();
+	await expect(page.getByText('No saved queries', { exact: true })).toBeVisible();
+});
+
+test('restores a selected custom cluster in Explorer after a full reload', async ({ page }) => {
+	await page.goto('/');
+	await page.evaluate((storageKey) => {
+		localStorage.setItem(
+			storageKey,
+			JSON.stringify([
+				{
+					id: 'e2e-restored-mock',
+					name: 'Restored mock',
+					description: 'Persisted custom catalog',
+					url: 'mock://kite/e2e-restored-mock',
+					kind: 'mock',
+					mockSchemaRevision: 0,
+					mockSchema: {
+						RestoredDb: {
+							name: 'RestoredDb',
+							tables: [
+								{
+									name: 'RestoredEvents',
+									columns: [{ name: 'Value', type: 'string' }]
+								}
+							],
+							functions: []
+						}
+					}
+				}
+			])
+		);
+		document.cookie = 'kite_active_cluster_id=e2e-restored-mock; path=/; samesite=lax';
+	}, CLUSTER_CONNECTIONS_STORAGE_KEY);
+
+	await page.goto('/explorer/query');
+	await expect(page.getByRole('button', { name: /Restored mock/ })).toBeVisible();
+	await expect(page.getByText('RestoredDb', { exact: true }).first()).toBeVisible();
+
+	await page.reload();
+
+	await expect(page.getByRole('button', { name: /Restored mock/ })).toBeVisible();
+	await expect(page.getByText('RestoredEvents', { exact: true }).first()).toBeVisible();
+});
+
 test('releases inactive DuckDB workers and keeps at most one emulated session', async ({
 	page
 }) => {
@@ -564,7 +584,7 @@ test('releases inactive DuckDB workers and keeps at most one emulated session', 
 	await page.getByRole('link', { name: 'Kite', exact: true }).click();
 	await expect(
 		page.getByRole('heading', {
-			name: 'Explore data and operate your local Kusto clusters.'
+			name: 'Explore data and operate Kusto from one focused workspace.'
 		})
 	).toBeVisible();
 	await expectDuckDbWorkerCount(page, 0);

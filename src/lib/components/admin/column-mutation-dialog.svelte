@@ -11,6 +11,7 @@
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import * as Select from '$lib/components/ui/select';
 	import { Spinner } from '$lib/components/ui/spinner';
+	import { createReviewablePlan } from '$lib/admin/reviewable-plan.svelte';
 	import {
 		buildChangeColumnTypePlan,
 		buildDropColumnPlan,
@@ -59,7 +60,6 @@
 	let initializedTarget = '';
 	let newColumnName = $state('');
 	let newColumnType = $state<KustoScalarType | ''>('');
-	let confirmationText = $state('');
 	let dialogContent = $state<HTMLElement | null>(null);
 	const isBusy = $derived(isPreparing || isRunning);
 	const confirmationPhrase = $derived(
@@ -70,39 +70,32 @@
 				: `${table.name}.${column.name}`
 	);
 
-	const preparedPlan = $derived.by(() => {
-		try {
-			const existingColumnNames = table.columns.map((item) => item.name);
-			let plan: TableMutationPlan;
-			if (action === 'rename') {
-				plan = buildRenameColumnPlan({
-					tableName: table.name,
-					columnName: column.name,
-					newColumnName,
-					existingColumnNames
-				});
-			} else if (action === 'change-type') {
-				plan = buildChangeColumnTypePlan({
-					tableName: table.name,
-					columnName: column.name,
-					currentColumnType: column.type,
-					newColumnType,
-					existingColumnNames
-				});
-			} else {
-				plan = buildDropColumnPlan({
-					tableName: table.name,
-					columnName: column.name,
-					existingColumnNames
-				});
-			}
-			return { plan, error: '' };
-		} catch (error) {
-			return {
-				plan: undefined,
-				error: error instanceof Error ? error.message : String(error)
-			};
+	const reviewPlan = createReviewablePlan(() => {
+		const existingColumnNames = table.columns.map((item) => item.name);
+		let plan: TableMutationPlan;
+		if (action === 'rename') {
+			plan = buildRenameColumnPlan({
+				tableName: table.name,
+				columnName: column.name,
+				newColumnName,
+				existingColumnNames
+			});
+		} else if (action === 'change-type') {
+			plan = buildChangeColumnTypePlan({
+				tableName: table.name,
+				columnName: column.name,
+				currentColumnType: column.type,
+				newColumnType,
+				existingColumnNames
+			});
+		} else {
+			plan = buildDropColumnPlan({
+				tableName: table.name,
+				columnName: column.name,
+				existingColumnNames
+			});
 		}
+		return plan;
 	});
 
 	$effect(() => {
@@ -113,7 +106,7 @@
 		initializedTarget = target;
 		newColumnName = '';
 		newColumnType = '';
-		confirmationText = '';
+		reviewPlan.reset();
 	});
 
 	$effect(() => {
@@ -122,14 +115,14 @@
 
 	function submitMutation() {
 		if (
-			!preparedPlan.plan ||
+			!reviewPlan.prepared.plan ||
 			!preflightReady ||
-			confirmationText !== confirmationPhrase ||
+			!reviewPlan.canSubmit(confirmationPhrase, preflightReady && !isBusy) ||
 			isBusy
 		) {
 			return;
 		}
-		onsubmit?.(preparedPlan.plan);
+		onsubmit?.(reviewPlan.prepared.plan);
 	}
 
 	function focusDialogWithoutScrolling(event: Event) {
@@ -242,8 +235,8 @@
 							autocomplete="off"
 							placeholder="NewColumnName"
 						/>
-						{#if preparedPlan.error && newColumnName.trim()}
-							<p class="text-destructive mt-1.5 text-xs">{preparedPlan.error}</p>
+						{#if reviewPlan.prepared.error && newColumnName.trim()}
+							<p class="text-destructive mt-1.5 text-xs">{reviewPlan.prepared.error}</p>
 						{/if}
 					</div>
 				{:else if action === 'change-type'}
@@ -264,18 +257,18 @@
 						<p class="text-muted-foreground mt-1.5 text-xs">
 							Current type: <span class="font-mono">{column.type}</span>
 						</p>
-						{#if preparedPlan.error && newColumnType}
-							<p class="text-destructive mt-1.5 text-xs">{preparedPlan.error}</p>
+						{#if reviewPlan.prepared.error && newColumnType}
+							<p class="text-destructive mt-1.5 text-xs">{reviewPlan.prepared.error}</p>
 						{/if}
 					</div>
 				{/if}
 
-				{#if preparedPlan.plan}
+				{#if reviewPlan.prepared.plan}
 					<div>
 						<h3 class="mb-2 text-sm font-medium">Management command</h3>
 						<pre
-							class="bg-muted max-h-36 overflow-auto rounded-lg border p-3 font-mono text-xs whitespace-pre-wrap">{preparedPlan
-								.plan.command}</pre>
+							class="bg-muted max-h-36 overflow-auto rounded-lg border p-3 font-mono text-xs whitespace-pre-wrap">{reviewPlan
+								.prepared.plan.command}</pre>
 					</div>
 				{/if}
 
@@ -308,7 +301,7 @@
 					<Input
 						id="confirm-column-mutation"
 						class="mt-2 font-mono"
-						bind:value={confirmationText}
+						bind:value={reviewPlan.state.confirmationText}
 						disabled={isBusy}
 						autocomplete="off"
 					/>
@@ -351,9 +344,9 @@
 				<Button variant="outline" onclick={() => (open = false)}>Cancel</Button>
 				<Button
 					variant={action === 'rename' ? 'default' : 'destructive'}
-					disabled={!preparedPlan.plan ||
+					disabled={!reviewPlan.prepared.plan ||
 						!preflightReady ||
-						confirmationText !== confirmationPhrase}
+						reviewPlan.state.confirmationText !== confirmationPhrase}
 					onclick={submitMutation}
 				>
 					{#if action === 'rename'}

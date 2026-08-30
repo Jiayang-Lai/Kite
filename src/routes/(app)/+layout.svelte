@@ -13,7 +13,7 @@
 		setAzureAuthenticationProfileStore
 	} from '$lib/azure-auth/profile-store.svelte';
 	import { createClusterSession, setClusterSession } from '$lib/cluster/cluster-session.svelte';
-	import { getKustoClusters } from '$lib/kusto/query-client';
+	import { getKustoClusters } from '$lib/cluster/connections';
 	import {
 		createRecentQueryStore,
 		setRecentQueryStore

@@ -12,6 +12,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { Spinner } from '$lib/components/ui/spinner';
+	import { createReviewablePlan } from '$lib/admin/reviewable-plan.svelte';
 	import {
 		buildReorderTableColumnsPlan,
 		diffTableSchema,
@@ -56,8 +57,6 @@
 
 	let initializedTarget = '';
 	let orderedColumns = $state<OrderedColumn[]>([]);
-	let reviewing = $state(false);
-	let confirmationText = $state('');
 	let dialogContent = $state<HTMLElement | null>(null);
 	let scrollViewport = $state<HTMLElement | null>(null);
 	const isBusy = $derived(isPreparing || isRunning);
@@ -69,22 +68,12 @@
 		)
 	);
 
-	const preparedPlan = $derived.by(() => {
-		if (!snapshot) return { plan: undefined, error: 'Current table metadata is not verified yet.' };
-		try {
-			return {
-				plan: buildReorderTableColumnsPlan({
-					snapshot,
-					orderedSourceIndexes: orderedColumns.map((column) => column.sourceIndex)
-				}),
-				error: ''
-			};
-		} catch (error) {
-			return {
-				plan: undefined,
-				error: error instanceof Error ? error.message : String(error)
-			};
-		}
+	const reviewPlan = createReviewablePlan(() => {
+		if (!snapshot) throw new Error('Current table metadata is not verified yet.');
+		return buildReorderTableColumnsPlan({
+			snapshot,
+			orderedSourceIndexes: orderedColumns.map((column) => column.sourceIndex)
+		});
 	});
 
 	$effect(() => {
@@ -99,8 +88,7 @@
 			name: column.name,
 			type: column.type
 		}));
-		reviewing = false;
-		confirmationText = '';
+		reviewPlan.reset();
 	});
 
 	$effect(() => {
@@ -113,33 +101,29 @@
 		const next = [...orderedColumns];
 		[next[index], next[targetIndex]] = [next[targetIndex], next[index]];
 		orderedColumns = next;
-		reviewing = false;
+		reviewPlan.state.reviewing = false;
 	}
 
 	function reviewChanges() {
-		if (!preparedPlan.plan || !preflightReady || isBusy) return;
-		confirmationText = '';
-		reviewing = true;
+		if (!reviewPlan.startReview(preflightReady && !isBusy)) return;
 		void resetScrollPosition();
 	}
 
 	function returnToEditor() {
-		if (isBusy) return;
-		confirmationText = '';
-		reviewing = false;
+		if (!reviewPlan.returnToEditor(!isBusy)) return;
 		void resetScrollPosition();
 	}
 
 	function submitChanges() {
 		if (
-			!preparedPlan.plan ||
+			!reviewPlan.prepared.plan ||
 			!preflightReady ||
-			confirmationText !== confirmationPhrase ||
+			!reviewPlan.canSubmit(confirmationPhrase, preflightReady && !isBusy) ||
 			isBusy
 		) {
 			return;
 		}
-		onsubmit?.(preparedPlan.plan);
+		onsubmit?.(reviewPlan.prepared.plan);
 	}
 
 	function focusDialogWithoutScrolling(event: Event) {
@@ -165,10 +149,12 @@
 	>
 		<Dialog.Header class="border-b p-5 pr-14">
 			<Dialog.Title
-				>{reviewing ? 'Review column order' : `Reorder ${table.name} columns`}</Dialog.Title
+				>{reviewPlan.state.reviewing
+					? 'Review column order'
+					: `Reorder ${table.name} columns`}</Dialog.Title
 			>
 			<Dialog.Description id="column-order-description">
-				{reviewing
+				{reviewPlan.state.reviewing
 					? 'Confirm the complete order and generated management command.'
 					: 'Change only the column order.'}
 			</Dialog.Description>
@@ -221,19 +207,19 @@
 					>
 						<p>The order editor will load after the current table metadata is verified.</p>
 					</div>
-				{:else if reviewing && preparedPlan.plan}
+				{:else if reviewPlan.state.reviewing && reviewPlan.prepared.plan}
 					<section aria-labelledby="order-review-diff-heading">
 						<h3 id="order-review-diff-heading" class="mb-2 text-sm font-medium">
 							Before / after order
 						</h3>
-						<TableSchemaDiff diff={preparedPlan.plan.diff} />
+						<TableSchemaDiff diff={reviewPlan.prepared.plan.diff} />
 					</section>
 
 					<div>
 						<h3 class="mb-2 text-sm font-medium">Complete management command</h3>
 						<pre
-							class="bg-muted max-h-48 overflow-auto rounded-lg border p-3 font-mono text-xs whitespace-pre-wrap">{preparedPlan
-								.plan.command}</pre>
+							class="bg-muted max-h-48 overflow-auto rounded-lg border p-3 font-mono text-xs whitespace-pre-wrap">{reviewPlan
+								.prepared.plan.command}</pre>
 						<p class="text-muted-foreground mt-2 text-xs">
 							Every verified column is included exactly once. The description and folder are
 							included explicitly.
@@ -260,7 +246,7 @@
 						<Input
 							id="confirm-column-order"
 							class="mt-2 font-mono"
-							bind:value={confirmationText}
+							bind:value={reviewPlan.state.confirmationText}
 							disabled={isBusy}
 							autocomplete="off"
 						/>
@@ -339,17 +325,17 @@
 					<Spinner /> Stop waiting
 				</Button>
 				<Button disabled><Spinner /> Reordering columns</Button>
-			{:else if reviewing}
+			{:else if reviewPlan.state.reviewing}
 				<Button variant="outline" onclick={returnToEditor}>Back</Button>
 				<Button
-					disabled={!preflightReady || confirmationText !== confirmationPhrase}
+					disabled={!preflightReady || reviewPlan.state.confirmationText !== confirmationPhrase}
 					onclick={submitChanges}
 				>
 					<SaveIcon /> Apply order
 				</Button>
 			{:else}
 				<Button variant="outline" onclick={() => (open = false)}>Cancel</Button>
-				<Button disabled={!preparedPlan.plan || !preflightReady} onclick={reviewChanges}>
+				<Button disabled={!reviewPlan.prepared.plan || !preflightReady} onclick={reviewChanges}>
 					Review order
 				</Button>
 			{/if}

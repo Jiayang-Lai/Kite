@@ -187,8 +187,11 @@ jobs:
       - verify
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    environment:
+      name: ${{ needs.classify.outputs.type == 'stable' && 'production' || 'release-candidate' }}
     permissions:
       contents: read
+      id-token: write
       packages: write
 
     steps:
@@ -202,6 +205,9 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 24
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Calculate the Kusto documentation cache key
         id: kusto_docs_cache_key
@@ -223,7 +229,7 @@ jobs:
           GHCR_TOKEN: ${{ github.token }}
         run: printf '%s' "$GHCR_TOKEN" | podman login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
 
-      - name: Build and publish the container image
+      - name: Build, sign, and publish the container image
         env:
           COMMIT_SHA: ${{ needs.classify.outputs.commit_sha }}
           RELEASE_TAG: ${{ needs.classify.outputs.tag }}
@@ -250,9 +256,36 @@ jobs:
             "${build_arguments[@]}" \
             .
 
-          for image_tag in "${image_tags[@]}"; do
-            podman push "$image_tag"
+          digest_file="$RUNNER_TEMP/kite-image-digest"
+          podman push --digestfile "$digest_file" "${image_tags[0]}"
+          image_digest="$(<"$digest_file")"
+
+          if [[ ! "$image_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Invalid container image digest: $image_digest" >&2
+            exit 1
+          fi
+
+          image_reference="$image@$image_digest"
+          certificate_identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/tags/$RELEASE_TAG"
+
+          cosign sign --yes "$image_reference"
+          cosign verify \
+            --certificate-identity "$certificate_identity" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$image_reference"
+
+          for image_tag in "${image_tags[@]:1}"; do
+            alias_digest_file="$RUNNER_TEMP/$(basename "$image_tag").digest"
+            podman push --digestfile "$alias_digest_file" "$image_tag"
+            alias_digest="$(<"$alias_digest_file")"
+
+            if [[ "$alias_digest" != "$image_digest" ]]; then
+              echo "Container alias $image_tag resolved to $alias_digest, expected $image_digest" >&2
+              exit 1
+            fi
           done
+
+          echo "Published and verified $image_reference"
 
   release-candidate:
     name: Deploy release candidate

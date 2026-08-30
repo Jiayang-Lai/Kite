@@ -103,6 +103,7 @@ function createController(clusters = [firstCluster, secondCluster, thirdCluster]
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	localStorage.clear();
 	vi.spyOn(window, 'confirm').mockReturnValue(true);
 	lifecycleMocks.deletePersistentDuckDbStorage.mockResolvedValue();
 	lifecycleMocks.releaseClusterRuntime.mockResolvedValue();
@@ -157,6 +158,18 @@ describe('connection lifecycle controller', () => {
 			connectionError: 'Cluster unavailable',
 			failedClusterId: secondCluster.id
 		});
+	});
+
+	it('reports an empty schema as a useful connection error', async () => {
+		lifecycleMocks.createConnectionRuntime.mockReturnValue({
+			loadSchema: vi.fn().mockResolvedValue({})
+		});
+		const { controller } = createController();
+
+		await controller.refresh();
+
+		expect(controller.state.connectionStatus).toBe('error');
+		expect(controller.state.connectionError).toBe('The connection returned no databases.');
 	});
 
 	it('leaves the current selection untouched when a dirty-tab switch is declined', () => {
@@ -238,7 +251,7 @@ describe('connection lifecycle controller', () => {
 		expect(session.activeClusterId).toBe(persistentCluster.id);
 	});
 
-	it('deletes persistent storage and keeps the fallback active when runtime cleanup fails', async () => {
+	it('commits removal and retains a retry when runtime cleanup fails', async () => {
 		const persistentCluster: KustoClusterConnection = {
 			id: 'persistent',
 			name: 'Persistent',
@@ -252,11 +265,10 @@ describe('connection lifecycle controller', () => {
 		lifecycleMocks.releaseClusterRuntime.mockRejectedValueOnce(
 			new Error('DuckDB worker did not stop.')
 		);
+		vi.spyOn(console, 'error').mockImplementation(() => undefined);
 		const { controller, session, store } = createController([persistentCluster, firstCluster]);
 
-		await expect(controller.removeCluster(persistentCluster.id)).rejects.toThrow(
-			'DuckDB worker did not stop.'
-		);
+		await expect(controller.removeCluster(persistentCluster.id)).resolves.toBeUndefined();
 
 		expect(store.clusters).not.toContain(persistentCluster);
 		expect(lifecycleMocks.deletePersistentDuckDbStorage).toHaveBeenCalledOnce();
@@ -265,6 +277,115 @@ describe('connection lifecycle controller', () => {
 		expect(controller.state.selectedClusterId).toBe(firstCluster.id);
 		expect(session.activeClusterId).toBe(firstCluster.id);
 		expect(controller.state.connectionStatus).toBe('ready');
+		expect(console.error).toHaveBeenCalledOnce();
+
+		lifecycleMocks.releaseClusterRuntime.mockResolvedValueOnce();
+		const retryController = createController([firstCluster]).controller;
+		void retryController.retryPendingCleanups();
+		await vi.waitFor(() => {
+			expect(lifecycleMocks.releaseClusterRuntime).toHaveBeenCalledTimes(2);
+			expect(lifecycleMocks.deletePersistentDuckDbStorage).toHaveBeenCalledTimes(2);
+		});
+	});
+
+	it('retains a retry when an ephemeral runtime cannot be released', async () => {
+		const ephemeralCluster: KustoClusterConnection = {
+			id: 'ephemeral',
+			name: 'Ephemeral',
+			url: 'emulated://kite/ephemeral',
+			kind: 'emulated',
+			emulatedStorage: { mode: 'memory' }
+		};
+		lifecycleMocks.createConnectionRuntime.mockReturnValue({
+			loadSchema: vi.fn().mockResolvedValue(schema('FallbackDb'))
+		});
+		lifecycleMocks.releaseClusterRuntime.mockRejectedValueOnce(
+			new Error('DuckDB worker did not stop.')
+		);
+		vi.spyOn(console, 'error').mockImplementation(() => undefined);
+		const { controller, store } = createController([ephemeralCluster, firstCluster]);
+
+		await expect(controller.removeCluster(ephemeralCluster.id)).resolves.toBeUndefined();
+
+		expect(store.clusters).not.toContain(ephemeralCluster);
+		expect(lifecycleMocks.deletePersistentDuckDbStorage).not.toHaveBeenCalled();
+
+		const retryController = createController([firstCluster]).controller;
+		void retryController.retryPendingCleanups();
+		await vi.waitFor(() => {
+			expect(lifecycleMocks.releaseClusterRuntime).toHaveBeenCalledTimes(2);
+		});
+		expect(lifecycleMocks.deletePersistentDuckDbStorage).not.toHaveBeenCalled();
+	});
+
+	it('commits removal and retains a retry when persistent storage cleanup fails', async () => {
+		const persistentCluster: KustoClusterConnection = {
+			id: 'persistent',
+			name: 'Persistent',
+			url: 'emulated://kite/persistent',
+			kind: 'emulated',
+			emulatedStorage: { mode: 'opfs', storageId: 'persistent-storage', formatVersion: 1 }
+		};
+		lifecycleMocks.createConnectionRuntime.mockReturnValue({
+			loadSchema: vi.fn().mockResolvedValue(schema('FallbackDb'))
+		});
+		lifecycleMocks.deletePersistentDuckDbStorage.mockRejectedValueOnce(
+			new Error('OPFS is unavailable.')
+		);
+		vi.spyOn(console, 'error').mockImplementation(() => undefined);
+		const { controller, store } = createController([persistentCluster, firstCluster]);
+
+		await expect(controller.removeCluster(persistentCluster.id)).resolves.toBeUndefined();
+
+		expect(store.clusters).not.toContain(persistentCluster);
+		expect(console.error).toHaveBeenCalledOnce();
+
+		const retryController = createController([firstCluster]).controller;
+		void retryController.retryPendingCleanups();
+		await vi.waitFor(() => {
+			expect(lifecycleMocks.releaseClusterRuntime).toHaveBeenCalledTimes(2);
+			expect(lifecycleMocks.deletePersistentDuckDbStorage).toHaveBeenCalledTimes(2);
+		});
+	});
+
+	it('clears a failed retry target when that connection is removed', async () => {
+		lifecycleMocks.createConnectionRuntime.mockReturnValue({
+			loadSchema: vi.fn().mockRejectedValue(new Error('Cluster unavailable'))
+		});
+		const { controller, session } = createController();
+		session.databaseSchema = schema('FirstDb');
+		controller.state.databaseSchema = session.databaseSchema;
+		controller.state.selectedClusterId = secondCluster.id;
+		await controller.refresh();
+
+		await controller.removeCluster(secondCluster.id);
+
+		expect(controller.state.failedClusterId).toBeUndefined();
+		expect(controller.state.connectionError).toBe('');
+		expect(controller.state.connectionStatus).toBe('ready');
+	});
+
+	it('ignores a stale schema response after its connection is removed', async () => {
+		const staleSchema = deferred<KustoDatabaseSchema>();
+		lifecycleMocks.createConnectionRuntime.mockImplementation(
+			(cluster: KustoClusterConnection) => ({
+				loadSchema: () =>
+					cluster.id === secondCluster.id
+						? staleSchema.promise
+						: Promise.resolve(schema('FallbackDb'))
+			})
+		);
+		const { controller, session } = createController();
+		controller.state.selectedClusterId = secondCluster.id;
+		const staleRefresh = controller.refresh();
+
+		await controller.removeCluster(secondCluster.id);
+		staleSchema.resolve(schema('RemovedDb'));
+		await staleRefresh;
+
+		expect(controller.state.activeClusterId).toBe(firstCluster.id);
+		expect(controller.state.selectedClusterId).toBe(firstCluster.id);
+		expect(session.activeClusterId).toBe(firstCluster.id);
 	});
 
 	it('clears a delayed Log Analytics sign-in prompt when disposed', async () => {

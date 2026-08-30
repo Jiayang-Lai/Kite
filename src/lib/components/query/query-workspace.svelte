@@ -730,6 +730,7 @@
 	$effect(() => {
 		if (!clusterConnectionStore.hydrated || hasInitializedConnection) return;
 		hasInitializedConnection = true;
+		void connectionLifecycle.retryPendingCleanups();
 		const persistedClusterId = getPersistedActiveClusterId();
 		if (
 			!clusterSession.databaseSchema &&

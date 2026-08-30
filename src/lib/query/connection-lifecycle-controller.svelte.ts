@@ -1,10 +1,5 @@
-import { deletePersistentDuckDbStorage } from '$lib/duckdb/storage';
 import type { ClusterSession } from '$lib/cluster/cluster-session.svelte';
-import {
-	createConnectionRuntime,
-	releaseClusterRuntime,
-	type ConnectionRuntime
-} from '$lib/cluster/cluster-runtime';
+import { createConnectionRuntime, type ConnectionRuntime } from '$lib/cluster/cluster-runtime';
 import { persistActiveClusterId } from '$lib/cluster/active-cluster-preference';
 import type {
 	ClusterConnectionStore,
@@ -12,6 +7,12 @@ import type {
 } from '$lib/cluster/cluster-connection-store.svelte';
 import { getKustoErrorMessage, type KustoClusterConnection } from '$lib/kusto/query-client';
 import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
+import {
+	discardRemovedClusterCleanup,
+	retryRemovedClusterCleanups,
+	runRemovedClusterCleanup,
+	stageRemovedClusterCleanup
+} from './removed-cluster-cleanup';
 
 export type ConnectionState = 'loading' | 'ready' | 'error';
 
@@ -109,6 +110,7 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 			const schema = await createConnectionRuntime(cluster).loadSchema();
 			if (currentRequestId !== requestId || cluster.id !== state.selectedClusterId) return;
 			const firstDatabase = Object.values(schema)[0];
+			if (!firstDatabase) throw new Error('The connection returned no databases.');
 			const restore = cluster.id === session.activeClusterId;
 			const database = (restore ? schema[state.selectedDatabase] : undefined) ?? firstDatabase;
 			const table = database.tables.some((item) => item.name === state.selectedTable)
@@ -187,9 +189,33 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 			throw new Error('The active connection cannot be removed without a fallback connection.');
 		}
 
-		// Persist the connection-list change before releasing or deleting anything. If persistence
-		// fails, the connection and all of its runtime and OPFS data remain intact.
-		store.remove(clusterId);
+		const cleanup = cluster ? stageRemovedClusterCleanup(cluster) : undefined;
+		try {
+			// Persist the connection-list change before releasing or deleting anything. If persistence
+			// fails, the connection and all of its runtime and OPFS data remain intact.
+			store.remove(clusterId);
+		} catch (error) {
+			if (cleanup) {
+				try {
+					discardRemovedClusterCleanup(clusterId);
+				} catch {
+					// A surviving staged record is harmless: retry skips it while the connection exists.
+				}
+			}
+			throw error;
+		}
+
+		// Invalidate any schema request for the removed connection before it can restore stale state.
+		requestId += 1;
+		resetTabsAfterConnection = false;
+		clearSignInTip();
+		if (state.failedClusterId === clusterId) {
+			state.failedClusterId = undefined;
+			state.connectionError = '';
+			if (state.connectionStatus === 'error' && state.databaseSchema) {
+				state.connectionStatus = 'ready';
+			}
+		}
 
 		if (fallbackCluster) {
 			// Removal was already confirmed by the destructive dialog. Transition directly instead of
@@ -209,25 +235,18 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 			persistActiveClusterId(fallbackCluster.id);
 		}
 
-		try {
-			if (cluster?.kind === 'emulated') {
-				if (cluster.emulatedStorage?.mode === 'opfs') {
-					try {
-						await releaseClusterRuntime(clusterId);
-					} finally {
-						// The durable connection removal has already committed. Always attempt to remove its
-						// OPFS data, even when runtime disposal reports a failure, to avoid orphaning storage.
-						await deletePersistentDuckDbStorage(cluster.emulatedStorage.storageId);
-					}
-				} else {
-					await releaseClusterRuntime(clusterId);
-				}
+		if (cleanup) {
+			try {
+				await runRemovedClusterCleanup(cleanup);
+				discardRemovedClusterCleanup(clusterId);
+			} catch (error) {
+				// Catalog removal is already durable, so cleanup failure must not report that the confirmed
+				// removal failed. The staged record remains available for a later automatic retry.
+				console.error(`Cleanup for removed connection ${clusterId} failed.`, error);
 			}
-		} finally {
-			// Once the durable list update succeeds, never leave the session pointing at the removed
-			// connection, even when best-effort runtime or OPFS cleanup reports an error.
-			if (fallbackCluster) await refresh();
 		}
+
+		if (fallbackCluster) await refresh();
 	}
 
 	function retry() {
@@ -256,6 +275,9 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 		addCluster,
 		editCluster,
 		removeCluster,
+		retryPendingCleanups() {
+			return retryRemovedClusterCleanups(new Set(store.clusters.map((cluster) => cluster.id)));
+		},
 		retry,
 		dismissFailure,
 		syncSessionSelection() {

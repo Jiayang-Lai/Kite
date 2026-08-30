@@ -28,6 +28,7 @@ Release images are signed with Cosign by the tag-triggered GitHub Actions releas
 
 ```bash
 release_tag=v0.0.10
+COSIGN_REPOSITORY=ghcr.io/jiayang-lai/kite-signatures \
 cosign verify \
   --certificate-identity "https://github.com/Jiayang-Lai/Kite/.github/workflows/release.yml@refs/tags/$release_tag" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
@@ -35,6 +36,17 @@ cosign verify \
 ```
 
 For a reproducible deployment, copy the `sha256:...` digest reported by verification and pull or run `ghcr.io/jiayang-lai/kite@sha256:...`. The `latest` tag points to a signed digest but remains mutable, so it is unsuitable as a permanent deployment pin.
+
+### Image and signature package versions
+
+Each release produces one runnable Kite image manifest. An RC is available under both `v0.0.11-rc.2` and `0.0.11-rc.2`; a stable release also updates `latest`. These are aliases for the same image digest rather than separate builds.
+
+Cosign stores the non-runnable signature objects in the separate `ghcr.io/jiayang-lai/kite-signatures` package so they do not appear as the newest versions of the runnable `kite` package. The signature package commonly contains:
+
+- a name derived from the signed image digest, such as `sha256-7cd967...`; and
+- an untagged `sha256:...` entry containing or indexing the Cosign signature bundle.
+
+These SHA-named entries are signature metadata, not additional Kite images. Their download counts can increase when Cosign signs or verifies a release. Pull and run only from `ghcr.io/jiayang-lai/kite`, and do not delete entries from `kite-signatures` because `cosign verify` relies on them. Releases signed before the repositories were separated may still have signature entries in the main `kite` package; retain those entries unless the signatures are first recreated and verified in `kite-signatures`.
 
 ## Build the image from source
 

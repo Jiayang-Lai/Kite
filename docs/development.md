@@ -40,6 +40,7 @@ Run the checks relevant to the change, or use the complete local CI suite:
 npm run check
 npm run lint
 npm run test:unit:run
+npm run test:coverage
 npm run build
 npm run test:e2e:run
 ```
@@ -67,6 +68,7 @@ npm run test:e2e:install
 | `npm run lint`                    | Check formatting with Prettier                        |
 | `npm run lint:ci`                 | Check formatting for files enforced by CI             |
 | `npm run test:unit:run`           | Run unit tests once                                   |
+| `npm run test:coverage`           | Run unit tests and write text and LCOV coverage       |
 | `npm run test:e2e:install`        | Install Playwright Chromium and system dependencies   |
 | `npm run test:e2e`                | Build the app and run end-to-end tests                |
 | `npm run test:e2e:run`            | Run end-to-end tests against an existing build        |

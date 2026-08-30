@@ -322,6 +322,7 @@ The container publisher pushes the canonical `v...` tag, captures its registry m
 | Command | Purpose |
 | --- | --- |
 | `npm run test:unit:run` | Run unit tests once |
+| `npm run test:coverage` | Run browser and server unit tests and write `coverage/lcov.info` |
 | `npm run lint:ci` | Check formatting for files currently enforced by CI |
 | `npm run test:e2e:install` | Install Chromium and its operating-system dependencies |
 | `npm run test:e2e` | Build the app and run Playwright tests |
@@ -337,6 +338,10 @@ The container publisher pushes the canonical `v...` tag, captures its registry m
 The build workflows upload the Cloudflare adapter output together with its required `.svelte-kit/cloudflare-tmp` and `.svelte-kit/output/server` siblings and the generated `.svelte-kit/tsconfig.json` using GitHub's official artifact action. This preserves the relative imports used by the generated `_worker.js` and gives Wrangler the generated SvelteKit compiler configuration without retaining the entire `.svelte-kit` tree. Each upload receives an immutable artifact ID and SHA-256 digest. Deployment jobs bind downloads to the exact producing workflow run; release promotion additionally selects artifacts by immutable ID. The official download action fails on a digest mismatch. Cloudflare's Wrangler action deploys only the downloaded `cloudflare` directory and supplies the exact deployment URL used by the smoke test and GitHub Environment.
 
 The preview workflow uses published deployment actions rather than maintaining GitHub Deployment API scripts in the repository. Like the other third-party actions, they are pinned to immutable commit SHAs in the workflow. The Cosign installer is also pinned to an immutable commit and should be reviewed and updated alongside the other workflow actions.
+
+The coverage workflow runs the browser and server Vitest projects for pushes and pull requests, publishes LCOV results to Codecov with GitHub OIDC, and skips uploads from forks because they cannot receive the repository's OIDC identity. Activate this public repository in Codecov before requiring the workflow; no long-lived `CODECOV_TOKEN` secret is used. The README badge reports coverage from `main`.
+
+Dependabot checks npm packages, GitHub Actions, and Docker base images weekly. Compatible npm minor and patch releases and related workflow or image updates are grouped to limit pull-request noise. A separate weekly dependency-audit workflow runs `npm audit --omit=dev --audit-level=high`; its README badge represents known high- or critical-severity production advisories, not whether every dependency is at its newest version.
 
 A successful RC run retains its downloaded artifact under the immutable RC tag. The stable release selects that RC artifact by ID from the successful RC workflow rather than selecting another build by name. Rebuilding the same commit therefore cannot silently substitute a different artifact after UAT approval.
 

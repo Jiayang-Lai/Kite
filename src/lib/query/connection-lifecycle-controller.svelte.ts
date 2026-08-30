@@ -180,6 +180,12 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 		const wasSelected =
 			clusterId === state.selectedClusterId || clusterId === state.activeClusterId;
 		const cluster = store.clusters.find((item) => item.id === clusterId);
+		const fallbackCluster = wasSelected
+			? store.clusters.find((item) => item.id !== clusterId)
+			: undefined;
+		if (wasSelected && !fallbackCluster) {
+			throw new Error('The active connection cannot be removed without a fallback connection.');
+		}
 		if (cluster?.kind === 'emulated') {
 			await releaseClusterRuntime(clusterId);
 			if (cluster.emulatedStorage?.mode === 'opfs') {
@@ -187,7 +193,24 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 			}
 		}
 		store.remove(clusterId);
-		if (wasSelected) switchCluster(store.clusters[0].id);
+		if (!fallbackCluster) return;
+
+		// Removal was already confirmed by the destructive dialog. Transition directly instead of
+		// offering a second, cancellable switch that could leave the deleted connection active.
+		options.onQueryExecutionReset();
+		session.resetQueryTabs();
+		session.pendingQuery = undefined;
+		state.databaseSchema = undefined;
+		session.databaseSchema = undefined;
+		state.selectedDatabase = '';
+		state.selectedTable = undefined;
+		state.selectedFunction = undefined;
+		state.activeClusterId = fallbackCluster.id;
+		state.activeClusterUrl = fallbackCluster.url;
+		session.activeClusterId = fallbackCluster.id;
+		state.selectedClusterId = fallbackCluster.id;
+		persistActiveClusterId(fallbackCluster.id);
+		await refresh();
 	}
 
 	function retry() {

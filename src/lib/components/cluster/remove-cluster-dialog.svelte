@@ -26,6 +26,8 @@
 				? 'This removes the connection and releases its in-memory DuckDB databases and ingested data.'
 				: 'This removes the connection from this browser. It does not change or delete the Kusto cluster.'
 	);
+	const warningMessageClass =
+		'border-warning/40 bg-warning/10 text-warning rounded-lg border p-3 text-sm';
 </script>
 
 <ConfirmationDialog
@@ -38,8 +40,24 @@
 	onsubmit={() => (cluster ? onconfirm?.(cluster.id) : undefined)}
 >
 	{#if isCurrent}
-		<p class="text-muted-foreground rounded-lg border p-3 text-sm">
-			Kite will switch to the Mock cluster after removal.
+		<p class={warningMessageClass}>
+			Kite will switch to the Mock cluster and close all open query tabs after removal.
+		</p>
+	{:else}
+		<p class={warningMessageClass}>
+			Kite will not switch clusters after removal.
+		</p>
+	{/if}
+	{#if removesStoredData}
+		<p class={warningMessageClass}>
+			This action cannot be undone. All DuckDB databases stored for this connection will be
+			permanently deleted from this browser.
+		</p>
+	{/if}
+	{#if removesEmulatedCluster}
+		<p class={warningMessageClass}>
+			This action cannot be undone. All in-memory DuckDB databases and ingested data for this
+			cluster will be permanently released.
 		</p>
 	{/if}
 </ConfirmationDialog>

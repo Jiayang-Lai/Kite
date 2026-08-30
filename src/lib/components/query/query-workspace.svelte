@@ -530,13 +530,6 @@
 
 	function switchCluster(clusterId: string) {
 		if (clusterId === selectedClusterId) return;
-		if (
-			queryTabs.some((tab) => tab.query.trim()) &&
-			!window.confirm('Switching connections will close all query tabs. Continue?')
-		) {
-			return;
-		}
-
 		connectionLifecycle.switchCluster(clusterId);
 		syncConnectionState();
 	}

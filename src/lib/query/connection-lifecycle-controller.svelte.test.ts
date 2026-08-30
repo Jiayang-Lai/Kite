@@ -182,15 +182,25 @@ describe('connection lifecycle controller', () => {
 		lifecycleMocks.createConnectionRuntime.mockReturnValue({
 			loadSchema: vi.fn().mockResolvedValue(schema('FallbackDb'))
 		});
-		const { controller, store } = createController([persistentCluster, firstCluster]);
+		const { controller, session, store, onQueryExecutionReset } = createController([
+			persistentCluster,
+			firstCluster
+		]);
+		session.updateQueryTab(session.activeQueryTabId, { query: 'print Value = 1' });
+		vi.mocked(window.confirm).mockReturnValue(false);
 
 		await controller.removeCluster(persistentCluster.id);
-		await vi.waitFor(() => expect(controller.state.connectionStatus).toBe('ready'));
 
 		expect(lifecycleMocks.releaseClusterRuntime).toHaveBeenCalledWith(persistentCluster.id);
 		expect(lifecycleMocks.deletePersistentDuckDbStorage).toHaveBeenCalledWith('persistent-storage');
 		expect(store.remove).toHaveBeenCalledWith(persistentCluster.id);
+		expect(window.confirm).not.toHaveBeenCalled();
+		expect(onQueryExecutionReset).toHaveBeenCalledOnce();
 		expect(controller.state.activeClusterId).toBe(firstCluster.id);
+		expect(controller.state.selectedClusterId).toBe(firstCluster.id);
+		expect(session.activeClusterId).toBe(firstCluster.id);
+		expect(session.queryTabs).toMatchObject([{ query: '', isRunning: false }]);
+		expect(controller.state.connectionStatus).toBe('ready');
 	});
 
 	it('clears a delayed Log Analytics sign-in prompt when disposed', async () => {

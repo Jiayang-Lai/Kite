@@ -22,6 +22,20 @@ podman run --rm -p 3000:8080 ghcr.io/jiayang-lai/kite:latest
 
 Open <http://localhost:3000>. The container listens on port `8080`; mapping it to host port `3000` leaves `localhost:8080` available for Kite's built-in local Kustainer connection. Use `/healthz` for container health checks.
 
+## Verify the published image
+
+Release images are signed with Cosign by the tag-triggered GitHub Actions release workflow. Verify a versioned image against that workflow's keyless signing identity before running it:
+
+```bash
+release_tag=v0.0.10
+cosign verify \
+  --certificate-identity "https://github.com/Jiayang-Lai/Kite/.github/workflows/release.yml@refs/tags/$release_tag" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  "ghcr.io/jiayang-lai/kite:$release_tag"
+```
+
+For a reproducible deployment, copy the `sha256:...` digest reported by verification and pull or run `ghcr.io/jiayang-lai/kite@sha256:...`. The `latest` tag points to a signed digest but remains mutable, so it is unsuitable as a permanent deployment pin.
+
 ## Build the image from source
 
 The container build compiles the vendored KQL translator WASM and the container-targeted Kite frontend. Initialize the translator submodule before building; Node.js and .NET are not required on the host.

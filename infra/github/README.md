@@ -80,7 +80,8 @@ The defaults suit a solo-maintained repository:
 - `Validate` and `Validate container image` must pass against the latest `main`;
 - only squash merge is permitted;
 - direct pushes, force pushes, and deletion of `main` are blocked;
-- the repository owner is the required production reviewer and may self-approve; and
+- the repository owner is the required production reviewer and may self-approve;
+- the production approval gates both the Cloudflare Pages deployment and the signed GHCR image publication; and
 - the repository administrator role is the only release-tag ruleset bypass, allowing maintainers to create tags while the release policy prohibits moving or deleting published tags.
 
 When another maintainer is available, set:

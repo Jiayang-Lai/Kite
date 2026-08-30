@@ -313,6 +313,10 @@ The release workflow rejects malformed tags even though its broad trigger observ
 - a stable tag shares its commit with a valid RC tag; and
 - the RC tag has a successful `release-candidate` GitHub deployment and retained RC artifact before production promotion.
 
+Container publication uses the same GitHub Environment as the corresponding Pages deployment. RC publication targets `release-candidate`; stable publication targets `production`, so the production reviewer gate must approve both pending jobs before either can start. Rejecting the production deployment review prevents both the Pages deployment and the stable GHCR publication.
+
+The container publisher pushes the canonical `v...` tag, captures its registry manifest digest, and signs that digest with keyless Cosign using the release workflow's GitHub OIDC identity. It immediately verifies the signature against the exact repository, workflow, tag ref, and `https://token.actions.githubusercontent.com` issuer. Only after verification succeeds does it publish the bare-version alias and, for stable releases, `latest`; every alias digest must match the signed digest. The job receives `packages: write` for GHCR and `id-token: write` for the short-lived signing certificate. It stores no long-lived signing key and does not map the environment's Cloudflare secret into its steps.
+
 ## CI commands and deployment action
 
 | Command | Purpose |
@@ -332,7 +336,7 @@ The release workflow rejects malformed tags even though its broad trigger observ
 
 The build workflows upload the Cloudflare adapter output together with its required `.svelte-kit/cloudflare-tmp` and `.svelte-kit/output/server` siblings and the generated `.svelte-kit/tsconfig.json` using GitHub's official artifact action. This preserves the relative imports used by the generated `_worker.js` and gives Wrangler the generated SvelteKit compiler configuration without retaining the entire `.svelte-kit` tree. Each upload receives an immutable artifact ID and SHA-256 digest. Deployment jobs bind downloads to the exact producing workflow run; release promotion additionally selects artifacts by immutable ID. The official download action fails on a digest mismatch. Cloudflare's Wrangler action deploys only the downloaded `cloudflare` directory and supplies the exact deployment URL used by the smoke test and GitHub Environment.
 
-The preview workflow uses published deployment actions rather than maintaining GitHub Deployment API scripts in the repository. Like the other third-party actions, they are pinned to immutable commit SHAs in the workflow.
+The preview workflow uses published deployment actions rather than maintaining GitHub Deployment API scripts in the repository. Like the other third-party actions, they are pinned to immutable commit SHAs in the workflow. The Cosign installer is also pinned to an immutable commit and should be reviewed and updated alongside the other workflow actions.
 
 A successful RC run retains its downloaded artifact under the immutable RC tag. The stable release selects that RC artifact by ID from the successful RC workflow rather than selecting another build by name. Rebuilding the same commit therefore cannot silently substitute a different artifact after UAT approval.
 
@@ -362,7 +366,7 @@ The current Terraform configuration uses one Pages project for all environments.
 
 The GitHub `preview` environment admits deployments from `main` because the privileged `workflow_run` job executes the workflow definition and deployment tooling from the default branch. The workflow itself verifies the originating pull request before accessing its artifact. It uses the environment for its branch policy and secrets without creating a `main` deployment, then records a separate transient GitHub Deployment against the verified pull-request head SHA.
 
-The Cloudflare token should be limited to the account and Pages permissions required for deployment. Production should require authorized reviewers and should prevent self-approval when separation of duties is required. RC and production tags should be protected by a tag ruleset that restricts creation, updates, and deletion.
+The Cloudflare token should be limited to the account and Pages permissions required for deployment. Production should require authorized reviewers and should prevent self-approval when separation of duties is required. The same production approval controls both the Pages deployment and signed container publication. RC and production tags should be protected by a tag ruleset that restricts creation, updates, and deletion.
 
 The Terraform ruleset requires both `Validate` and `Validate container image` from the `Pull Request` workflow for `main`, allows only squash merging, and prohibits direct pushes, force pushes, and deletion. The production environment requires an authorized reviewer. The solo-maintainer default permits the repository owner to self-approve; enable prevention of self-review when a second maintainer is available.
 

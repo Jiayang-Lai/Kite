@@ -186,31 +186,41 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 		if (wasSelected && !fallbackCluster) {
 			throw new Error('The active connection cannot be removed without a fallback connection.');
 		}
-		if (cluster?.kind === 'emulated') {
-			await releaseClusterRuntime(clusterId);
-			if (cluster.emulatedStorage?.mode === 'opfs') {
-				await deletePersistentDuckDbStorage(cluster.emulatedStorage.storageId);
-			}
-		}
-		store.remove(clusterId);
-		if (!fallbackCluster) return;
 
-		// Removal was already confirmed by the destructive dialog. Transition directly instead of
-		// offering a second, cancellable switch that could leave the deleted connection active.
-		options.onQueryExecutionReset();
-		session.resetQueryTabs();
-		session.pendingQuery = undefined;
-		state.databaseSchema = undefined;
-		session.databaseSchema = undefined;
-		state.selectedDatabase = '';
-		state.selectedTable = undefined;
-		state.selectedFunction = undefined;
-		state.activeClusterId = fallbackCluster.id;
-		state.activeClusterUrl = fallbackCluster.url;
-		session.activeClusterId = fallbackCluster.id;
-		state.selectedClusterId = fallbackCluster.id;
-		persistActiveClusterId(fallbackCluster.id);
-		await refresh();
+		// Persist the connection-list change before releasing or deleting anything. If persistence
+		// fails, the connection and all of its runtime and OPFS data remain intact.
+		store.remove(clusterId);
+
+		if (fallbackCluster) {
+			// Removal was already confirmed by the destructive dialog. Transition directly instead of
+			// offering a second, cancellable switch that could leave the deleted connection active.
+			options.onQueryExecutionReset();
+			session.resetQueryTabs();
+			session.pendingQuery = undefined;
+			state.databaseSchema = undefined;
+			session.databaseSchema = undefined;
+			state.selectedDatabase = '';
+			state.selectedTable = undefined;
+			state.selectedFunction = undefined;
+			state.activeClusterId = fallbackCluster.id;
+			state.activeClusterUrl = fallbackCluster.url;
+			session.activeClusterId = fallbackCluster.id;
+			state.selectedClusterId = fallbackCluster.id;
+			persistActiveClusterId(fallbackCluster.id);
+		}
+
+		try {
+			if (cluster?.kind === 'emulated') {
+				await releaseClusterRuntime(clusterId);
+				if (cluster.emulatedStorage?.mode === 'opfs') {
+					await deletePersistentDuckDbStorage(cluster.emulatedStorage.storageId);
+				}
+			}
+		} finally {
+			// Once the durable list update succeeds, never leave the session pointing at the removed
+			// connection, even when best-effort runtime or OPFS cleanup reports an error.
+			if (fallbackCluster) await refresh();
+		}
 	}
 
 	function retry() {

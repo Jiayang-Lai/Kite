@@ -85,7 +85,7 @@ function createStore(clusters: KustoClusterConnection[]) {
 }
 
 function createController(clusters = [firstCluster, secondCluster, thirdCluster]) {
-	const session = createClusterSession(firstCluster.id);
+	const session = createClusterSession(clusters[0].id);
 	const onQueryExecutionReset = vi.fn();
 	const onSchemaReady = vi.fn();
 	const onstatechange = vi.fn();
@@ -171,7 +171,7 @@ describe('connection lifecycle controller', () => {
 		expect(lifecycleMocks.createConnectionRuntime).not.toHaveBeenCalled();
 	});
 
-	it('releases persistent storage before removing an active emulated cluster', async () => {
+	it('persists removal before releasing an active emulated cluster and its storage', async () => {
 		const persistentCluster: KustoClusterConnection = {
 			id: 'persistent',
 			name: 'Persistent',
@@ -194,12 +194,75 @@ describe('connection lifecycle controller', () => {
 		expect(lifecycleMocks.releaseClusterRuntime).toHaveBeenCalledWith(persistentCluster.id);
 		expect(lifecycleMocks.deletePersistentDuckDbStorage).toHaveBeenCalledWith('persistent-storage');
 		expect(store.remove).toHaveBeenCalledWith(persistentCluster.id);
+		expect(vi.mocked(store.remove).mock.invocationCallOrder[0]).toBeLessThan(
+			lifecycleMocks.releaseClusterRuntime.mock.invocationCallOrder[0]
+		);
+		expect(lifecycleMocks.releaseClusterRuntime.mock.invocationCallOrder[0]).toBeLessThan(
+			lifecycleMocks.deletePersistentDuckDbStorage.mock.invocationCallOrder[0]
+		);
 		expect(window.confirm).not.toHaveBeenCalled();
 		expect(onQueryExecutionReset).toHaveBeenCalledOnce();
 		expect(controller.state.activeClusterId).toBe(firstCluster.id);
 		expect(controller.state.selectedClusterId).toBe(firstCluster.id);
 		expect(session.activeClusterId).toBe(firstCluster.id);
 		expect(session.queryTabs).toMatchObject([{ query: '', isRunning: false }]);
+		expect(controller.state.connectionStatus).toBe('ready');
+	});
+
+	it('keeps an active emulated connection and its data intact when removal persistence fails', async () => {
+		const persistentCluster: KustoClusterConnection = {
+			id: 'persistent',
+			name: 'Persistent',
+			url: 'emulated://kite/persistent',
+			kind: 'emulated',
+			emulatedStorage: { mode: 'opfs', storageId: 'persistent-storage', formatVersion: 1 }
+		};
+		const { controller, session, store, onQueryExecutionReset } = createController([
+			persistentCluster,
+			firstCluster
+		]);
+		vi.mocked(store.remove).mockImplementationOnce(() => {
+			throw new Error('Connection storage is unavailable.');
+		});
+
+		await expect(controller.removeCluster(persistentCluster.id)).rejects.toThrow(
+			'Connection storage is unavailable.'
+		);
+
+		expect(lifecycleMocks.releaseClusterRuntime).not.toHaveBeenCalled();
+		expect(lifecycleMocks.deletePersistentDuckDbStorage).not.toHaveBeenCalled();
+		expect(onQueryExecutionReset).not.toHaveBeenCalled();
+		expect(store.clusters).toContain(persistentCluster);
+		expect(controller.state.activeClusterId).toBe(persistentCluster.id);
+		expect(controller.state.selectedClusterId).toBe(persistentCluster.id);
+		expect(session.activeClusterId).toBe(persistentCluster.id);
+	});
+
+	it('keeps the fallback active when cleanup fails after removal was persisted', async () => {
+		const persistentCluster: KustoClusterConnection = {
+			id: 'persistent',
+			name: 'Persistent',
+			url: 'emulated://kite/persistent',
+			kind: 'emulated',
+			emulatedStorage: { mode: 'opfs', storageId: 'persistent-storage', formatVersion: 1 }
+		};
+		lifecycleMocks.createConnectionRuntime.mockReturnValue({
+			loadSchema: vi.fn().mockResolvedValue(schema('FallbackDb'))
+		});
+		lifecycleMocks.releaseClusterRuntime.mockRejectedValueOnce(
+			new Error('DuckDB worker did not stop.')
+		);
+		const { controller, session, store } = createController([persistentCluster, firstCluster]);
+
+		await expect(controller.removeCluster(persistentCluster.id)).rejects.toThrow(
+			'DuckDB worker did not stop.'
+		);
+
+		expect(store.clusters).not.toContain(persistentCluster);
+		expect(lifecycleMocks.deletePersistentDuckDbStorage).not.toHaveBeenCalled();
+		expect(controller.state.activeClusterId).toBe(firstCluster.id);
+		expect(controller.state.selectedClusterId).toBe(firstCluster.id);
+		expect(session.activeClusterId).toBe(firstCluster.id);
 		expect(controller.state.connectionStatus).toBe('ready');
 	});
 

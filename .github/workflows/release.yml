@@ -247,6 +247,7 @@ jobs:
           RELEASE_TYPE: ${{ needs.classify.outputs.type }}
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          export COSIGN_REPOSITORY="${image}-signatures"
           version_tag="${RELEASE_TAG#v}"
           build_date="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           image_tags=("$image:$RELEASE_TAG" "$image:$version_tag")
@@ -296,7 +297,7 @@ jobs:
             fi
           done
 
-          echo "Published and verified $image_reference"
+          echo "Published and verified $image_reference with signatures in $COSIGN_REPOSITORY"
 
   release-candidate:
     name: Deploy release candidate

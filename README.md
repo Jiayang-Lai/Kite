@@ -57,7 +57,7 @@ docker pull ghcr.io/jiayang-lai/kite:latest
 docker run --rm -p 3000:8080 ghcr.io/jiayang-lai/kite:latest
 ```
 
-Open <http://localhost:3000>. Use a version tag such as `v0.0.4` instead of `latest` to pin a release.
+Open <http://localhost:3000>. Use a version tag such as `v0.0.9` instead of `latest` to pin a release.
 
 See [Self-hosting Kite](docs/self-hosting.md) for Podman, source builds, health checks, and local Kustainer configuration.
 

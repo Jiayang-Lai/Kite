@@ -238,7 +238,7 @@ describe('connection lifecycle controller', () => {
 		expect(session.activeClusterId).toBe(persistentCluster.id);
 	});
 
-	it('keeps the fallback active when cleanup fails after removal was persisted', async () => {
+	it('deletes persistent storage and keeps the fallback active when runtime cleanup fails', async () => {
 		const persistentCluster: KustoClusterConnection = {
 			id: 'persistent',
 			name: 'Persistent',
@@ -259,7 +259,8 @@ describe('connection lifecycle controller', () => {
 		);
 
 		expect(store.clusters).not.toContain(persistentCluster);
-		expect(lifecycleMocks.deletePersistentDuckDbStorage).not.toHaveBeenCalled();
+		expect(lifecycleMocks.deletePersistentDuckDbStorage).toHaveBeenCalledOnce();
+		expect(lifecycleMocks.deletePersistentDuckDbStorage).toHaveBeenCalledWith('persistent-storage');
 		expect(controller.state.activeClusterId).toBe(firstCluster.id);
 		expect(controller.state.selectedClusterId).toBe(firstCluster.id);
 		expect(session.activeClusterId).toBe(firstCluster.id);

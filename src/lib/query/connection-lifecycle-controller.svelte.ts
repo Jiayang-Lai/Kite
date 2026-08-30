@@ -211,9 +211,16 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 
 		try {
 			if (cluster?.kind === 'emulated') {
-				await releaseClusterRuntime(clusterId);
 				if (cluster.emulatedStorage?.mode === 'opfs') {
-					await deletePersistentDuckDbStorage(cluster.emulatedStorage.storageId);
+					try {
+						await releaseClusterRuntime(clusterId);
+					} finally {
+						// The durable connection removal has already committed. Always attempt to remove its
+						// OPFS data, even when runtime disposal reports a failure, to avoid orphaning storage.
+						await deletePersistentDuckDbStorage(cluster.emulatedStorage.storageId);
+					}
+				} else {
+					await releaseClusterRuntime(clusterId);
 				}
 			}
 		} finally {

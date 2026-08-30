@@ -27,7 +27,7 @@ Open <http://localhost:3000>. The container listens on port `8080`; mapping it t
 Release images are signed with Cosign by the tag-triggered GitHub Actions release workflow. Verify a versioned image against that workflow's keyless signing identity before running it:
 
 ```bash
-release_tag=v0.0.10
+release_tag=v0.0.11
 COSIGN_REPOSITORY=ghcr.io/jiayang-lai/kite-signatures \
 cosign verify \
   --certificate-identity "https://github.com/Jiayang-Lai/Kite/.github/workflows/release.yml@refs/tags/$release_tag" \

@@ -92,7 +92,7 @@ beforeEach(() => {
 
 describe('createDatabaseMutationWorkspace', () => {
 	it('owns dialog visibility, busy state, cancellation, and disposal', () => {
-		const workspace = createDatabaseMutationWorkspace();
+		const { workspace } = setup();
 		workspace.state.editorOpen = true;
 		workspace.state.isPreparingEditor = true;
 		expect(workspace.isDialogOpen).toBe(true);
@@ -100,6 +100,8 @@ describe('createDatabaseMutationWorkspace', () => {
 
 		workspace.cancel();
 		workspace.dispose();
+		expect(controllerMocks.cancel).toHaveBeenCalledOnce();
+		expect(controllerMocks.dispose).toHaveBeenCalledOnce();
 		workspace.closeEditors();
 		expect(workspace.isDialogOpen).toBe(false);
 		workspace.state.isPreparingEditor = false;

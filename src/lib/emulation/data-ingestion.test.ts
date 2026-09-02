@@ -210,7 +210,7 @@ describe('emulated DuckDB ingestion', () => {
 		active.cancel();
 		expect(cancel).toHaveBeenCalledOnce();
 		resolveQuery(baseResult);
-		await expect(active.promise).resolves.toBeDefined();
+		await expect(active.promise).rejects.toThrow('Query cancelled.');
 	});
 
 	it('warns when DuckDB omits the inserted row count', async () => {

@@ -2,13 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
 	AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY,
-	type AzureAuthenticationProfileStore,
 	createAzureAuthenticationProfileStore
 } from './profile-store.svelte';
 
 const LEGACY_STORAGE_KEY = 'kite:azure-sessions:v1';
+const ACCOUNT_EVENT = 'kite:azure-authentication-profile-account';
 let uuidSequence = 0;
-let stores: AzureAuthenticationProfileStore[] = [];
+let accountEventListeners: EventListenerOrEventListenerObject[] = [];
 const account = {
 	homeAccountId: 'home-account',
 	localAccountId: 'local-account',
@@ -26,15 +26,14 @@ function storedProfile(id = 'profile') {
 	};
 }
 
-function createStore() {
-	const store = createAzureAuthenticationProfileStore();
-	stores.push(store);
-	return store;
-}
-
 beforeEach(() => {
 	localStorage.clear();
 	uuidSequence = 0;
+	const addEventListener = window.addEventListener.bind(window);
+	vi.spyOn(window, 'addEventListener').mockImplementation((type, listener, options) => {
+		if (type === ACCOUNT_EVENT) accountEventListeners.push(listener);
+		addEventListener(type, listener, options);
+	});
 	vi.spyOn(crypto, 'randomUUID').mockImplementation(
 		() =>
 			`00000000-0000-4000-8000-${String(++uuidSequence).padStart(12, '0')}` as `${string}-${string}-${string}-${string}-${string}`
@@ -42,8 +41,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	for (const store of stores) store.dispose();
-	stores = [];
+	for (const listener of accountEventListeners) window.removeEventListener(ACCOUNT_EVENT, listener);
+	accountEventListeners = [];
 	vi.restoreAllMocks();
 });
 
@@ -53,7 +52,7 @@ describe('Azure authentication profile store', () => {
 			AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY,
 			JSON.stringify([storedProfile(), { id: 'incomplete' }])
 		);
-		const store = createStore();
+		const store = createAzureAuthenticationProfileStore();
 
 		store.hydrate();
 		localStorage.setItem(AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY, '[]');
@@ -64,7 +63,7 @@ describe('Azure authentication profile store', () => {
 
 	it('migrates valid legacy profiles and tolerates malformed storage', () => {
 		localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify([storedProfile('legacy')]));
-		const migrated = createStore();
+		const migrated = createAzureAuthenticationProfileStore();
 		migrated.hydrate();
 
 		expect(migrated.profiles).toEqual([storedProfile('legacy')]);
@@ -73,7 +72,7 @@ describe('Azure authentication profile store', () => {
 		).toEqual([storedProfile('legacy')]);
 
 		localStorage.setItem(AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY, '{invalid json');
-		const malformed = createStore();
+		const malformed = createAzureAuthenticationProfileStore();
 		malformed.hydrate();
 		expect(malformed.profiles).toEqual([]);
 	});
@@ -81,7 +80,7 @@ describe('Azure authentication profile store', () => {
 	it('adds and removes profiles while publishing the removal event', () => {
 		const removed = vi.fn();
 		window.addEventListener('kite:azure-authentication-profile-removed', removed, { once: true });
-		const store = createStore();
+		const store = createAzureAuthenticationProfileStore();
 
 		const profile = store.add({ name: 'Production', tenantId: 'tenant', clientId: 'client' });
 		expect(profile.id).toBe('00000000-0000-4000-8000-000000000001');
@@ -96,7 +95,7 @@ describe('Azure authentication profile store', () => {
 	});
 
 	it('binds and clears accounts by profile and shared account identity', () => {
-		const store = createStore();
+		const store = createAzureAuthenticationProfileStore();
 		const first = store.add({ name: 'First', tenantId: 'tenant', clientId: 'one' });
 		const second = store.add({ name: 'Second', tenantId: 'tenant', clientId: 'two' });
 
@@ -113,7 +112,7 @@ describe('Azure authentication profile store', () => {
 	});
 
 	it('accepts account updates dispatched by the authentication callback', () => {
-		const store = createStore();
+		const store = createAzureAuthenticationProfileStore();
 		const profile = store.add({ name: 'Production', tenantId: 'tenant', clientId: 'client' });
 
 		window.dispatchEvent(
@@ -123,19 +122,5 @@ describe('Azure authentication profile store', () => {
 		);
 
 		expect(store.profiles[0].account).toEqual(account);
-	});
-
-	it('stops listening for account updates after disposal', () => {
-		const store = createStore();
-		const profile = store.add({ name: 'Production', tenantId: 'tenant', clientId: 'client' });
-		store.dispose();
-
-		window.dispatchEvent(
-			new CustomEvent('kite:azure-authentication-profile-account', {
-				detail: { id: profile.id, account }
-			})
-		);
-
-		expect(store.profiles[0].account).toBeUndefined();
 	});
 });

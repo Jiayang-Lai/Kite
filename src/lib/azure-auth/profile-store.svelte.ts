@@ -22,7 +22,6 @@ export type AzureAuthenticationProfileStore = {
 	bindAccount: (id: string, account: LogAnalyticsAccountBinding) => void;
 	clearAccount: (id: string) => void;
 	clearAccountBindings: (account: LogAnalyticsAccountBinding) => void;
-	dispose: () => void;
 };
 
 function isProfile(value: unknown): value is AzureAuthenticationProfile {
@@ -42,15 +41,15 @@ export function createAzureAuthenticationProfileStore(): AzureAuthenticationProf
 	function persist(next: AzureAuthenticationProfile[]) {
 		if (browser) localStorage.setItem(AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY, JSON.stringify(next));
 	}
-	const onAccount = (event: Event) => {
-		const detail = (event as CustomEvent<{ id: string; account?: LogAnalyticsAccountBinding }>)
-			.detail;
-		if (!detail) return;
-		profiles = profiles.map((profile) =>
-			profile.id === detail.id ? { ...profile, account: detail.account } : profile
-		);
-	};
-	if (browser) window.addEventListener('kite:azure-authentication-profile-account', onAccount);
+	if (browser) {
+		window.addEventListener('kite:azure-authentication-profile-account', (event) => {
+			const detail = (event as CustomEvent<{ id: string; account?: LogAnalyticsAccountBinding }>).detail;
+			if (!detail) return;
+			profiles = profiles.map((profile) =>
+				profile.id === detail.id ? { ...profile, account: detail.account } : profile
+			);
+		});
+	}
 	return {
 		get profiles() {
 			return profiles;
@@ -101,10 +100,6 @@ export function createAzureAuthenticationProfileStore(): AzureAuthenticationProf
 			);
 			persist(next);
 			profiles = next;
-		},
-		dispose() {
-			if (browser)
-				window.removeEventListener('kite:azure-authentication-profile-account', onAccount);
 		}
 	};
 }

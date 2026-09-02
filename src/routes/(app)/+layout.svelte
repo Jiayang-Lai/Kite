@@ -45,7 +45,6 @@
 		savedQueryStore.hydrate();
 
 		return () => {
-			azureAuthenticationProfileStore.dispose();
 			void releaseAllClusterRuntimes();
 		};
 	});

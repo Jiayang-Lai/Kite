@@ -141,6 +141,7 @@ export function startEmulatedIngestion(request: EmulatedIngestionRequest): Query
 		activeExecution = execution;
 		if (cancelled) execution.cancel();
 		const result = await execution.promise;
+		if (cancelled) throw new Error('Query cancelled.');
 		return summarizeResult(result, request, source.label);
 	})();
 

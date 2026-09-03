@@ -1,0 +1,19 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: 80%
+        threshold: 0%
+
+comment:
+  layout: reach, diff, flags, tree
+  behavior: default
+  require_changes: true
+
+ignore:
+  - 'src/**/*.d.ts'
+  - 'src/lib/generated/**'

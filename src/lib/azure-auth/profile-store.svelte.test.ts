@@ -7,8 +7,10 @@ import {
 
 const LEGACY_STORAGE_KEY = 'kite:azure-sessions:v1';
 const ACCOUNT_EVENT = 'kite:azure-authentication-profile-account';
+const REMOVAL_EVENT = 'kite:azure-authentication-profile-removed';
 let uuidSequence = 0;
 let accountEventListeners: EventListenerOrEventListenerObject[] = [];
+let removalEventListeners: EventListenerOrEventListenerObject[] = [];
 const account = {
 	homeAccountId: 'home-account',
 	localAccountId: 'local-account',
@@ -32,6 +34,7 @@ beforeEach(() => {
 	const addEventListener = window.addEventListener.bind(window);
 	vi.spyOn(window, 'addEventListener').mockImplementation((type, listener, options) => {
 		if (type === ACCOUNT_EVENT) accountEventListeners.push(listener);
+		if (type === REMOVAL_EVENT) removalEventListeners.push(listener);
 		addEventListener(type, listener, options);
 	});
 	vi.spyOn(crypto, 'randomUUID').mockImplementation(
@@ -42,7 +45,9 @@ beforeEach(() => {
 
 afterEach(() => {
 	for (const listener of accountEventListeners) window.removeEventListener(ACCOUNT_EVENT, listener);
+	for (const listener of removalEventListeners) window.removeEventListener(REMOVAL_EVENT, listener);
 	accountEventListeners = [];
+	removalEventListeners = [];
 	vi.restoreAllMocks();
 });
 

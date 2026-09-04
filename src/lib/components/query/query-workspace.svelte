@@ -54,6 +54,7 @@
 	import { getKustoErrorMessage } from '$lib/kusto/query-client';
 	import { disposeKqlTranslator } from '$lib/kql/wasm-translator';
 	import { getRecentQueryStore } from '$lib/query/recent-query-store.svelte';
+	import { createSavedQueryWorkspaceController } from '$lib/query/saved-query-workspace-controller';
 	import { createConnectionLifecycleController } from '$lib/query/connection-lifecycle-controller.svelte';
 	import { createQueryExecutionController } from '$lib/query/query-execution-controller.svelte';
 	import { createQueryTabController } from '$lib/query/query-tab-controller.svelte';
@@ -122,10 +123,12 @@
 		resultsCollapsed: false
 	});
 	let languageServiceStatus = $state<'idle' | 'loading' | 'ready'>('idle');
-	let saveQueryDialogOpen = $state(false);
-	let savedQueryName = $state('');
-	let savedQueryNameError = $state('');
-	let pendingSaveTabId = $state<string>();
+	const savedQueryState = $state({
+		dialogOpen: false,
+		name: '',
+		nameError: '',
+		pendingTabId: undefined as string | undefined
+	});
 	let resultsPane = $state<PaneAPI>();
 	let databaseSchemaPane = $state<PaneAPI>();
 	let databaseSchemaCollapsed = $state(false);
@@ -174,8 +177,8 @@
 			: undefined
 	);
 	const saveTargetTab = $derived(
-		pendingSaveTabId
-			? queryTabs.find((tab) => tab.id === pendingSaveTabId)
+		savedQueryState.pendingTabId
+			? queryTabs.find((tab) => tab.id === savedQueryState.pendingTabId)
 			: comparisonOriginalTab && comparisonModifiedTab
 				? tabComparisonState.focusedComparisonSide === 'left'
 					? comparisonOriginalTab
@@ -252,6 +255,18 @@
 		onTabLoaded: (tab) => loadQueryTab(tab),
 		onTabClosing: (tabId) => queryExecution.cancelTab(tabId)
 	});
+	const savedQueryController = createSavedQueryWorkspaceController({
+		state: savedQueryState,
+		session: clusterSession,
+		savedQueries: savedQueryStore,
+		getActiveClusterId: () => activeClusterId,
+		getActiveTabId: () => activeQueryTabId,
+		getTabs: () => queryTabs,
+		loadTab: (tab) => loadQueryTab(tab),
+		createTab: (database, query, savedQuery) => createQueryTab(database, query, savedQuery),
+		setExecutionQuery: (query) => (executionState.queryText = query),
+		navigateToEditor: () => void goto('/explorer/query')
+	});
 	const canSaveTargetQuery = $derived(
 		Boolean(saveTargetTab?.query.trim() && saveTargetTab.database)
 	);
@@ -316,7 +331,7 @@
 	});
 
 	$effect(() => {
-		if (!saveQueryDialogOpen) pendingSaveTabId = undefined;
+		if (!savedQueryState.dialogOpen) savedQueryState.pendingTabId = undefined;
 	});
 
 	$effect(() => {
@@ -560,23 +575,7 @@
 	}
 
 	function loadRecentQuery(query: ExplorerQuery) {
-		const savedQuery = query.id
-			? savedQueryStore.queries.find(
-					(candidate) => candidate.id === query.id && candidate.clusterId === activeClusterId
-				)
-			: undefined;
-		const existingTab = savedQuery
-			? queryTabs.find((tab) => tab.savedQueryId === savedQuery.id)
-			: undefined;
-		if (existingTab) {
-			loadQueryTab(existingTab);
-			return;
-		}
-		createQueryTab(
-			query.database,
-			query.query,
-			savedQuery ? { savedQueryId: savedQuery.id, savedQueryName: savedQuery.name } : undefined
-		);
+		savedQueryController.load(query);
 	}
 
 	function openQuery(query: ExplorerQuery) {
@@ -585,29 +584,7 @@
 			return;
 		}
 
-		clusterSession.selectedDatabase = query.database;
-		clusterSession.selectedTable = undefined;
-		clusterSession.selectedFunction = undefined;
-		const savedQuery = query.id
-			? savedQueryStore.queries.find(
-					(candidate) => candidate.id === query.id && candidate.clusterId === activeClusterId
-				)
-			: undefined;
-		const existingTab = savedQuery
-			? queryTabs.find((tab) => tab.savedQueryId === savedQuery.id)
-			: undefined;
-		if (existingTab) {
-			clusterSession.activeQueryTabId = existingTab.id;
-			clusterSession.pendingQuery = undefined;
-		} else {
-			clusterSession.pendingQuery = query.query;
-			clusterSession.createQueryTab(
-				query.database,
-				query.query,
-				savedQuery ? { savedQueryId: savedQuery.id, savedQueryName: savedQuery.name } : undefined
-			);
-		}
-		void goto('/explorer/query');
+		savedQueryController.openFromNonEditorView(query);
 	}
 
 	function openExplorerSelection(selection: ExplorerSelection) {
@@ -632,68 +609,12 @@
 		clusterSession.setExplorerExpansion(activeClusterId, change);
 	}
 
-	function openSaveQueryDialog(tab: QueryTab) {
-		if (!tab.query.trim() || !tab.database) return;
-		pendingSaveTabId = tab.id;
-		savedQueryName = '';
-		savedQueryNameError = '';
-		saveQueryDialogOpen = true;
-	}
-
 	function saveQuery(tab = saveTargetTab) {
-		if (!tab) return;
-		const query = tab.query.trim();
-		if (!query || !tab.database) return;
-		const savedQuery = tab.savedQueryId
-			? savedQueryStore.queries.find((candidate) => candidate.id === tab.savedQueryId)
-			: undefined;
-		if (!savedQuery) {
-			openSaveQueryDialog(tab);
-			return;
-		}
-
-		const updatedQuery = savedQueryStore.update(savedQuery.id, {
-			clusterId: activeClusterId,
-			database: tab.database,
-			name: savedQuery.name,
-			query
-		});
-		if (!updatedQuery) return;
-
-		clusterSession.updateQueryTab(tab.id, {
-			savedQueryName: updatedQuery.name,
-			query: updatedQuery.query,
-			database: updatedQuery.database
-		});
-		if (tab.id === activeQueryTabId) executionState.queryText = updatedQuery.query;
+		savedQueryController.save(tab);
 	}
 
 	function saveCurrentQuery() {
-		const tab = saveTargetTab;
-		if (!tab) return;
-		const query = tab.query.trim();
-		if (!query || !tab.database) return;
-
-		const name = savedQueryName.trim();
-		if (!name) {
-			savedQueryNameError = 'Enter a name for this query.';
-			return;
-		}
-
-		const savedQuery = savedQueryStore.save({
-			clusterId: activeClusterId,
-			database: tab.database,
-			name,
-			query
-		});
-		clusterSession.updateQueryTab(tab.id, {
-			savedQueryId: savedQuery.id,
-			savedQueryName: savedQuery.name,
-			query: savedQuery.query
-		});
-		if (tab.id === activeQueryTabId) executionState.queryText = savedQuery.query;
-		saveQueryDialogOpen = false;
-		pendingSaveTabId = undefined;
+		savedQueryController.saveNew(saveTargetTab);
 	}
 
 	function preventRefreshWithQuery(event: BeforeUnloadEvent) {
@@ -1337,7 +1258,7 @@
 		/>
 	{/if}
 
-	<Dialog.Root bind:open={saveQueryDialogOpen}>
+	<Dialog.Root bind:open={savedQueryState.dialogOpen}>
 		<Dialog.Content class="gap-0 overflow-hidden" aria-describedby="save-query-dialog-description">
 			<form
 				onsubmit={(event) => {
@@ -1357,21 +1278,23 @@
 					<Input
 						id="saved-query-name"
 						class="mt-2"
-						bind:value={savedQueryName}
-						aria-invalid={Boolean(savedQueryNameError)}
-						aria-describedby={savedQueryNameError ? 'saved-query-name-error' : undefined}
+						bind:value={savedQueryState.name}
+						aria-invalid={Boolean(savedQueryState.nameError)}
+						aria-describedby={savedQueryState.nameError ? 'saved-query-name-error' : undefined}
 						placeholder="Name for this query"
 						autocomplete="off"
 					/>
-					{#if savedQueryNameError}
+					{#if savedQueryState.nameError}
 						<p id="saved-query-name-error" class="text-destructive mt-2 text-sm" role="alert">
-							{savedQueryNameError}
+							{savedQueryState.nameError}
 						</p>
 					{/if}
 				</div>
 
 				<Dialog.Footer class="border-t p-4">
-					<Button variant="outline" onclick={() => (saveQueryDialogOpen = false)}>Cancel</Button>
+					<Button variant="outline" onclick={() => (savedQueryState.dialogOpen = false)}
+						>Cancel</Button
+					>
 					<Button type="submit">Save query</Button>
 				</Dialog.Footer>
 			</form>

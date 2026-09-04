@@ -3,6 +3,12 @@ import DUCKDB_BUNDLES from '#kite-duckdb-bundles';
 
 import { getEmulatedStorage, type EmulatedStorage } from '$lib/emulation/storage';
 import type { QueryExecution, QueryResult } from '$lib/types/query-result';
+import {
+	quoteDuckDbIdentifier,
+	quoteDuckDbString,
+	rewritePersistentDuckDbSql
+} from './persistent-sql';
+import { materializeDuckDbResult, type DuckDbQueryResult } from './result';
 import { getPersistentDuckDbFilePrefix } from './storage';
 
 export { deletePersistentDuckDbStorage, getPersistentDuckDbFilePrefix } from './storage';
@@ -36,39 +42,14 @@ export type DuckDbFileQueryOptions = {
 	buildSql: (virtualPath: string) => string;
 };
 
-type DuckDbQueryResult = {
-	columns: Array<{ name: string; type: string }>;
-	rows: unknown[][];
-	elapsedMs: number;
-};
-
 const PERSISTENCE_SCHEMA = 'kite_internal';
 const PERSISTENCE_TABLE = 'databases';
 const PERSISTENCE_WRITE_PROBE = '__kite_opfs_write_probe';
 const sessionPromises = new Map<string, Promise<DuckDbSession>>();
 let nextRequestId = 0;
 
-function quoteIdentifier(value: string) {
-	return `"${value.replaceAll('"', '""')}"`;
-}
-
-function quoteString(value: string) {
-	return `'${value.replaceAll("'", "''")}'`;
-}
-
 function rewritePersistentSql(session: DuckDbSession, sql: string) {
-	if (session.storage.mode !== 'opfs' || !session.internalCatalogName) return sql;
-
-	const withSelectedSchema = sql.replace(
-		/(^|;)\s*USE\s+"((?:[^"]|"")*)"\s*;?/gim,
-		(_match, prefix: string, encodedName: string) =>
-			`${prefix}\nSET schema = ${quoteString(encodedName.replaceAll('""', '"'))};`
-	);
-
-	return withSelectedSchema.replace(
-		/("(?:[^"]|"")*")\s*\.\s*(?:"main"|main)\s*\.\s*("(?:[^"]|"")*")/gi,
-		`${quoteIdentifier(session.internalCatalogName)}.$1.$2`
-	);
+	return rewritePersistentDuckDbSql(sql, session.storage.mode, session.internalCatalogName);
 }
 
 function getPersistentCatalogPath(storageId: string) {
@@ -124,9 +105,9 @@ async function acquirePersistentClusterLock(storageId: string): Promise<BrowserL
 function manifestTable(session: DuckDbSession) {
 	if (!session.internalCatalogName)
 		throw new Error('The persistent DuckDB catalog is unavailable.');
-	return `${quoteIdentifier(session.internalCatalogName)}.${quoteIdentifier(
+	return `${quoteDuckDbIdentifier(session.internalCatalogName)}.${quoteDuckDbIdentifier(
 		PERSISTENCE_SCHEMA
-	)}.${quoteIdentifier(PERSISTENCE_TABLE)}`;
+	)}.${quoteDuckDbIdentifier(PERSISTENCE_TABLE)}`;
 }
 
 function rowString(row: unknown, field: string) {
@@ -153,8 +134,8 @@ async function bootstrapPersistentSession(session: DuckDbSession) {
 	session.internalCatalogName = rowString(catalogRow, 'database_name');
 
 	await session.connection.query(
-		`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(PERSISTENCE_SCHEMA)};
-		 CREATE TABLE IF NOT EXISTS ${quoteIdentifier(PERSISTENCE_SCHEMA)}.${quoteIdentifier(
+		`CREATE SCHEMA IF NOT EXISTS ${quoteDuckDbIdentifier(PERSISTENCE_SCHEMA)};
+		 CREATE TABLE IF NOT EXISTS ${quoteDuckDbIdentifier(PERSISTENCE_SCHEMA)}.${quoteDuckDbIdentifier(
 				PERSISTENCE_TABLE
 			)} (
 			database_id VARCHAR PRIMARY KEY,
@@ -162,8 +143,8 @@ async function bootstrapPersistentSession(session: DuckDbSession) {
 		 )`
 	);
 	await session.connection.query(
-		`CREATE OR REPLACE TABLE ${quoteIdentifier(PERSISTENCE_WRITE_PROBE)} AS SELECT 1 AS value;
-		 DROP TABLE ${quoteIdentifier(PERSISTENCE_WRITE_PROBE)}`
+		`CREATE OR REPLACE TABLE ${quoteDuckDbIdentifier(PERSISTENCE_WRITE_PROBE)} AS SELECT 1 AS value;
+		 DROP TABLE ${quoteDuckDbIdentifier(PERSISTENCE_WRITE_PROBE)}`
 	);
 
 	let databases = await loadPersistentManifest(session);
@@ -173,7 +154,7 @@ async function bootstrapPersistentSession(session: DuckDbSession) {
 			name: 'memory'
 		};
 		await session.connection.query(
-			`INSERT INTO ${manifestTable(session)} VALUES (${quoteString(database.id)}, ${quoteString(
+			`INSERT INTO ${manifestTable(session)} VALUES (${quoteDuckDbString(database.id)}, ${quoteDuckDbString(
 				database.name
 			)})`
 		);
@@ -181,10 +162,12 @@ async function bootstrapPersistentSession(session: DuckDbSession) {
 	}
 
 	for (const database of databases) {
-		await session.connection.query(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(database.name)}`);
+		await session.connection.query(
+			`CREATE SCHEMA IF NOT EXISTS ${quoteDuckDbIdentifier(database.name)}`
+		);
 		session.persistentDatabases.set(database.name.toLowerCase(), database);
 	}
-	await session.connection.query(`SET schema = ${quoteString('memory')}`);
+	await session.connection.query(`SET schema = ${quoteDuckDbString('memory')}`);
 }
 
 async function instantiateDuckDb(sessionId: string) {
@@ -275,7 +258,7 @@ export async function checkpointDuckDb(sessionId: string) {
 export async function createDuckDbDatabase(sessionId: string, name: string) {
 	const session = await getSession(sessionId);
 	if (session.storage.mode !== 'opfs') {
-		await session.connection.query(`ATTACH ':memory:' AS ${quoteIdentifier(name)}`);
+		await session.connection.query(`ATTACH ':memory:' AS ${quoteDuckDbIdentifier(name)}`);
 		return;
 	}
 
@@ -288,15 +271,15 @@ export async function createDuckDbDatabase(sessionId: string, name: string) {
 	};
 
 	try {
-		await session.connection.query(`CREATE SCHEMA ${quoteIdentifier(database.name)}`);
+		await session.connection.query(`CREATE SCHEMA ${quoteDuckDbIdentifier(database.name)}`);
 		await session.connection.query(
-			`INSERT INTO ${manifestTable(session)} VALUES (${quoteString(database.id)}, ${quoteString(
+			`INSERT INTO ${manifestTable(session)} VALUES (${quoteDuckDbString(database.id)}, ${quoteDuckDbString(
 				database.name
 			)})`
 		);
 	} catch (cause) {
 		await session.connection
-			.query(`DROP SCHEMA IF EXISTS ${quoteIdentifier(database.name)} CASCADE`)
+			.query(`DROP SCHEMA IF EXISTS ${quoteDuckDbIdentifier(database.name)} CASCADE`)
 			.catch(() => undefined);
 		throw cause;
 	}
@@ -309,7 +292,7 @@ export async function dropDuckDbDatabase(sessionId: string, name: string, fallba
 	const session = await getSession(sessionId);
 	if (session.storage.mode !== 'opfs') {
 		await session.connection.query(
-			`USE ${quoteIdentifier(fallbackName)}; DETACH ${quoteIdentifier(name)}`
+			`USE ${quoteDuckDbIdentifier(fallbackName)}; DETACH ${quoteDuckDbIdentifier(name)}`
 		);
 		return;
 	}
@@ -318,55 +301,14 @@ export async function dropDuckDbDatabase(sessionId: string, name: string, fallba
 	if (!database) throw new Error(`Persistent database “${name}” is not registered.`);
 
 	await session.connection.query(
-		`SET schema = ${quoteString(fallbackName)};
-		 DROP SCHEMA ${quoteIdentifier(name)} CASCADE`
+		`SET schema = ${quoteDuckDbString(fallbackName)};
+		 DROP SCHEMA ${quoteDuckDbIdentifier(name)} CASCADE`
 	);
 	await session.connection.query(
-		`DELETE FROM ${manifestTable(session)} WHERE database_id = ${quoteString(database.id)}`
+		`DELETE FROM ${manifestTable(session)} WHERE database_id = ${quoteDuckDbString(database.id)}`
 	);
 	session.persistentDatabases.delete(name.toLowerCase());
 	await checkpointDuckDbSession(session);
-}
-
-function normalizeValue(value: unknown): unknown {
-	if (value instanceof Date) return value.toISOString();
-	if (typeof value === 'bigint') return value.toString();
-	if (value instanceof Uint8Array) return Array.from(value);
-	if (Array.isArray(value)) return value.map(normalizeValue);
-	if (value && typeof value === 'object') {
-		return Object.fromEntries(
-			Object.entries(value as Record<string, unknown>).map(([key, item]) => [
-				key,
-				normalizeValue(item)
-			])
-		);
-	}
-	return value;
-}
-
-function materializeResult(
-	table: {
-		schema: { fields: readonly { name: string; type: { toString(): string } }[] };
-		toArray(): readonly unknown[];
-	},
-	elapsedMs: number
-): DuckDbQueryResult {
-	const columns = table.schema.fields.map((field) => ({
-		name: field.name,
-		type: field.type.toString()
-	}));
-
-	return {
-		columns,
-		rows: table
-			.toArray()
-			.map((row) =>
-				columns.map((column) =>
-					normalizeValue((row as unknown as Record<string, unknown>)[column.name])
-				)
-			),
-		elapsedMs
-	};
 }
 
 /** Executes SQL against one emulated cluster's DuckDB session. */
@@ -374,7 +316,7 @@ export async function executeDuckDbSql(sql: string, sessionId: string): Promise<
 	const session = await getSession(sessionId);
 	const startedAt = performance.now();
 	const table = await session.connection.query(rewritePersistentSql(session, sql));
-	return materializeResult(table, performance.now() - startedAt);
+	return materializeDuckDbResult(table, performance.now() - startedAt);
 }
 
 /** Executes SQL and adapts the response for Kite's query result renderer. */
@@ -444,7 +386,7 @@ export function startDuckDbFileQuery(options: DuckDbFileQueryOptions): QueryExec
 			transactionOpen = false;
 			committed = true;
 
-			const result = materializeResult(table, elapsedMs);
+			const result = materializeDuckDbResult(table, elapsedMs);
 			return {
 				...result,
 				totalRowCount: result.rows.length,
@@ -541,7 +483,9 @@ async function checkpointDuckDbSession(session: DuckDbSession, reopen = true) {
 	const currentResult = await session.connection.query('SELECT current_schema() AS database_name');
 	const currentRow = currentResult.toArray()[0];
 	const currentDatabase = currentRow ? rowString(currentRow, 'database_name') : 'memory';
-	await session.connection.query(`CHECKPOINT ${quoteIdentifier(session.internalCatalogName)}`);
+	await session.connection.query(
+		`CHECKPOINT ${quoteDuckDbIdentifier(session.internalCatalogName)}`
+	);
 	await session.connection.close();
 	await session.database.reset();
 	await session.database.terminate();
@@ -557,5 +501,5 @@ async function checkpointDuckDbSession(session: DuckDbSession, reopen = true) {
 	const restoreDatabase = session.persistentDatabases.has(currentDatabase.toLowerCase())
 		? currentDatabase
 		: 'memory';
-	await session.connection.query(`SET schema = ${quoteString(restoreDatabase)}`);
+	await session.connection.query(`SET schema = ${quoteDuckDbString(restoreDatabase)}`);
 }

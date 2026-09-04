@@ -45,28 +45,70 @@ export type LogAnalyticsAccountBinding = {
 	name?: string;
 };
 
-export type KustoClusterConnection = {
+type ClusterConnectionBase = {
 	/** Stable identifier used to select this connection independently of its endpoint. */
 	id: string;
 	/** Human-readable label shown in the cluster selector. */
 	name: string;
 	/** Optional supporting detail shown beneath the connection name in the selector. */
 	description?: string;
-	/** Browser-accessible Kusto cluster endpoint. */
+	/** Browser-accessible or synthetic cluster endpoint. */
 	url: string;
-	/** Whether the connection is Kusto, Log Analytics, metadata-only, or browser WASM. */
-	kind: 'remote' | 'log-analytics' | 'mock' | 'emulated';
+};
+
+export type RemoteClusterConnection = ClusterConnectionBase & {
+	kind: 'remote';
+	/** Optional ingestion behavior available for this connection. */
+	ingestion?: KustoIngestionConfiguration;
+	logAnalytics?: never;
+	mockSchema?: never;
+	mockSchemaRevision?: never;
+	emulatedStorage?: never;
+};
+
+export type LogAnalyticsClusterConnection = ClusterConnectionBase & {
+	kind: 'log-analytics';
 	/** Authentication and workspace settings for an Azure Log Analytics connection. */
-	logAnalytics?: LogAnalyticsConnectionConfiguration;
+	logAnalytics: LogAnalyticsConnectionConfiguration;
+	ingestion?: never;
+	mockSchema?: never;
+	mockSchemaRevision?: never;
+	emulatedStorage?: never;
+};
+
+export type MockClusterConnection = ClusterConnectionBase & {
+	kind: 'mock';
 	/** Browser-local schema metadata owned by a custom mock connection. */
 	mockSchema?: KustoDatabaseSchema;
 	/** Optimistic concurrency token incremented after each browser-local schema mutation. */
 	mockSchemaRevision?: number;
-	/** Persistence configuration owned by an in-browser emulated connection. */
-	emulatedStorage?: EmulatedStorage;
-	/** Optional ingestion behavior available for this connection. */
-	ingestion?: KustoIngestionConfiguration;
+	ingestion?: never;
+	logAnalytics?: never;
+	emulatedStorage?: never;
 };
+
+export type EmulatedClusterConnection = ClusterConnectionBase & {
+	kind: 'emulated';
+	/** Persistence configuration owned by an in-browser emulated connection. */
+	emulatedStorage: EmulatedStorage;
+	ingestion?: never;
+	logAnalytics?: never;
+	mockSchema?: never;
+	mockSchemaRevision?: never;
+};
+
+/** Validated connection configuration narrowed by its backend kind. */
+export type KustoClusterConnection =
+	| RemoteClusterConnection
+	| LogAnalyticsClusterConnection
+	| MockClusterConnection
+	| EmulatedClusterConnection;
+
+export type ClusterKind = KustoClusterConnection['kind'];
+export type ClusterConnectionOfKind<K extends ClusterKind> = Extract<
+	KustoClusterConnection,
+	{ kind: K }
+>;
 
 const DEFAULT_KUSTO_CLUSTERS: KustoClusterConnection[] = [
 	{
@@ -101,10 +143,11 @@ const DEFAULT_KUSTO_CLUSTERS: KustoClusterConnection[] = [
 
 /** Returns a copy of Kite's built-in cluster catalog. */
 export function getKustoClusters(): KustoClusterConnection[] {
-	return DEFAULT_KUSTO_CLUSTERS.map((cluster) => ({
-		...cluster,
-		ingestion: cluster.ingestion ? { ...cluster.ingestion } : undefined
-	}));
+	return DEFAULT_KUSTO_CLUSTERS.map((cluster) =>
+		cluster.kind === 'remote' && cluster.ingestion
+			? { ...cluster, ingestion: { ...cluster.ingestion } }
+			: { ...cluster }
+	);
 }
 
 /** Returns the default browser-visible Kusto cluster URL. */

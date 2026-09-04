@@ -36,7 +36,8 @@ describe('getDatabaseCapabilities', () => {
 				id: 'emulated',
 				name: 'Emulated',
 				url: 'emulated://kite',
-				kind: 'emulated'
+				kind: 'emulated',
+				emulatedStorage: { mode: 'memory' }
 			})
 		).toEqual({ create: true, drop: true, rename: false });
 	});

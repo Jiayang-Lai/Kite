@@ -1,10 +1,46 @@
 import { describe, expect, it } from 'vitest';
 
-import type { KustoClusterConnection } from '$lib/kusto/query-client';
+import type {
+	EmulatedClusterConnection,
+	KustoClusterConnection,
+	LogAnalyticsClusterConnection,
+	MockClusterConnection,
+	RemoteClusterConnection
+} from './connections';
 import { getConnectionCapabilities } from './connection-capabilities';
 
+function connection(kind: 'remote'): RemoteClusterConnection;
+function connection(kind: 'log-analytics'): LogAnalyticsClusterConnection;
+function connection(kind: 'mock'): MockClusterConnection;
+function connection(kind: 'emulated'): EmulatedClusterConnection;
+function connection(kind: KustoClusterConnection['kind']): KustoClusterConnection;
 function connection(kind: KustoClusterConnection['kind']): KustoClusterConnection {
-	return { id: kind, name: kind, url: `${kind}://kite`, kind };
+	switch (kind) {
+		case 'remote':
+			return { id: kind, name: kind, url: 'https://example.test', kind };
+		case 'log-analytics':
+			return {
+				id: kind,
+				name: kind,
+				url: 'https://api.loganalytics.azure.com',
+				kind,
+				logAnalytics: {
+					workspaceId: 'workspace-id',
+					tenantId: 'tenant-id',
+					clientId: 'client-id'
+				}
+			};
+		case 'mock':
+			return { id: kind, name: kind, url: 'mock://kite', kind };
+		case 'emulated':
+			return {
+				id: kind,
+				name: kind,
+				url: 'emulated://kite',
+				kind,
+				emulatedStorage: { mode: 'memory' }
+			};
+	}
 }
 
 describe('getConnectionCapabilities', () => {

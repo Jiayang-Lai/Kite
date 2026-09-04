@@ -24,6 +24,66 @@ function result(columns: string[], rows: unknown[][]): QueryResult {
 }
 
 describe('schema mutation adapter', () => {
+	it('provides the same mutation contract for every cluster kind', () => {
+		const clusters: KustoClusterConnection[] = [
+			{ id: 'mock', name: 'Mock', url: 'mock://kite', kind: 'mock' },
+			{
+				id: 'emulated',
+				name: 'Emulated',
+				url: 'emulated://kite',
+				kind: 'emulated',
+				emulatedStorage: { mode: 'memory' }
+			},
+			{ id: 'remote', name: 'Remote', url: 'https://example.test', kind: 'remote' },
+			{
+				id: 'logs',
+				name: 'Logs',
+				url: 'https://api.loganalytics.azure.com',
+				kind: 'log-analytics',
+				logAnalytics: {
+					workspaceId: 'workspace-id',
+					tenantId: 'tenant-id',
+					clientId: 'client-id'
+				}
+			}
+		];
+
+		for (const cluster of clusters) {
+			const adapter = createSchemaMutationAdapter({
+				cluster,
+				mockSchemaStore: { updateMockSchema: vi.fn() },
+				mockSchemaRevision: 0
+			});
+			expect(adapter.prepareTable).toBeTypeOf('function');
+			expect(adapter.dropTable).toBeTypeOf('function');
+			expect(adapter.mutateTable).toBeTypeOf('function');
+			expect(adapter.createTable).toBeTypeOf('function');
+			expect(adapter.mutateDatabase).toBeTypeOf('function');
+		}
+	});
+
+	it('makes unsupported Log Analytics mutations explicit', async () => {
+		const adapter = createSchemaMutationAdapter({
+			cluster: {
+				id: 'logs',
+				name: 'Logs',
+				url: 'https://api.loganalytics.azure.com',
+				kind: 'log-analytics',
+				logAnalytics: {
+					workspaceId: 'workspace-id',
+					tenantId: 'tenant-id',
+					clientId: 'client-id'
+				}
+			},
+			mockSchemaStore: { updateMockSchema: vi.fn() },
+			mockSchemaRevision: 0
+		});
+
+		await expect(adapter.mutateDatabase('create', '', 'Archive')).rejects.toThrow(
+			'Schema mutations are unavailable for Log Analytics connections.'
+		);
+	});
+
 	it('applies mock mutations through the revision-aware connection store', async () => {
 		const schema = { Analytics: { name: 'Analytics', tables: [], functions: [] } };
 		const updateMockSchema = vi.fn((_id, _revision, mutation) => ({

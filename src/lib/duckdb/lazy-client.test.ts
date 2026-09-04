@@ -55,6 +55,30 @@ describe('lazy DuckDB client', () => {
 		expect(module.executeDuckDbSql).toHaveBeenNthCalledWith(2, 'select 2', 'cluster');
 	});
 
+	it('forwards every promise-based operation to the loaded client', async () => {
+		const module = createClientModule();
+		const importClient = vi.fn().mockResolvedValue(module);
+		const client = createLazyDuckDbClient({
+			isBrowser: true,
+			importClient: importClient as never
+		});
+
+		await client.executeDuckDbQuery('select 1', 'cluster');
+		await client.isPersistentDuckDbSession('cluster');
+		await client.getDuckDbInternalCatalogName('cluster');
+		await client.checkpointDuckDb('cluster');
+		await client.createDuckDbDatabase('cluster', 'Analytics');
+		await client.dropDuckDbDatabase('cluster', 'Analytics', 'memory');
+
+		expect(module.executeDuckDbQuery).toHaveBeenCalledWith('select 1', 'cluster');
+		expect(module.isPersistentDuckDbSession).toHaveBeenCalledWith('cluster');
+		expect(module.getDuckDbInternalCatalogName).toHaveBeenCalledWith('cluster');
+		expect(module.checkpointDuckDb).toHaveBeenCalledWith('cluster');
+		expect(module.createDuckDbDatabase).toHaveBeenCalledWith('cluster', 'Analytics');
+		expect(module.dropDuckDbDatabase).toHaveBeenCalledWith('cluster', 'Analytics', 'memory');
+		expect(importClient).toHaveBeenCalledOnce();
+	});
+
 	it('retries an import after a loading failure', async () => {
 		const module = createClientModule();
 		const importClient = vi
@@ -87,6 +111,26 @@ describe('lazy DuckDB client', () => {
 		expect(module.startDuckDbFileQuery).not.toHaveBeenCalled();
 	});
 
+	it('forwards cancellation after a file query starts', async () => {
+		const query = deferred<unknown>();
+		const cancel = vi.fn();
+		const module = createClientModule();
+		module.startDuckDbFileQuery.mockReturnValue({ promise: query.promise, cancel });
+		const client = createLazyDuckDbClient({
+			isBrowser: true,
+			importClient: vi.fn().mockResolvedValue(module) as never
+		});
+		const options = { sessionId: 'cluster' } as never;
+		const execution = client.startDuckDbFileQuery(options);
+
+		await vi.waitFor(() => expect(module.startDuckDbFileQuery).toHaveBeenCalledWith(options));
+		execution.cancel();
+		query.resolve({ rows: [] });
+
+		await expect(execution.promise).resolves.toEqual({ rows: [] });
+		expect(cancel).toHaveBeenCalledOnce();
+	});
+
 	it('does not load the client solely for disposal', async () => {
 		const importClient = vi.fn();
 		const client = createLazyDuckDbClient({ isBrowser: true, importClient });
@@ -95,5 +139,22 @@ describe('lazy DuckDB client', () => {
 		await client.disposeAllDuckDbSessions();
 
 		expect(importClient).not.toHaveBeenCalled();
+	});
+
+	it('forwards disposal after the client has loaded', async () => {
+		const module = createClientModule();
+		const client = createLazyDuckDbClient({
+			isBrowser: true,
+			importClient: vi.fn().mockResolvedValue(module) as never
+		});
+		await client.executeDuckDbSql('select 1', 'cluster');
+
+		await client.disposeDuckDb('cluster');
+		await client.disposeInactiveDuckDbSessions('active');
+		await client.disposeAllDuckDbSessions();
+
+		expect(module.disposeDuckDb).toHaveBeenCalledWith('cluster');
+		expect(module.disposeInactiveDuckDbSessions).toHaveBeenCalledWith('active');
+		expect(module.disposeAllDuckDbSessions).toHaveBeenCalledOnce();
 	});
 });

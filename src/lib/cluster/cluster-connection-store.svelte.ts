@@ -271,11 +271,16 @@ export function createClusterConnectionStore(): ClusterConnectionStore {
 		}
 	}
 
+	function prepareCluster<K extends NewClusterConnection>(
+		draft: K,
+		id?: string,
+		mockSchemaRevision?: number
+	): Extract<KustoClusterConnection, { kind: K['kind'] }>;
 	function prepareCluster(
 		draft: NewClusterConnection,
 		id: string = createClusterId(),
 		mockSchemaRevision = 0
-	) {
+	): KustoClusterConnection {
 		const name = draft.name.trim();
 		if (!name) throw new Error('Enter a cluster name.');
 

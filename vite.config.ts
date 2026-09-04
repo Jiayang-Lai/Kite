@@ -99,12 +99,23 @@ export default defineConfig({
 			reporter: ['text', 'lcov', 'json-summary'],
 			reportsDirectory: 'coverage',
 			include: ['src/**/*.{js,ts,svelte}'],
-			exclude: ['src/**/*.d.ts', 'src/**/*.{test,spec}.{js,ts}', 'src/lib/generated/**'],
+			exclude: [
+				'src/**/*.d.ts',
+				'src/**/*.{test,spec}.{js,ts}',
+				'src/lib/generated/**',
+				'src/lib/components/ui/**'
+			],
 			thresholds: {
 				statements: 40,
 				branches: 33,
 				functions: 38,
-				lines: 42
+				lines: 42,
+				'src/lib/!(components)/**/*.{js,ts,svelte}': {
+					statements: 71,
+					branches: 65,
+					functions: 74,
+					lines: 75
+				}
 			}
 		},
 		projects: [

@@ -12,6 +12,7 @@ vi.mock('$lib/emulation/schema-management', () => emulationMocks);
 
 import { createSchemaMutationAdapter } from './schema-mutation-adapter';
 import type { KustoClusterConnection } from '$lib/kusto/query-client';
+import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 import type { QueryResult } from '$lib/types/query-result';
 
 const snapshot = {
@@ -124,7 +125,7 @@ describe('schema mutation adapter', () => {
 	});
 
 	it('applies every table and database mutation through the mock adapter', async () => {
-		let schema = {
+		let schema: KustoDatabaseSchema = {
 			Analytics: {
 				name: 'Analytics',
 				tables: [{ name: 'Events', columns: [{ name: 'Id', type: 'long' }], docstring: '' }],

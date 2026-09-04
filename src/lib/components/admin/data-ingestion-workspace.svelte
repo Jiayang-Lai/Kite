@@ -27,31 +27,29 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import {
+		detectLocalFileFormat,
+		getInlineFileStatusLabel,
+		getTargetColumnShapeWarnings,
+		prepareIngestionCommand,
+		resolveIngestionSourceLocations,
+		type IngestionSourceMode,
+		type InlineFileState
+	} from '$lib/admin/data-ingestion-workspace';
+	import {
+		createInlineFileIngestionExecutor,
+		EMULATION_MAX_FILE_BYTES,
+		scanInlineCsvText,
+		scanInlineIngestionFile
+	} from '$lib/admin/inline-file-ingestion';
 	import { createCancellableOperation } from '$lib/query/cancellable-operation.svelte';
 	import {
-		describeEmulatedRemoteUrl,
-		resolveEmulatedRemoteUrl,
 		startEmulatedIngestion,
 		type EmulatedIngestionFormat
 	} from '$lib/emulation/data-ingestion';
 	import type { EmulatedStorage } from '$lib/emulation/storage';
-	import {
-		buildInlineIngestionCommand,
-		buildMountedFileIngestionCommand,
-		buildRemoteFileIngestionCommand,
-		getInlineFilePayloadBudget,
-		resolveRemoteFileUrl,
-		resolveMountedFilePath,
-		type MountedFileFormat
-	} from '$lib/kusto/ingestion';
-	import {
-		formatBytes,
-		hashInlineCsvChunk,
-		planInlineCsvFile,
-		readInlineCsvChunk,
-		readInlineCsvPayload,
-		type InlineCsvPlan
-	} from '$lib/kusto/inline-file';
+	import type { MountedFileFormat } from '$lib/kusto/ingestion';
+	import { formatBytes, type InlineCsvPlan } from '$lib/kusto/inline-file';
 	import { compareCsvShape } from '$lib/kusto/ingestion-guardrails';
 	import {
 		getKustoErrorMessage,
@@ -61,14 +59,6 @@
 	import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 	import type { QueryResult } from '$lib/types/query-result';
 	import type { PaneAPI } from 'paneforge';
-
-	type SourceMode = 'inline' | 'inline-file' | 'file' | 'remote-file';
-	type InlineFileState =
-		'idle' | 'scanning' | 'ready' | 'running' | 'partial' | 'cancelled' | 'succeeded' | 'failed';
-	type TargetColumnShapeWarning = {
-		kind: 'header-order' | 'missing-source-column';
-		message: string;
-	};
 
 	type DataIngestionWorkspaceProps = {
 		databases?: KustoDatabaseSchema;
@@ -105,9 +95,7 @@
 
 	const INLINE_DATA_MAX_LENGTH = 100_000;
 	const INLINE_DATA_SCAN_DEBOUNCE_MS = 300;
-	const EMULATION_MAX_FILE_BYTES = 512 * 1024 * 1024;
-	const EMULATION_SCAN_CHUNK_BYTES = 16 * 1024 * 1024;
-	let sourceMode = $state<SourceMode>('inline');
+	let sourceMode = $state<IngestionSourceMode>('inline');
 	let inlineData = $state('');
 	let inlineDataHasHeader = $state(false);
 	let inlineDataPlan = $state.raw<InlineCsvPlan>();
@@ -138,13 +126,13 @@
 	let result = $state<QueryResult>();
 	let ingestionError = $state('');
 	const ingestionOperation = createCancellableOperation();
+	const inlineFileIngestion = createInlineFileIngestionExecutor();
 	const isRunning = $derived(ingestionOperation.isRunning);
 	let resultsCollapsed = $state(false);
 	let resultsPane = $state<PaneAPI>();
 	let showConfirmation = $state(false);
 	let confirmationText = $state('');
 	let pendingCommand = $state('');
-	let cancelRequested = false;
 
 	const databaseEntries = $derived(Object.values(databases ?? {}));
 	const databaseNames = $derived(databaseEntries.map((database) => database.name));
@@ -153,81 +141,36 @@
 	const activeTable = $derived(
 		selectedTable ? tableEntries.find((table) => table.name === selectedTable) : undefined
 	);
-	const localFileFormat = $derived.by((): EmulatedIngestionFormat | undefined => {
-		const name = inlineFile?.name.toLowerCase();
-		if (name?.endsWith('.csv')) return 'csv';
-		if (name?.endsWith('.parquet')) return 'parquet';
-		return undefined;
-	});
-	const resolvedFilePath = $derived.by(() => {
-		if (!ingestion || !relativePath.trim()) return '';
-		try {
-			return resolveMountedFilePath(ingestion.containerRoot, relativePath);
-		} catch {
-			return '';
-		}
-	});
-	const resolvedRemoteFileUrl = $derived.by(() => {
-		if (!remoteFileUrl.trim()) return '';
-		try {
-			return isEmulatedCluster
-				? describeEmulatedRemoteUrl(remoteFileUrl)
-				: resolveRemoteFileUrl(remoteFileUrl);
-		} catch {
-			return '';
-		}
-	});
-	const preparedCommand = $derived.by(() => {
-		try {
-			if (isEmulatedCluster) {
-				if (sourceMode === 'inline') {
-					if (!inlineData.trim()) throw new Error('Enter at least one CSV row to ingest.');
-					return { command: 'DuckDB append from inline CSV rows', error: '' };
-				}
-				if (sourceMode === 'inline-file') {
-					if (!inlineFile) throw new Error('Select a local CSV or Parquet file.');
-					if (!localFileFormat) throw new Error('Select a file ending in .csv or .parquet.');
-					return {
-						command: `DuckDB append from local ${localFileFormat.toUpperCase()} file`,
-						error: ''
-					};
-				}
-				if (sourceMode === 'remote-file') {
-					resolveEmulatedRemoteUrl(remoteFileUrl);
-					return {
-						command: `DuckDB append from remote ${remoteFileFormat.toUpperCase()} file`,
-						error: ''
-					};
-				}
-				throw new Error('Mounted-container files are available for Kustainer connections only.');
-			}
-			if (!ingestion) throw new Error('Data ingestion is not configured for this connection.');
-			const table = selectedTable ?? '';
-			if (sourceMode === 'inline-file') return { command: '', error: '' };
-			const command = (() => {
-				if (sourceMode === 'inline') {
-					return buildInlineIngestionCommand({ table, data: inlineDataPayload });
-				}
-				if (sourceMode === 'remote-file') {
-					return buildRemoteFileIngestionCommand({
-						table,
-						url: remoteFileUrl,
-						format: remoteFileFormat,
-						ignoreFirstRecord: remoteFileFormat === 'csv' && remoteFileSkipFirstLine
-					});
-				}
-				return buildMountedFileIngestionCommand({
-					table,
-					containerRoot: ingestion.containerRoot,
-					relativePath,
-					format: fileFormat
-				});
-			})();
-			return { command, error: '' };
-		} catch (error) {
-			return { command: '', error: error instanceof Error ? error.message : String(error) };
-		}
-	});
+	const localFileFormat = $derived<EmulatedIngestionFormat | undefined>(
+		detectLocalFileFormat(inlineFile)
+	);
+	const sourceLocations = $derived(
+		resolveIngestionSourceLocations({
+			ingestion,
+			relativePath,
+			remoteFileUrl,
+			isEmulatedCluster
+		})
+	);
+	const resolvedFilePath = $derived(sourceLocations.mountedFilePath);
+	const resolvedRemoteFileUrl = $derived(sourceLocations.remoteFileUrl);
+	const preparedCommand = $derived(
+		prepareIngestionCommand({
+			sourceMode,
+			isEmulatedCluster,
+			ingestion,
+			selectedTable,
+			inlineData,
+			inlineDataPayload,
+			inlineFile,
+			localFileFormat,
+			remoteFileUrl,
+			remoteFileFormat,
+			remoteFileSkipFirstLine,
+			relativePath,
+			fileFormat
+		})
+	);
 	const inlineDataGuardrails = $derived(
 		inlineDataPlan && activeTable ? compareCsvShape(inlineDataPlan, activeTable.columns) : []
 	);
@@ -248,25 +191,9 @@
 				? inlineFilePlan
 				: undefined
 	);
-	const targetColumnShapeWarnings = $derived.by(() => {
-		if (!activeCsvPlan || !activeTable) return [];
-		return activeTable.columns.map((column, index) => {
-			if (index >= activeCsvPlan.columnCount) {
-				return {
-					kind: 'missing-source-column',
-					message: `No source column at position ${index + 1}.`
-				} satisfies TargetColumnShapeWarning;
-			}
-			const sourceHeader = activeCsvPlan.headerColumns?.[index];
-			if (sourceHeader !== undefined && sourceHeader !== column.name) {
-				return {
-					kind: 'header-order',
-					message: `Source header: ${sourceHeader}`
-				} satisfies TargetColumnShapeWarning;
-			}
-			return undefined;
-		});
-	});
+	const targetColumnShapeWarnings = $derived(
+		getTargetColumnShapeWarnings(activeCsvPlan, activeTable?.columns)
+	);
 	const extraSourceColumnCount = $derived(
 		activeCsvPlan && activeTable
 			? Math.max(0, activeCsvPlan.columnCount - activeTable.columns.length)
@@ -326,18 +253,7 @@
 					? resolvedRemoteFileUrl
 					: resolvedFilePath
 	);
-	const inlineFileStatusLabel = $derived(
-		(
-			{
-				ready: 'Ready',
-				running: 'Running',
-				partial: 'Partial',
-				cancelled: 'Cancelled',
-				succeeded: 'Complete',
-				failed: 'Failed'
-			} as Partial<Record<InlineFileState, string>>
-		)[inlineFileState] ?? 'Ready'
-	);
+	const inlineFileStatusLabel = $derived(getInlineFileStatusLabel(inlineFileState));
 
 	$effect(() => {
 		if (!databaseNames.length) return;
@@ -357,14 +273,11 @@
 		const timer = setTimeout(() => {
 			void (async () => {
 				try {
-					const source = new Blob([data]);
-					const plan = await planInlineCsvFile(source, {
-						maxFileBytes: INLINE_DATA_MAX_LENGTH * 4,
-						maxPayloadBytes: INLINE_DATA_MAX_LENGTH * 4,
-						hasHeader
-					});
-					if (nextScanRequestId !== inlineDataScanRequestId) return;
-					const payload = await readInlineCsvPayload(source, plan);
+					const { plan, payload } = await scanInlineCsvText(
+						data,
+						hasHeader,
+						INLINE_DATA_MAX_LENGTH
+					);
 					if (nextScanRequestId !== inlineDataScanRequestId) return;
 					inlineDataPlan = plan;
 					inlineDataPayload = payload;
@@ -431,50 +344,22 @@
 		completedFileRecords = 0;
 		extentIds = [];
 		try {
-			const format = file.name.toLowerCase().endsWith('.csv')
-				? 'csv'
-				: file.name.toLowerCase().endsWith('.parquet')
-					? 'parquet'
-					: undefined;
-			if (!format || (!isEmulatedCluster && format !== 'csv')) {
-				throw new Error(
-					isEmulatedCluster
-						? 'Local ingestion accepts .csv or .parquet files.'
-						: 'Inline file ingestion currently accepts uncompressed .csv files only.'
-				);
-			}
-			if (!file.size) throw new Error('The selected file is empty.');
-			if (isEmulatedCluster && file.size > EMULATION_MAX_FILE_BYTES) {
-				throw new Error(
-					`The selected file is ${formatBytes(file.size)}; browser ingestion is limited to ${formatBytes(EMULATION_MAX_FILE_BYTES)}.`
-				);
-			}
-			if (format === 'parquet') {
-				inlineFileState = 'ready';
-				inlineFileScanProgress = 100;
-				return;
-			}
-			const maxPayloadBytes = getInlineFilePayloadBudget(
+			const scan = await scanInlineIngestionFile({
+				file,
 				table,
-				isEmulatedCluster ? EMULATION_SCAN_CHUNK_BYTES : (ingestion?.maxInlineCommandBytes ?? 0)
-			);
-			const plan = await planInlineCsvFile(file, {
-				maxFileBytes: isEmulatedCluster
-					? EMULATION_MAX_FILE_BYTES
-					: (ingestion?.maxInlineFileBytes ?? 0),
-				maxPayloadBytes,
+				isEmulatedCluster,
+				ingestion,
 				hasHeader: inlineFileHasHeader,
 				signal: scanController.signal,
-				onProgress(scannedBytes, totalBytes) {
+				onProgress(progress) {
 					if (nextScanRequestId === scanRequestId) {
-						inlineFileScanProgress = Math.round((scannedBytes / totalBytes) * 100);
+						inlineFileScanProgress = progress;
 					}
 				}
 			});
 			if (nextScanRequestId !== scanRequestId) return;
-			inlineFilePlan = plan;
+			inlineFilePlan = scan.plan;
 			inlineFileState = 'ready';
-			inlineFileScanProgress = 100;
 		} catch (error) {
 			if (nextScanRequestId !== scanRequestId) return;
 			if (error instanceof DOMException && error.name === 'AbortError') {
@@ -596,65 +481,38 @@
 		const database = selectedDatabase;
 		if (!file || !plan || !table || !ingestion) return;
 
-		cancelRequested = false;
 		ingestionError = '';
 		result = undefined;
 		inlineFileState = 'running';
 		await ingestionOperation.run(
 			async (operation) => {
-				try {
-					for (let index = completedFileChunks; index < plan.chunks.length; index += 1) {
-						if (cancelRequested || !operation.isCurrent()) break;
-						const chunk = plan.chunks[index];
-						activeFileChunk = index;
-						const data = await readInlineCsvChunk(file, chunk);
-						const hash = await hashInlineCsvChunk(database, table, data);
-						const command = buildInlineIngestionCommand({
-							table,
-							data,
-							ingestBy: `kite-inline-file:${hash}`
-						});
-						if (new TextEncoder().encode(command).byteLength > ingestion.maxInlineCommandBytes) {
-							throw new Error(`Chunk ${index + 1} exceeds the configured inline command limit.`);
-						}
-						if (cancelRequested || !operation.isCurrent()) break;
-
-						const execution = startKustoManagementCommand(database, command, clusterUrl);
-						operation.setExecution(execution);
-						const completedResult = await execution.promise;
+				return inlineFileIngestion.run({
+					file,
+					plan,
+					database,
+					table,
+					clusterUrl,
+					maxInlineCommandBytes: ingestion.maxInlineCommandBytes,
+					startChunk: completedFileChunks,
+					completedRecords: completedFileRecords,
+					extentIds,
+					operation,
+					onProgress: (progress) => {
 						if (!operation.isCurrent()) return;
-						result = completedResult;
-						completedFileChunks = index + 1;
-						completedFileRecords += chunk.recordCount;
-						const extentColumn = completedResult.columns.findIndex(
-							(column) => column.name.toLowerCase() === 'extentid'
-						);
-						if (extentColumn >= 0) {
-							extentIds = [
-								...extentIds,
-								...completedResult.rows
-									.map((row) => row[extentColumn])
-									.filter((value): value is string => typeof value === 'string' && Boolean(value))
-							];
-						}
-						operation.setExecution();
+						activeFileChunk = progress.activeChunk;
+						completedFileChunks = progress.completedChunks;
+						completedFileRecords = progress.completedRecords;
+						extentIds = progress.extentIds;
+						if (progress.result) result = progress.result;
 					}
-
-					if (!operation.isCurrent()) return;
-					inlineFileState = cancelRequested
-						? 'cancelled'
-						: completedFileChunks === plan.chunks.length
-							? 'succeeded'
-							: 'partial';
-					if (cancelRequested) {
-						ingestionError =
-							'Stopped inline-file ingestion. Completed chunks remain ingested; the active chunk may also complete.';
-					}
-				} finally {
-					activeFileChunk = undefined;
-				}
+				});
 			},
 			{
+				onSuccess: (outcome) => {
+					if (!outcome) return;
+					inlineFileState = outcome.state;
+					ingestionError = outcome.error ?? '';
+				},
 				onError: (error) => {
 					const message = getKustoErrorMessage(error);
 					ingestionError =
@@ -664,7 +522,7 @@
 					inlineFileError = ingestionError;
 					inlineFileState = completedFileChunks
 						? 'partial'
-						: cancelRequested
+						: inlineFileIngestion.cancelRequested
 							? 'cancelled'
 							: 'failed';
 				}
@@ -673,7 +531,7 @@
 	}
 
 	function cancelIngestion() {
-		cancelRequested = true;
+		inlineFileIngestion.cancel();
 		scanController?.abort();
 		ingestionOperation.cancel();
 	}

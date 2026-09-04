@@ -42,6 +42,7 @@ vi.mock('./mock-cluster-schema', () => ({
 
 import {
 	createConnectionRuntime,
+	getClusterDriver,
 	releaseAllClusterRuntimes,
 	releaseClusterRuntime
 } from './cluster-runtime';
@@ -64,6 +65,23 @@ const remoteCluster: KustoClusterConnection = {
 	url: 'https://example.kusto.windows.net',
 	kind: 'remote'
 };
+const mockCluster: KustoClusterConnection = {
+	id: 'mock-1',
+	name: 'Mock',
+	url: 'mock://kite/mock-1',
+	kind: 'mock'
+};
+const logAnalyticsCluster: KustoClusterConnection = {
+	id: 'logs-1',
+	name: 'Logs',
+	url: 'https://api.loganalytics.azure.com',
+	kind: 'log-analytics',
+	logAnalytics: {
+		workspaceId: 'workspace-id',
+		tenantId: 'tenant-id',
+		clientId: 'client-id'
+	}
+};
 
 beforeEach(() => {
 	vi.clearAllMocks();
@@ -77,6 +95,17 @@ beforeEach(() => {
 });
 
 describe('cluster runtime lifecycle', () => {
+	it('provides the same driver contract for every cluster kind', () => {
+		for (const cluster of [remoteCluster, logAnalyticsCluster, mockCluster, emulatedCluster]) {
+			const driver = getClusterDriver(cluster);
+			expect(driver.kind).toBe(cluster.kind);
+			expect(driver.capabilities).toBeTypeOf('function');
+			expect(driver.loadSchema).toBeTypeOf('function');
+			expect(driver.startQuery).toBeTypeOf('function');
+			expect(driver.dispose).toBeTypeOf('function');
+		}
+	});
+
 	it('releases inactive DuckDB sessions before opening an emulated cluster', async () => {
 		await expect(createConnectionRuntime(emulatedCluster).loadSchema()).resolves.toBe(schema);
 
@@ -148,16 +177,19 @@ describe('cluster runtime lifecycle', () => {
 			remoteCluster.url
 		);
 
-		expect(() =>
-			createConnectionRuntime({ ...remoteCluster, kind: 'mock' }).startQuery('db', 'T')
-		).toThrow('Queries are unavailable for this connection.');
+		expect(() => createConnectionRuntime(mockCluster).startQuery('db', 'T')).toThrow(
+			'Queries are unavailable for this connection.'
+		);
 	});
 
 	it('releases one removed cluster or every runtime on workspace teardown', async () => {
+		await createConnectionRuntime(emulatedCluster).dispose();
 		await releaseClusterRuntime(emulatedCluster.id);
 		await releaseAllClusterRuntimes();
 
-		expect(runtimeMocks.disposeDuckDb).toHaveBeenCalledWith(emulatedCluster.id);
+		expect(runtimeMocks.disposeDuckDb).toHaveBeenCalledTimes(2);
+		expect(runtimeMocks.disposeDuckDb).toHaveBeenNthCalledWith(1, emulatedCluster.id);
+		expect(runtimeMocks.disposeDuckDb).toHaveBeenNthCalledWith(2, emulatedCluster.id);
 		expect(runtimeMocks.disposeAllDuckDbSessions).toHaveBeenCalledOnce();
 	});
 });

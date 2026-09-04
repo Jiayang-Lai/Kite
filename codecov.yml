@@ -17,3 +17,4 @@ comment:
 ignore:
   - 'src/**/*.d.ts'
   - 'src/lib/generated/**'
+  - 'src/lib/components/ui/**'

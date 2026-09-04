@@ -48,7 +48,7 @@ describe('DataIngestionWorkspace', () => {
 			expect(screen.getByRole('button', { name: 'Review ingestion' }).element()).not.toBeDisabled();
 		});
 
-		screen.getByRole('tab', { name: 'Local file' }).element().click();
+		(screen.getByRole('tab', { name: 'Local file' }).element() as HTMLButtonElement).click();
 		await screen
 			.getByLabelText('CSV or Parquet file')
 			.upload(new File(['parquet'], 'events.parquet', { type: 'application/vnd.apache.parquet' }));

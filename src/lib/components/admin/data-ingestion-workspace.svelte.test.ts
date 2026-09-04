@@ -22,6 +22,8 @@ describe('DataIngestionWorkspace', () => {
 	});
 
 	it('renders database and source controls for an emulated cluster', async () => {
+		const container = document.body.appendChild(document.createElement('div'));
+		container.className = 'h-screen';
 		const screen = await render(DataIngestionWorkspace, {
 			databases: {
 				Analytics: {
@@ -37,7 +39,7 @@ describe('DataIngestionWorkspace', () => {
 			emulatedStorage: { mode: 'memory' },
 			isEmulatedCluster: true,
 			ingestionEnabled: true
-		});
+		}, { container });
 
 		await expect.element(screen.getByText('Ingest into an existing table')).toBeVisible();
 		await expect.element(screen.getByRole('tab', { name: 'Inline CSV' })).toBeVisible();

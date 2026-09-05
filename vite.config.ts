@@ -106,10 +106,10 @@ export default defineConfig({
 				'src/lib/components/ui/**'
 			],
 			thresholds: {
-				statements: 40,
-				branches: 33,
-				functions: 38,
-				lines: 42,
+				statements: 60,
+				branches: 60,
+				functions: 60,
+				lines: 60,
 				'src/lib/!(components)/**/*.{js,ts,svelte}': {
 					statements: 71,
 					branches: 65,

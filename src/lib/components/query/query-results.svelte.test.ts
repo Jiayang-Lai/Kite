@@ -82,4 +82,35 @@ describe('QueryResults', () => {
 		await screen.rerender({ error: 'Request failed', result: emptyResult });
 		await expect.element(screen.getByText('Query failed')).toBeVisible();
 	});
+
+	it('renders typed rows and supports row inspection', async () => {
+		const circular: Record<string, unknown> = {};
+		circular.self = circular;
+		const result = {
+			...emptyResult,
+			columns: [
+				{ name: 'Name', type: 'string' },
+				{ name: 'Payload', type: 'dynamic' },
+				{ name: 'Missing', type: 'string' }
+			],
+			rows: [
+				['alpha', { count: 2 }, null],
+				['beta', circular, undefined]
+			],
+			totalRowCount: 2,
+			renderedRowCount: 2
+		};
+		const screen = await render(QueryResults, { result });
+
+		await expect.element(screen.getByText('Payload', { exact: true })).toBeVisible();
+		await expect.element(screen.getByText('dynamic', { exact: true })).toBeVisible();
+		await expect.element(screen.getByText('alpha', { exact: true })).toBeVisible();
+		await expect.element(screen.getByText('{"count":2}', { exact: true })).toBeVisible();
+		await screen.getByRole('button', { name: 'Inspect row details' }).first().click();
+		await expect
+			.element(screen.getByRole('button', { name: 'Collapse row details' }))
+			.toBeVisible();
+		await expect.element(screen.getByText(/"count": 2/)).toBeVisible();
+		await screen.getByRole('button', { name: 'Collapse row details' }).click();
+	});
 });

@@ -17,6 +17,7 @@ import { getMockClusterSchema } from './mock-cluster-schema';
 export type { ClusterConnectionOfKind, ClusterKind } from './connections';
 
 let transitionQueue = Promise.resolve();
+let activeSchemaLoad: AbortController | undefined;
 
 function enqueueTransition<T>(transition: () => Promise<T>): Promise<T> {
 	const result = transitionQueue.then(transition, transition);
@@ -31,7 +32,10 @@ function enqueueTransition<T>(transition: () => Promise<T>): Promise<T> {
 export interface ClusterDriver<K extends ClusterKind = ClusterKind> {
 	readonly kind: K;
 	capabilities(cluster: ClusterConnectionOfKind<K>): ConnectionCapabilities;
-	loadSchema(cluster: ClusterConnectionOfKind<K>): Promise<KustoDatabaseSchema>;
+	loadSchema(
+		cluster: ClusterConnectionOfKind<K>,
+		signal?: AbortSignal
+	): Promise<KustoDatabaseSchema>;
 	startQuery(cluster: ClusterConnectionOfKind<K>, database: string, query: string): QueryExecution;
 	dispose(cluster: ClusterConnectionOfKind<K>): Promise<void>;
 }
@@ -42,9 +46,12 @@ const clusterDrivers = {
 	remote: {
 		kind: 'remote',
 		capabilities: getConnectionCapabilities,
-		async loadSchema(cluster) {
-			const schema = await loadBackendSchema(cluster.url);
-			await disposeInactiveDuckDbSessions();
+		async loadSchema(cluster, signal) {
+			const schema = await waitForSchema(loadBackendSchema(cluster.url), signal);
+			await enqueueTransition(async () => {
+				throwIfAborted(signal);
+				await disposeInactiveDuckDbSessions();
+			});
 			return schema;
 		},
 		startQuery: (cluster, database, query) => startKustoQuery(database, query, cluster.url),
@@ -53,9 +60,12 @@ const clusterDrivers = {
 	'log-analytics': {
 		kind: 'log-analytics',
 		capabilities: getConnectionCapabilities,
-		async loadSchema(cluster) {
-			const schema = await loadLogAnalyticsSchema(cluster.logAnalytics, cluster.name);
-			await disposeInactiveDuckDbSessions();
+		async loadSchema(cluster, signal) {
+			const schema = await loadLogAnalyticsSchema(cluster.logAnalytics, cluster.name, signal);
+			await enqueueTransition(async () => {
+				throwIfAborted(signal);
+				await disposeInactiveDuckDbSessions();
+			});
 			return schema;
 		},
 		startQuery: (cluster, _database, query) => startLogAnalyticsQuery(cluster.logAnalytics, query),
@@ -64,9 +74,12 @@ const clusterDrivers = {
 	mock: {
 		kind: 'mock',
 		capabilities: getConnectionCapabilities,
-		async loadSchema(cluster) {
+		async loadSchema(cluster, signal) {
 			const schema = getMockClusterSchema(cluster);
-			await disposeInactiveDuckDbSessions();
+			await enqueueTransition(async () => {
+				throwIfAborted(signal);
+				await disposeInactiveDuckDbSessions();
+			});
 			return schema;
 		},
 		startQuery() {
@@ -77,10 +90,14 @@ const clusterDrivers = {
 	emulated: {
 		kind: 'emulated',
 		capabilities: getConnectionCapabilities,
-		async loadSchema(cluster) {
-			registerEmulatedStorage(cluster.id, cluster.emulatedStorage);
-			await disposeInactiveDuckDbSessions(cluster.id);
-			return loadEmulatedSchema(cluster.id);
+		loadSchema(cluster, signal) {
+			return enqueueTransition(async () => {
+				throwIfAborted(signal);
+				registerEmulatedStorage(cluster.id, cluster.emulatedStorage);
+				await disposeInactiveDuckDbSessions(cluster.id);
+				throwIfAborted(signal);
+				return waitForSchema(loadEmulatedSchema(cluster.id), signal);
+			});
 		},
 		startQuery: (cluster, database, query) => startEmulatedQuery(cluster.id, database, query),
 		dispose: (cluster) => disposeDuckDb(cluster.id)
@@ -98,7 +115,7 @@ export function getClusterDriver<K extends ClusterKind>(
 export interface ConnectionRuntime {
 	kind: ClusterKind;
 	capabilities: ConnectionCapabilities;
-	loadSchema: () => Promise<KustoDatabaseSchema>;
+	loadSchema: (signal?: AbortSignal) => Promise<KustoDatabaseSchema>;
 	startQuery: (database: string, query: string) => QueryExecution;
 	dispose: () => Promise<void>;
 }
@@ -109,10 +126,37 @@ export function createConnectionRuntime(cluster: KustoClusterConnection): Connec
 	return {
 		kind: cluster.kind,
 		capabilities: driver.capabilities(cluster),
-		loadSchema: () => enqueueTransition(() => driver.loadSchema(cluster)),
+		loadSchema(signal) {
+			activeSchemaLoad?.abort(new DOMException('Schema load superseded.', 'AbortError'));
+			const controller = new AbortController();
+			activeSchemaLoad = controller;
+			const combinedSignal = signal
+				? AbortSignal.any([controller.signal, signal])
+				: controller.signal;
+			return driver.loadSchema(cluster, combinedSignal).finally(() => {
+				if (activeSchemaLoad === controller) activeSchemaLoad = undefined;
+			});
+		},
 		startQuery: (database, query) => driver.startQuery(cluster, database, query),
 		dispose: () => enqueueTransition(() => driver.dispose(cluster))
 	};
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+	if (signal?.aborted)
+		throw signal.reason ?? new DOMException('Schema load cancelled.', 'AbortError');
+}
+
+/** Stops waiting for providers that cannot cancel their own client request. */
+function waitForSchema<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
+	if (!signal) return operation;
+	throwIfAborted(signal);
+	return new Promise<T>((resolve, reject) => {
+		const abort = () =>
+			reject(signal.reason ?? new DOMException('Schema load cancelled.', 'AbortError'));
+		signal.addEventListener('abort', abort, { once: true });
+		operation.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+	});
 }
 
 /** Releases one DuckDB runtime by ID when only persisted cleanup metadata remains. */
@@ -122,5 +166,7 @@ export function releaseClusterRuntime(clusterId: string): Promise<void> {
 
 /** Releases all DuckDB workers when the application workspace is left. */
 export function releaseAllClusterRuntimes(): Promise<void> {
+	activeSchemaLoad?.abort(new DOMException('Application workspace disposed.', 'AbortError'));
+	activeSchemaLoad = undefined;
 	return enqueueTransition(() => disposeAllDuckDbSessions());
 }

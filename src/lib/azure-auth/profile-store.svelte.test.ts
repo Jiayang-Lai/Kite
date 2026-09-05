@@ -127,5 +127,9 @@ describe('Azure authentication profile store', () => {
 		);
 
 		expect(store.profiles[0].account).toEqual(account);
+		expect(
+			JSON.parse(localStorage.getItem(AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY) ?? '[]')[0].account
+		).toEqual(account);
+		store.dispose();
 	});
 });

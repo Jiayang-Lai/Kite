@@ -1,4 +1,9 @@
-import type { CancellableExecution, QueryExecution, QueryResult } from '$lib/types/query-result';
+import {
+	QueryRequestError,
+	type CancellableExecution,
+	type QueryExecution,
+	type QueryResult
+} from '$lib/types/query-result';
 import { normalizeResultValue } from '$lib/query/result-value';
 import { Client as KustoClient, ClientRequestProperties } from 'azure-kusto-data';
 import { getKustoClusterUrl, type KustoClusterConnection } from '$lib/cluster/connections';
@@ -226,7 +231,7 @@ export function startKustoQuery(
 		)
 		.catch((error: unknown) => {
 			if (cancelled) throw new Error('Query cancelled.');
-			throw error;
+			throw new QueryRequestError(getKustoErrorMessage(error), clientRequestId, error);
 		})
 		.finally(() => client.close());
 

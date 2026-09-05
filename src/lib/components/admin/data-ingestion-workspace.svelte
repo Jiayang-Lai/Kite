@@ -42,20 +42,21 @@
 		scanInlineCsvText,
 		scanInlineIngestionFile
 	} from '$lib/admin/inline-file-ingestion';
-	import { createCancellableOperation } from '$lib/query/cancellable-operation.svelte';
 	import {
-		startEmulatedIngestion,
-		type EmulatedIngestionFormat
+		formatIngestionError,
+		startIngestion,
+		type IngestionRequest
+	} from '$lib/admin/ingestion-adapter';
+	import { createCancellableOperation } from '$lib/query/cancellable-operation.svelte';
+	import type {
+		EmulatedIngestionFormat,
+		EmulatedIngestionRequest
 	} from '$lib/emulation/data-ingestion';
 	import type { EmulatedStorage } from '$lib/emulation/storage';
 	import type { MountedFileFormat } from '$lib/kusto/ingestion';
 	import { formatBytes, type InlineCsvPlan } from '$lib/kusto/inline-file';
 	import { compareCsvShape } from '$lib/kusto/ingestion-guardrails';
-	import {
-		getKustoErrorMessage,
-		startKustoManagementCommand,
-		type KustoIngestionConfiguration
-	} from '$lib/kusto/query-client';
+	import { getKustoErrorMessage, type KustoIngestionConfiguration } from '$lib/kusto/query-client';
 	import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 	import type { QueryResult } from '$lib/types/query-result';
 	import type { PaneAPI } from 'paneforge';
@@ -383,39 +384,39 @@
 		}
 	});
 
-	function startCurrentEmulatedIngestion() {
+	function currentEmulatedIngestion(): EmulatedIngestionRequest {
 		const table = selectedTable;
 		if (!table) throw new Error('Select a target table.');
 
 		if (sourceMode === 'inline') {
-			return startEmulatedIngestion({
+			return {
 				clusterId,
 				database: selectedDatabase,
 				table,
 				format: 'csv',
 				source: { kind: 'inline', data: inlineDataPayload }
-			});
+			};
 		}
 		if (sourceMode === 'inline-file') {
 			if (!inlineFile || !localFileFormat) throw new Error('Select a local CSV or Parquet file.');
-			return startEmulatedIngestion({
+			return {
 				clusterId,
 				database: selectedDatabase,
 				table,
 				format: localFileFormat,
 				hasHeader: localFileFormat === 'csv' && inlineFileHasHeader,
 				source: { kind: 'file', file: inlineFile }
-			});
+			};
 		}
 		if (sourceMode === 'remote-file') {
-			return startEmulatedIngestion({
+			return {
 				clusterId,
 				database: selectedDatabase,
 				table,
 				format: remoteFileFormat,
 				hasHeader: remoteFileFormat === 'csv' && remoteFileSkipFirstLine,
 				source: { kind: 'remote', url: remoteFileUrl }
-			});
+			};
 		}
 		throw new Error('Mounted-container files are not available to browser DuckDB.');
 	}
@@ -446,9 +447,10 @@
 		if (isEmulatedCluster && sourceMode === 'inline-file') inlineFileState = 'running';
 		await ingestionOperation.run(
 			async (operation) => {
-				const execution = isEmulatedCluster
-					? startCurrentEmulatedIngestion()
-					: startKustoManagementCommand(selectedDatabase, command, clusterUrl);
+				const request: IngestionRequest = isEmulatedCluster
+					? { kind: 'emulated', request: currentEmulatedIngestion() }
+					: { kind: 'kustainer', database: selectedDatabase, command, clusterUrl };
+				const execution = startIngestion(request);
 				operation.setExecution(execution);
 				return execution.promise;
 			},
@@ -459,12 +461,10 @@
 				},
 				onError: (error) => {
 					const message = getKustoErrorMessage(error);
-					ingestionError =
-						message === 'Command cancelled.'
-							? isEmulatedCluster
-								? 'Ingestion cancelled. DuckDB rolled back the active append.'
-								: 'Stopped waiting for ingestion. The Kusto operation may still complete.'
-							: message;
+					ingestionError = formatIngestionError(
+						error,
+						isEmulatedCluster ? 'emulated' : 'kustainer'
+					);
 					if (isEmulatedCluster && sourceMode === 'inline-file') {
 						inlineFileError = ingestionError;
 						inlineFileState = message === 'Command cancelled.' ? 'cancelled' : 'failed';

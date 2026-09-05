@@ -41,13 +41,14 @@ type ConnectionLifecycleOptions = {
 };
 
 const SIGN_IN_TIP_DELAY_MS = 10_000;
+const SCHEMA_LOAD_TIMEOUT_MS = 90_000;
 
 /** Owns cluster selection, schema loading, and stale connection-response handling. */
 export function createConnectionLifecycleController(options: ConnectionLifecycleOptions) {
 	const { store, session, initialCluster } = options;
 	const state = $state<ConnectionLifecycleState>({
 		databaseSchema: session.databaseSchema,
-		connectionStatus: 'loading',
+		connectionStatus: session.databaseSchema ? 'ready' : 'loading',
 		isClusterSwitching: false,
 		showLogAnalyticsSignInTip: false,
 		connectionError: '',
@@ -61,6 +62,7 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 	let requestId = 0;
 	let resetTabsAfterConnection = false;
 	let signInTipTimeout: number | undefined;
+	let schemaAbortController: AbortController | undefined;
 
 	function activeCluster() {
 		return store.clusters.find((cluster) => cluster.id === state.activeClusterId);
@@ -97,8 +99,18 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 
 	async function refresh() {
 		const currentRequestId = ++requestId;
+		schemaAbortController?.abort(new DOMException('Schema load superseded.', 'AbortError'));
+		const controller = new AbortController();
+		schemaAbortController = controller;
+		const timeout = window.setTimeout(
+			() => controller.abort(new Error('Schema loading timed out.')),
+			SCHEMA_LOAD_TIMEOUT_MS
+		);
 		const cluster = selectedCluster();
-		if (!cluster) return;
+		if (!cluster) {
+			window.clearTimeout(timeout);
+			return;
+		}
 		const switching = cluster.id !== state.activeClusterId;
 		state.connectionStatus = 'loading';
 		state.isClusterSwitching = switching && Boolean(state.databaseSchema);
@@ -107,7 +119,7 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 		else clearSignInTip();
 
 		try {
-			const schema = await createConnectionRuntime(cluster).loadSchema();
+			const schema = await createConnectionRuntime(cluster).loadSchema(controller.signal);
 			if (currentRequestId !== requestId || cluster.id !== state.selectedClusterId) return;
 			const firstDatabase = Object.values(schema)[0];
 			if (!firstDatabase) throw new Error('The connection returned no databases.');
@@ -151,6 +163,9 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 			if (state.databaseSchema) state.selectedClusterId = state.activeClusterId;
 			state.connectionStatus = 'error';
 			options.onstatechange?.();
+		} finally {
+			window.clearTimeout(timeout);
+			if (schemaAbortController === controller) schemaAbortController = undefined;
 		}
 	}
 
@@ -287,6 +302,8 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 		},
 		dispose() {
 			requestId += 1;
+			schemaAbortController?.abort(new DOMException('Workspace disposed.', 'AbortError'));
+			schemaAbortController = undefined;
 			clearSignInTip();
 		}
 	};

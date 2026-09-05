@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { onDestroy } from 'svelte';
 	import AppHeader from '$lib/components/app/app-header.svelte';
 	import AppShell from '$lib/components/app/app-shell.svelte';
 	import ClusterConnectionSelector from '$lib/components/cluster/cluster-connection-selector.svelte';
@@ -11,10 +12,7 @@
 		ExplorerSelection
 	} from '$lib/components/query/database-explorer/cluster-explorer-types';
 	import { getClusterSession } from '$lib/cluster/cluster-session.svelte';
-	import {
-		getPersistedActiveClusterId,
-		persistActiveClusterId
-	} from '$lib/cluster/active-cluster-preference';
+	import { getPersistedActiveClusterId } from '$lib/cluster/active-cluster-preference';
 	import {
 		getClusterConnectionStore,
 		type NewClusterConnection
@@ -55,15 +53,7 @@
 	const clusterSession = getClusterSession();
 	const recentQueryStore = getRecentQueryStore();
 	const savedQueryStore = getSavedQueryStore();
-	type ConnectionStatus = 'loading' | 'ready' | 'error';
-	let connectionStatus = $state<ConnectionStatus>(
-		clusterSession.databaseSchema ? 'ready' : 'loading'
-	);
-	let connectionError = $state('');
-	let isClusterSwitching = $state(false);
 	let isTableMutating = $state(false);
-	let selectedClusterId = $state(clusterSession.activeClusterId);
-	let failedClusterId = $state<string>();
 	let explorerFilter = $state('');
 	let selectedDatabase = $state(clusterSession.selectedDatabase);
 	let selectedTable = $state(clusterSession.selectedTable);
@@ -79,8 +69,14 @@
 		initialCluster,
 		onQueryExecutionReset: () => undefined,
 		onSchemaReady: () => undefined,
-		onstatechange: () => syncConnectionState()
+		onstatechange: () => syncConnectionSelection()
 	});
+	const connectionStatus = $derived(connectionLifecycle.state.connectionStatus);
+	const connectionError = $derived(connectionLifecycle.state.connectionError);
+	const isClusterSwitching = $derived(connectionLifecycle.state.isClusterSwitching);
+	const selectedClusterId = $derived(connectionLifecycle.state.selectedClusterId);
+	const failedClusterId = $derived(connectionLifecycle.state.failedClusterId);
+	const activeClusterUrl = $derived(connectionLifecycle.state.activeClusterUrl);
 	const databaseSchema = $derived(clusterSession.databaseSchema);
 	const databaseCount = $derived(Object.keys(databaseSchema ?? {}).length);
 	const tableCount = $derived(
@@ -93,10 +89,6 @@
 		clusters.find((cluster) => cluster.id === clusterSession.activeClusterId)
 	);
 	const activeCapabilities = $derived(getConnectionCapabilities(activeCluster));
-	let activeClusterUrl = $state(
-		clusterConnectionStore.clusters.find((cluster) => cluster.id === clusterSession.activeClusterId)
-			?.url ?? ''
-	);
 	const isMockCluster = $derived(activeCluster?.kind === 'mock');
 	const isEmulatedCluster = $derived(activeCluster?.kind === 'emulated');
 	const isLogAnalyticsCluster = $derived(activeCluster?.kind === 'log-analytics');
@@ -183,18 +175,12 @@
 		state.selectedTable = selectedTable;
 		state.selectedFunction = selectedFunction;
 		await connectionLifecycle.refresh();
-		syncConnectionState();
+		syncConnectionSelection();
 		return state.connectionStatus === 'ready';
 	}
 
-	function syncConnectionState() {
+	function syncConnectionSelection() {
 		const state = connectionLifecycle.state;
-		connectionStatus = state.connectionStatus;
-		isClusterSwitching = state.isClusterSwitching;
-		connectionError = state.connectionError;
-		failedClusterId = state.failedClusterId;
-		selectedClusterId = state.selectedClusterId;
-		activeClusterUrl = state.activeClusterUrl;
 		selectedDatabase = state.selectedDatabase;
 		selectedTable = state.selectedTable;
 		selectedFunction = state.selectedFunction;
@@ -202,7 +188,7 @@
 
 	function switchCluster(clusterId: string) {
 		if (clusterId === selectedClusterId || isClusterSwitching) return;
-		selectedClusterId = clusterId;
+		connectionLifecycle.state.selectedClusterId = clusterId;
 		void connectCluster(clusterId);
 	}
 
@@ -218,19 +204,16 @@
 
 	async function removeCluster(clusterId: string) {
 		await connectionLifecycle.removeCluster(clusterId);
-		selectedClusterId = connectionLifecycle.state.selectedClusterId;
+		syncConnectionSelection();
 	}
 
 	function retryFailedCluster() {
 		connectionLifecycle.retry();
-		void connectCluster(connectionLifecycle.state.selectedClusterId);
+		syncConnectionSelection();
 	}
 
 	function dismissConnectionFailure() {
 		connectionLifecycle.dismissFailure();
-		connectionStatus = connectionLifecycle.state.connectionStatus;
-		connectionError = connectionLifecycle.state.connectionError;
-		failedClusterId = connectionLifecycle.state.failedClusterId;
 	}
 
 	$effect(() => {
@@ -253,10 +236,12 @@
 			persistedClusterId &&
 			clusters.some((cluster) => cluster.id === persistedClusterId)
 		) {
-			selectedClusterId = persistedClusterId;
+			connectionLifecycle.state.selectedClusterId = persistedClusterId;
 		}
 		if (!clusterSession.databaseSchema) void connectCluster();
 	});
+
+	onDestroy(() => connectionLifecycle.dispose());
 </script>
 
 {#snippet sidebarHeader()}

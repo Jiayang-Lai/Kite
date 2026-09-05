@@ -144,6 +144,7 @@ describe('saved query browser persistence', () => {
 			name: 'Original',
 			query: 'print Value = 1'
 		});
+		if (!created) throw new Error('Expected the query to be saved.');
 		vi.setSystemTime(new Date('2026-01-02T00:00:00.000Z'));
 		const updated = store.update(created.id, {
 			clusterId: 'cluster',
@@ -165,7 +166,7 @@ describe('saved query browser persistence', () => {
 		expect(store.queries).toEqual([]);
 	});
 
-	it('surfaces browser write failures without losing in-memory edits', () => {
+	it('surfaces browser write failures without claiming an in-memory save succeeded', () => {
 		vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
 			throw new DOMException('Quota exceeded', 'QuotaExceededError');
 		});
@@ -178,7 +179,8 @@ describe('saved query browser persistence', () => {
 			query: 'print Value = 1'
 		});
 
-		expect(store.queries).toEqual([created]);
+		expect(created).toBeUndefined();
+		expect(store.queries).toEqual([]);
 		expect(store.storageError).toBe('Saved queries could not be stored locally.');
 	});
 });

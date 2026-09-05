@@ -133,6 +133,27 @@ describe('cluster runtime lifecycle', () => {
 		expect(runtimeMocks.disposeInactiveDuckDbSessions).not.toHaveBeenCalled();
 	});
 
+	it('does not let a stalled remote schema request block an emulated transition', async () => {
+		let finishRemote!: (value: KustoDatabaseSchema) => void;
+		runtimeMocks.loadBackendSchema.mockReturnValueOnce(
+			new Promise<KustoDatabaseSchema>((resolve) => {
+				finishRemote = resolve;
+			})
+		);
+		const remote = createConnectionRuntime(remoteCluster)
+			.loadSchema()
+			.catch((error: unknown) => error);
+		const emulated = createConnectionRuntime(emulatedCluster).loadSchema();
+
+		await expect(emulated).resolves.toBe(schema);
+		expect(runtimeMocks.disposeInactiveDuckDbSessions).toHaveBeenCalledWith(emulatedCluster.id);
+		expect(runtimeMocks.loadEmulatedSchema).toHaveBeenCalledOnce();
+
+		finishRemote(schema);
+		expect(await remote).toMatchObject({ name: 'AbortError' });
+		expect(runtimeMocks.disposeInactiveDuckDbSessions).toHaveBeenCalledTimes(1);
+	});
+
 	it('serializes cluster transitions so worker lifecycles cannot overlap', async () => {
 		let finishFirstDisposal!: () => void;
 		runtimeMocks.disposeInactiveDuckDbSessions.mockImplementationOnce(
@@ -142,7 +163,9 @@ describe('cluster runtime lifecycle', () => {
 				})
 		);
 
-		const first = createConnectionRuntime(emulatedCluster).loadSchema();
+		const first = createConnectionRuntime(emulatedCluster)
+			.loadSchema()
+			.catch((error: unknown) => error);
 		await vi.waitFor(() =>
 			expect(runtimeMocks.disposeInactiveDuckDbSessions).toHaveBeenCalledTimes(1)
 		);
@@ -151,7 +174,7 @@ describe('cluster runtime lifecycle', () => {
 		expect(runtimeMocks.disposeInactiveDuckDbSessions).toHaveBeenCalledTimes(1);
 
 		finishFirstDisposal();
-		await first;
+		expect(await first).toMatchObject({ name: 'AbortError' });
 		await second;
 		expect(runtimeMocks.disposeInactiveDuckDbSessions).toHaveBeenNthCalledWith(2, 'emulated-2');
 	});

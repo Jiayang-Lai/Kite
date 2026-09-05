@@ -118,9 +118,13 @@ describe('connection lifecycle controller', () => {
 	it('ignores a stale schema response after a newer selection succeeds', async () => {
 		const second = deferred<KustoDatabaseSchema>();
 		const third = deferred<KustoDatabaseSchema>();
+		const signals: AbortSignal[] = [];
 		lifecycleMocks.createConnectionRuntime.mockImplementation(
 			(cluster: KustoClusterConnection) => ({
-				loadSchema: () => (cluster.id === secondCluster.id ? second.promise : third.promise)
+				loadSchema: (signal: AbortSignal) => {
+					signals.push(signal);
+					return cluster.id === secondCluster.id ? second.promise : third.promise;
+				}
 			})
 		);
 		const { controller, session, onSchemaReady } = createController();
@@ -129,6 +133,8 @@ describe('connection lifecycle controller', () => {
 		const olderRefresh = controller.refresh();
 		controller.state.selectedClusterId = thirdCluster.id;
 		const latestRefresh = controller.refresh();
+		expect(signals[0].aborted).toBe(true);
+		expect(signals[1].aborted).toBe(false);
 		third.resolve(schema('ThirdDb'));
 		await latestRefresh;
 		second.resolve(schema('SecondDb'));

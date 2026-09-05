@@ -35,23 +35,17 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Separator } from '$lib/components/ui/separator';
 	import { Spinner } from '$lib/components/ui/spinner';
-	import { deletePersistentDuckDbStorage } from '$lib/duckdb/storage';
-	import { LogAnalyticsQueryRequestError } from '$lib/log-analytics/client';
 	import { getClusterSession } from '$lib/cluster/cluster-session.svelte';
 	import type { QueryTab } from '$lib/cluster/cluster-session.svelte';
-	import { createConnectionRuntime, releaseClusterRuntime } from '$lib/cluster/cluster-runtime';
+	import { createConnectionRuntime } from '$lib/cluster/cluster-runtime';
 	import { getConnectionCapabilities } from '$lib/cluster/connection-capabilities';
-	import {
-		getPersistedActiveClusterId,
-		persistActiveClusterId
-	} from '$lib/cluster/active-cluster-preference';
+	import { getPersistedActiveClusterId } from '$lib/cluster/active-cluster-preference';
 	import {
 		getClusterConnectionStore,
 		type NewClusterConnection
 	} from '$lib/cluster/cluster-connection-store.svelte';
 	import { usesBuiltInMockCatalog } from '$lib/cluster/mock-cluster-schema';
 	import { MOCK_RECENT_QUERIES, MOCK_SAVED_QUERIES } from '$lib/data/mock-queries';
-	import { getKustoErrorMessage } from '$lib/kusto/query-client';
 	import { disposeKqlTranslator } from '$lib/kql/wasm-translator';
 	import { getRecentQueryStore } from '$lib/query/recent-query-store.svelte';
 	import { createSavedQueryWorkspaceController } from '$lib/query/saved-query-workspace-controller';
@@ -59,14 +53,11 @@
 	import { createQueryExecutionController } from '$lib/query/query-execution-controller.svelte';
 	import { createQueryTabController } from '$lib/query/query-tab-controller.svelte';
 	import { getSavedQueryStore } from '$lib/query/saved-query-store.svelte';
-	import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
-	import type { QueryExecution, QueryResult } from '$lib/types/query-result';
+	import type { QueryResult } from '$lib/types/query-result';
 	import type { PaneAPI } from 'paneforge';
 
-	type ConnectionState = 'loading' | 'ready' | 'error';
 	type QueryWorkspaceView = 'overview' | 'editor' | 'saved-queries';
 	type ComparisonSide = 'left' | 'right';
-	const LOG_ANALYTICS_SIGN_IN_TIP_DELAY_MS = 10_000;
 	const LOG_ANALYTICS_SCHEMA_TTL_MS = 5 * 60_000;
 
 	type QueryWorkspaceProps = {
@@ -100,14 +91,6 @@
 		initialClusters.find((cluster) => cluster.id === clusterSession.activeClusterId) ??
 		initialClusters[0];
 
-	// Schema metadata crosses the Monaco worker boundary and must remain structured-cloneable.
-	// `$state.raw` keeps the SDK-derived arrays and objects from becoming Svelte proxies.
-	let databaseSchema = $state.raw<KustoDatabaseSchema | undefined>(clusterSession.databaseSchema);
-	let connectionStatus = $state<ConnectionState>('loading');
-	let isClusterSwitching = $state(false);
-	let showLogAnalyticsSignInTip = $state(false);
-	let connectionError = $state('');
-	let failedClusterId = $state<string>();
 	let explorerFilter = $state('');
 	let hasInitializedConnection = false;
 	let selectedDatabase = $state(clusterSession.selectedDatabase);
@@ -132,7 +115,6 @@
 	let resultsPane = $state<PaneAPI>();
 	let databaseSchemaPane = $state<PaneAPI>();
 	let databaseSchemaCollapsed = $state(false);
-	let resetTabsAfterConnection = false;
 	let editorComponent = $state<{ getDiagnostics: () => EditorDiagnostic[] }>();
 	let queryTabList = $state<HTMLDivElement>();
 	let queryTabListCanScrollLeft = $state(false);
@@ -146,13 +128,7 @@
 		comparisonModifiedTabId: undefined as string | undefined,
 		focusedComparisonSide: 'right' as ComparisonSide
 	});
-	let schemaRequestId = 0;
-	let logAnalyticsSignInTipTimeout: number | undefined;
 
-	let activeClusterId = $state(initialCluster.id);
-	let activeClusterUrl = $state(initialCluster.url);
-	let selectedClusterId = $state(initialCluster.id);
-	const hasCluster = $derived(Boolean(databaseSchema));
 	const queryTabs = $derived(clusterSession.queryTabs);
 	const activeQueryTabId = $derived(clusterSession.activeQueryTabId);
 	const activeQueryTab = $derived(clusterSession.getQueryTab(activeQueryTabId));
@@ -198,7 +174,9 @@
 				saveTargetTab.query.trim() !== saveTargetSavedQuery.query)
 		)
 	);
-	const activeCluster = $derived(clusters.find((cluster) => cluster.id === activeClusterId));
+	const activeCluster = $derived(
+		clusters.find((cluster) => cluster.id === clusterSession.activeClusterId)
+	);
 	const activeRuntime = $derived(
 		activeCluster ? createConnectionRuntime(activeCluster) : undefined
 	);
@@ -208,17 +186,13 @@
 	const isMockCluster = $derived(activeCluster?.kind === 'mock');
 	const isEmulatedCluster = $derived(activeCluster?.kind === 'emulated');
 	const isLogAnalyticsCluster = $derived(activeCluster?.kind === 'log-analytics');
-	const isSelectedLogAnalyticsCluster = $derived(
-		clusters.find((cluster) => cluster.id === selectedClusterId)?.kind === 'log-analytics'
-	);
 	const hasBuiltInMockSamples = $derived(usesBuiltInMockCatalog(activeCluster));
 	let explorerExpansion = $state(clusterSession.getExplorerExpansion(initialCluster.id));
-	const isQueryable = $derived(hasCluster && activeCapabilities.queryExecutor !== 'none');
 	const queryExecution = createQueryExecutionController({
 		state: executionState,
 		recentQueries: recentQueryStore,
 		getActiveTab: () => activeQueryTab,
-		getActiveClusterId: () => activeClusterId,
+		getActiveClusterId: () => clusterSession.activeClusterId,
 		getSelectedDatabase: () => selectedDatabase,
 		getRuntime: () => activeRuntime,
 		canExecute: () => activeCapabilities.queryExecutor !== 'none',
@@ -240,8 +214,24 @@
 			executionState.result = undefined;
 			executionState.error = '';
 		},
-		onstatechange: () => syncConnectionState()
+		onstatechange: () => syncConnectionSelection()
 	});
+	// The lifecycle controller is the sole owner of connection transition state.
+	// Schema remains raw in ClusterSession so it can safely cross the Monaco worker boundary.
+	const databaseSchema = $derived(clusterSession.databaseSchema);
+	const connectionStatus = $derived(connectionLifecycle.state.connectionStatus);
+	const isClusterSwitching = $derived(connectionLifecycle.state.isClusterSwitching);
+	const showLogAnalyticsSignInTip = $derived(connectionLifecycle.state.showLogAnalyticsSignInTip);
+	const connectionError = $derived(connectionLifecycle.state.connectionError);
+	const failedClusterId = $derived(connectionLifecycle.state.failedClusterId);
+	const activeClusterId = $derived(connectionLifecycle.state.activeClusterId);
+	const activeClusterUrl = $derived(connectionLifecycle.state.activeClusterUrl);
+	const selectedClusterId = $derived(connectionLifecycle.state.selectedClusterId);
+	const hasCluster = $derived(Boolean(databaseSchema));
+	const isQueryable = $derived(hasCluster && activeCapabilities.queryExecutor !== 'none');
+	const isSelectedLogAnalyticsCluster = $derived(
+		clusters.find((cluster) => cluster.id === selectedClusterId)?.kind === 'log-analytics'
+	);
 	const queryTabsController = createQueryTabController({
 		state: tabComparisonState,
 		session: clusterSession,
@@ -360,25 +350,12 @@
 	// mounted. Keep the local snapshot (and therefore Monaco's schema prop) in
 	// sync with the app-wide session so completion never uses stale table metadata.
 	$effect(() => {
-		const sessionSchema = clusterSession.databaseSchema;
-		if (databaseSchema !== sessionSchema) databaseSchema = sessionSchema;
-	});
-
-	$effect(() => {
 		explorerExpansion = clusterSession.getExplorerExpansion(activeClusterId);
 	});
 
 	$effect(() => {
 		if (!isEmulatedCluster) disposeKqlTranslator();
 	});
-
-	function clearLogAnalyticsSignInTip() {
-		if (logAnalyticsSignInTipTimeout !== undefined) {
-			window.clearTimeout(logAnalyticsSignInTipTimeout);
-			logAnalyticsSignInTipTimeout = undefined;
-		}
-		showLogAnalyticsSignInTip = false;
-	}
 
 	function getQueryTabTitle(tab: QueryTab) {
 		return queryTabsController.titleFor(tab);
@@ -503,34 +480,11 @@
 		}
 	}
 
-	function scheduleLogAnalyticsSignInTip(requestId: number, clusterId: string) {
-		clearLogAnalyticsSignInTip();
-		logAnalyticsSignInTipTimeout = window.setTimeout(() => {
-			logAnalyticsSignInTipTimeout = undefined;
-			if (
-				requestId === schemaRequestId &&
-				clusterId === selectedClusterId &&
-				connectionStatus === 'loading'
-			) {
-				showLogAnalyticsSignInTip = true;
-			}
-		}, LOG_ANALYTICS_SIGN_IN_TIP_DELAY_MS);
-	}
-
-	function syncConnectionState() {
+	function syncConnectionSelection() {
 		const state = connectionLifecycle.state;
-		databaseSchema = state.databaseSchema;
-		connectionStatus = state.connectionStatus;
-		isClusterSwitching = state.isClusterSwitching;
-		showLogAnalyticsSignInTip = state.showLogAnalyticsSignInTip;
-		connectionError = state.connectionError;
-		failedClusterId = state.failedClusterId;
 		selectedDatabase = state.selectedDatabase;
 		selectedTable = state.selectedTable;
 		selectedFunction = state.selectedFunction;
-		activeClusterId = state.activeClusterId;
-		activeClusterUrl = state.activeClusterUrl;
-		selectedClusterId = state.selectedClusterId;
 	}
 
 	async function refreshSchema() {
@@ -540,38 +494,38 @@
 		state.selectedTable = selectedTable;
 		state.selectedFunction = selectedFunction;
 		await connectionLifecycle.refresh();
-		syncConnectionState();
+		syncConnectionSelection();
 	}
 
 	function switchCluster(clusterId: string) {
 		if (clusterId === selectedClusterId) return;
 		connectionLifecycle.switchCluster(clusterId);
-		syncConnectionState();
+		syncConnectionSelection();
 	}
 
 	function addCluster(draft: NewClusterConnection) {
 		connectionLifecycle.addCluster(draft);
-		syncConnectionState();
+		syncConnectionSelection();
 	}
 
 	function editCluster(clusterId: string, draft: NewClusterConnection) {
 		connectionLifecycle.editCluster(clusterId, draft);
-		syncConnectionState();
+		syncConnectionSelection();
 	}
 
 	async function removeCluster(clusterId: string) {
 		await connectionLifecycle.removeCluster(clusterId);
-		syncConnectionState();
+		syncConnectionSelection();
 	}
 
 	function retryFailedCluster() {
 		connectionLifecycle.retry();
-		syncConnectionState();
+		syncConnectionSelection();
 	}
 
 	function dismissConnectionFailure() {
 		connectionLifecycle.dismissFailure();
-		syncConnectionState();
+		syncConnectionSelection();
 	}
 
 	function loadRecentQuery(query: ExplorerQuery) {
@@ -658,7 +612,7 @@
 			persistedClusterId &&
 			clusters.some((cluster) => cluster.id === persistedClusterId)
 		) {
-			selectedClusterId = persistedClusterId;
+			connectionLifecycle.state.selectedClusterId = persistedClusterId;
 		}
 		if (
 			!clusterSession.isSchemaFresh(
@@ -673,8 +627,7 @@
 	onMount(() => {
 		window.addEventListener('beforeunload', preventRefreshWithQuery);
 		return () => {
-			schemaRequestId += 1;
-			clearLogAnalyticsSignInTip();
+			connectionLifecycle.dispose();
 			queryExecution.dispose();
 			disposeKqlTranslator();
 			window.removeEventListener('beforeunload', preventRefreshWithQuery);

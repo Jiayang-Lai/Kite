@@ -1,5 +1,8 @@
-import type { ColumnMutationAction } from '$lib/components/admin/column-mutation-dialog.svelte';
-import type { DatabaseMutationAction } from '$lib/components/admin/database-mutation-dialog.svelte';
+import type {
+	ColumnMutationAction,
+	DatabaseMutationAction,
+	DatabaseMutationRequest
+} from '$lib/admin/mutation-contracts';
 import type { TableSchemaSnapshot } from '$lib/kusto/table-management';
 import type { KustoColumn, KustoTable } from '$lib/types/kusto-schema';
 import type { KustoDatabase, KustoDatabaseSchema } from '$lib/types/kusto-schema';
@@ -12,7 +15,6 @@ import {
 	type CreateTablePlan,
 	type TableMutationPlan
 } from '$lib/kusto/table-management';
-import type { DatabaseMutationRequest } from '$lib/components/admin/database-mutation-dialog.svelte';
 import { tick } from 'svelte';
 
 export type DatabaseMutationWorkspaceState = {

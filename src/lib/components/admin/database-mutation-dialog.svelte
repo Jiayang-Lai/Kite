@@ -1,9 +1,10 @@
 <script lang="ts">
 	import ConfirmationDialog from '$lib/components/admin/confirmation-dialog.svelte';
 	import { Input } from '$lib/components/ui/input';
-
-	export type DatabaseMutationAction = 'create' | 'rename' | 'drop';
-	export type DatabaseMutationRequest = { name?: string };
+	import type {
+		DatabaseMutationAction,
+		DatabaseMutationRequest
+	} from '$lib/admin/mutation-contracts';
 
 	type DatabaseMutationDialogProps = {
 		open?: boolean;

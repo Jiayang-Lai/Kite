@@ -133,6 +133,11 @@ export function createSavedQueryWorkspaceController(options: SavedQueryWorkspace
 			name,
 			query
 		});
+		if (!savedQuery) {
+			options.state.nameError =
+				options.savedQueries.storageError ?? 'The query could not be saved locally.';
+			return;
+		}
 		options.session.updateQueryTab(tab.id, {
 			savedQueryId: savedQuery.id,
 			savedQueryName: savedQuery.name,

@@ -20,9 +20,9 @@ export type SavedQueryStore = {
 	readonly queries: SavedQuery[];
 	readonly storageError: string | undefined;
 	hydrate: () => void;
-	save: (draft: SavedQueryDraft) => SavedQuery;
+	save: (draft: SavedQueryDraft) => SavedQuery | undefined;
 	update: (id: string, draft: SavedQueryDraft) => SavedQuery | undefined;
-	remove: (id: string) => void;
+	remove: (id: string) => boolean;
 	forCluster: (clusterId: string) => SavedQuery[];
 };
 
@@ -50,13 +50,15 @@ export function createSavedQueryStore(): SavedQueryStore {
 	let storageError = $state<string>();
 	let hydrated = false;
 
-	function persist() {
-		if (!browser) return;
+	function persist(next: SavedQuery[]) {
+		if (!browser) return true;
 		try {
-			localStorage.setItem(STORAGE_KEY, JSON.stringify(queries));
+			localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
 			storageError = undefined;
+			return true;
 		} catch {
 			storageError = 'Saved queries could not be stored locally.';
+			return false;
 		}
 	}
 
@@ -89,14 +91,17 @@ export function createSavedQueryStore(): SavedQueryStore {
 			createdAt: timestamp,
 			updatedAt: timestamp
 		};
-		queries = [savedQuery, ...queries];
-		persist();
+		const next = [savedQuery, ...queries];
+		if (!persist(next)) return undefined;
+		queries = next;
 		return savedQuery;
 	}
 
 	function remove(id: string) {
-		queries = queries.filter((query) => query.id !== id);
-		persist();
+		const next = queries.filter((query) => query.id !== id);
+		if (!persist(next)) return false;
+		queries = next;
+		return true;
 	}
 
 	function update(id: string, draft: SavedQueryDraft) {
@@ -111,8 +116,9 @@ export function createSavedQueryStore(): SavedQueryStore {
 			query: draft.query.trim(),
 			updatedAt: new Date().toISOString()
 		};
-		queries = queries.map((query) => (query.id === id ? updatedQuery : query));
-		persist();
+		const next = queries.map((query) => (query.id === id ? updatedQuery : query));
+		if (!persist(next)) return undefined;
+		queries = next;
 		return updatedQuery;
 	}
 

@@ -9,11 +9,15 @@ TF_CREDENTIALS := GITHUB_TOKEN CLOUDFLARE_API_TOKEN
 
 define run_terraform
 	@test -d "$(TF_ROOT)" || { echo "Terraform root not found: $(TF_ROOT)"; exit 1; }; \
-	test -f "$(TF_ENV_FILE)" || { echo "Terraform environment file not found: $(TF_ENV_FILE)"; exit 1; }; \
-	set -a; \
-	. "$(TF_ENV_FILE)"; \
-	set +a; \
 	trap 'unset $(TF_CREDENTIALS)' EXIT; \
+	if [ -f "$(TF_ENV_FILE)" ]; then \
+		set -a; \
+		. "$(TF_ENV_FILE)" || exit $$?; \
+		set +a; \
+	elif [ "$(TF_ROOT)" != "infra/azure" ]; then \
+		echo "Terraform environment file not found: $(TF_ENV_FILE)"; \
+		exit 1; \
+	fi; \
 	terraform -chdir="$(TF_ROOT)" $(1)
 endef
 
@@ -49,28 +53,28 @@ tf-apply: ## Apply a Terraform root with credentials from its .env file
 	$(call run_terraform,apply)
 
 tf-github-init: ## Initialize the GitHub Terraform root
-	@$(MAKE) --no-print-directory tf-init TF_ROOT=infra/github
+	@$(MAKE) --no-print-directory tf-init TF_ROOT=infra/github TF_ENV_FILE=infra/github/.env
 
 tf-github-plan: ## Plan the GitHub Terraform root
-	@$(MAKE) --no-print-directory tf-plan TF_ROOT=infra/github
+	@$(MAKE) --no-print-directory tf-plan TF_ROOT=infra/github TF_ENV_FILE=infra/github/.env
 
 tf-github-apply: ## Apply the GitHub Terraform root
-	@$(MAKE) --no-print-directory tf-apply TF_ROOT=infra/github
+	@$(MAKE) --no-print-directory tf-apply TF_ROOT=infra/github TF_ENV_FILE=infra/github/.env
 
 tf-cloudflare-init: ## Initialize the Cloudflare Terraform root
-	@$(MAKE) --no-print-directory tf-init TF_ROOT=infra/cloudflare
+	@$(MAKE) --no-print-directory tf-init TF_ROOT=infra/cloudflare TF_ENV_FILE=infra/cloudflare/.env
 
 tf-cloudflare-plan: ## Plan the Cloudflare Terraform root
-	@$(MAKE) --no-print-directory tf-plan TF_ROOT=infra/cloudflare
+	@$(MAKE) --no-print-directory tf-plan TF_ROOT=infra/cloudflare TF_ENV_FILE=infra/cloudflare/.env
 
 tf-cloudflare-apply: ## Apply the Cloudflare Terraform root
-	@$(MAKE) --no-print-directory tf-apply TF_ROOT=infra/cloudflare
+	@$(MAKE) --no-print-directory tf-apply TF_ROOT=infra/cloudflare TF_ENV_FILE=infra/cloudflare/.env
 
 tf-azure-init: ## Initialize the Azure Terraform root
-	@$(MAKE) --no-print-directory tf-init TF_ROOT=infra/azure
+	@$(MAKE) --no-print-directory tf-init TF_ROOT=infra/azure TF_ENV_FILE=infra/azure/.env
 
 tf-azure-plan: ## Plan the Azure Terraform root
-	@$(MAKE) --no-print-directory tf-plan TF_ROOT=infra/azure
+	@$(MAKE) --no-print-directory tf-plan TF_ROOT=infra/azure TF_ENV_FILE=infra/azure/.env
 
 tf-azure-apply: ## Apply the Azure Terraform root
-	@$(MAKE) --no-print-directory tf-apply TF_ROOT=infra/azure
+	@$(MAKE) --no-print-directory tf-apply TF_ROOT=infra/azure TF_ENV_FILE=infra/azure/.env

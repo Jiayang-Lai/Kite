@@ -36,7 +36,13 @@ describe('CreateTableDialog', () => {
 		await screen.getByLabelText(/Type CREATE Events/).fill('CREATE Events');
 		await screen.getByRole('button', { name: 'Create table' }).click();
 		expect(onsubmit).toHaveBeenCalledWith(
-			expect.objectContaining({ tableName: 'Events', columns: expect.arrayContaining([]) })
+			expect.objectContaining({
+				tableName: 'Events',
+				columns: [
+					{ name: 'Message', type: 'string', docstring: 'Event body' },
+					{ name: 'Count', type: 'string' }
+				]
+			})
 		);
 	});
 

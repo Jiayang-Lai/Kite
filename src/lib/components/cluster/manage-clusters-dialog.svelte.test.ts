@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 
 import type { KustoClusterConnection } from '$lib/kusto/query-client';
@@ -29,6 +29,7 @@ const persistent: KustoClusterConnection = {
 
 describe('cluster management dialogs', () => {
 	beforeEach(() => localStorage.clear());
+	afterEach(() => vi.useRealTimers());
 
 	it('renders empty and populated management states and edits a connection', async () => {
 		const onedit = vi.fn();
@@ -71,7 +72,6 @@ describe('cluster management dialogs', () => {
 		await screen.getByRole('button', { name: 'Remove Remote cluster' }).click();
 		await vi.runAllTimersAsync();
 		expect(onremove).toHaveBeenCalledWith(remote);
-		vi.useRealTimers();
 	});
 
 	it('describes and confirms memory and persistent cluster removal', async () => {

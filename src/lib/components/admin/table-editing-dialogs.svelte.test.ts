@@ -54,7 +54,13 @@ describe('table editing dialogs', () => {
 		await screen.getByLabelText(/Type REORDER Events/).fill('REORDER Events');
 		await screen.getByRole('button', { name: 'Apply order' }).click();
 		expect(onsubmit).toHaveBeenCalledWith(
-			expect.objectContaining({ kind: 'reorder-table-columns' })
+			expect.objectContaining({
+				kind: 'reorder-table-columns',
+				columns: [
+					{ name: 'Count', type: 'long' },
+					{ name: 'Message', type: 'string' }
+				]
+			})
 		);
 	});
 
@@ -109,7 +115,13 @@ describe('table editing dialogs', () => {
 			.toBeVisible();
 		await screen.getByLabelText('Type RUN to enable the update').fill('RUN');
 		await screen.getByRole('button', { name: 'Update table' }).click();
-		expect(onsubmit).toHaveBeenCalledWith(expect.objectContaining({ kind: 'update-table' }));
+		expect(onsubmit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				kind: 'update-table',
+				nextDocstring: 'Updated events',
+				addedColumns: [{ name: 'CreatedAt', type: 'datetime' }]
+			})
+		);
 	});
 
 	it('renders empty, preparing, and running table states', async () => {

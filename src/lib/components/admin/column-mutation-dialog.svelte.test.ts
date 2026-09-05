@@ -47,7 +47,13 @@ describe('ColumnMutationDialog', () => {
 		await screen.getByLabelText('New column name').fill('Details');
 		await screen.getByLabelText(/Type RENAME/).fill('RENAME');
 		await screen.getByRole('button', { name: 'Rename column' }).click();
-		expect(onsubmit).toHaveBeenCalledWith(expect.objectContaining({ kind: 'rename-column' }));
+		expect(onsubmit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				kind: 'rename-column',
+				columnName: 'Message',
+				newColumnName: 'Details'
+			})
+		);
 	});
 
 	it('changes type and exposes the irreversible warning', async () => {
@@ -62,7 +68,13 @@ describe('ColumnMutationDialog', () => {
 		await expect.element(screen.getByText(/Every existing value/)).toBeVisible();
 		await screen.getByLabelText(/Type CHANGE TYPE/).fill('CHANGE TYPE Events.Message');
 		await screen.getByRole('button', { name: 'Change type' }).click();
-		expect(onsubmit).toHaveBeenCalledWith(expect.objectContaining({ kind: 'change-column-type' }));
+		expect(onsubmit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				kind: 'change-column-type',
+				columnName: 'Message',
+				newColumnType: 'long'
+			})
+		);
 	});
 
 	it('drops a column and renders verification and running states', async () => {

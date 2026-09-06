@@ -38,6 +38,14 @@ vi.mock('./result', () => ({
 
 import { executeDuckDbSql } from './query-client';
 
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((resolvePromise) => {
+		resolve = resolvePromise;
+	});
+	return { promise, resolve };
+}
+
 beforeEach(() => {
 	vi.clearAllMocks();
 	vi.stubGlobal('Worker', class {});
@@ -70,6 +78,26 @@ describe('DuckDB SQL cancellation', () => {
 
 		duckDbMocks.connection.query.mockResolvedValueOnce({});
 		await expect(executeDuckDbSql('SELECT 2', 'emulated-1')).resolves.toEqual({
+			columns: [],
+			rows: []
+		});
+		expect(duckDbMocks.AsyncDuckDB).toHaveBeenCalledTimes(2);
+	});
+
+	it('cancels while a session is initializing and disposes the late session', async () => {
+		const bundle = deferred<{ mainWorker: string; mainModule: object }>();
+		duckDbMocks.selectBundle.mockReturnValueOnce(bundle.promise);
+		const controller = new AbortController();
+
+		const query = executeDuckDbSql('SELECT 1', 'emulated-initializing', controller.signal);
+		controller.abort();
+		await expect(query).rejects.toMatchObject({ name: 'AbortError' });
+
+		bundle.resolve({ mainWorker: '/duckdb.worker.js', mainModule: {} });
+		await vi.waitFor(() => expect(duckDbMocks.database.terminate).toHaveBeenCalledOnce());
+
+		duckDbMocks.connection.query.mockResolvedValueOnce({});
+		await expect(executeDuckDbSql('SELECT 2', 'emulated-initializing')).resolves.toEqual({
 			columns: [],
 			rows: []
 		});

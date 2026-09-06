@@ -318,7 +318,13 @@ export async function executeDuckDbSql(
 	signal?: AbortSignal
 ): Promise<DuckDbQueryResult> {
 	const sessionPromise = getSession(sessionId);
-	const session = await sessionPromise;
+	let session: DuckDbSession;
+	try {
+		session = await raceWithAbort(sessionPromise, signal);
+	} catch (cause) {
+		if (signal?.aborted) disposeCancelledSession(sessionId, sessionPromise);
+		throw cause;
+	}
 	throwIfAborted(signal);
 	const startedAt = performance.now();
 	let termination: Promise<void> | undefined;
@@ -493,6 +499,41 @@ export async function disposeDuckDb(sessionId: string): Promise<void> {
 async function terminateDuckDbSession(session: DuckDbSession): Promise<void> {
 	await session.database.terminate().catch(() => undefined);
 	await session.lockLease?.release().catch(() => undefined);
+}
+
+function raceWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+	if (!signal) return promise;
+	if (signal.aborted)
+		return Promise.reject(signal.reason ?? new DOMException('Query cancelled.', 'AbortError'));
+
+	return new Promise<T>((resolve, reject) => {
+		const abort = () => {
+			cleanup();
+			reject(signal.reason ?? new DOMException('Query cancelled.', 'AbortError'));
+		};
+		const cleanup = () => signal.removeEventListener('abort', abort);
+		signal.addEventListener('abort', abort, { once: true });
+		void promise.then(
+			(value) => {
+				cleanup();
+				resolve(value);
+			},
+			(cause) => {
+				cleanup();
+				reject(cause);
+			}
+		);
+	});
+}
+
+function disposeCancelledSession(sessionId: string, sessionPromise: Promise<DuckDbSession>) {
+	void sessionPromise
+		.then(async (session) => {
+			if (sessionPromises.get(sessionId) !== sessionPromise) return;
+			sessionPromises.delete(sessionId);
+			await terminateDuckDbSession(session);
+		})
+		.catch(() => undefined);
 }
 
 function throwIfAborted(signal?: AbortSignal) {

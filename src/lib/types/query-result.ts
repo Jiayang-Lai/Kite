@@ -1,5 +1,17 @@
 import type { LogAnalyticsQueryStatistics } from './log-analytics';
 
+/** Provider-neutral query failure with optional request correlation and structured details. */
+export class QueryRequestError extends Error {
+	constructor(
+		message: string,
+		readonly requestId?: string,
+		readonly response?: unknown
+	) {
+		super(message);
+		this.name = 'QueryRequestError';
+	}
+}
+
 /** Column metadata returned by a Kusto primary result table. */
 export type QueryResultColumn = {
 	name: string;

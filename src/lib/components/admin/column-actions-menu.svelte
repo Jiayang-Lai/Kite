@@ -4,7 +4,7 @@
 	import FilePenLineIcon from '@lucide/svelte/icons/file-pen-line';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 
-	import type { ColumnMutationAction } from '$lib/components/admin/column-mutation-dialog.svelte';
+	import type { ColumnMutationAction } from '$lib/admin/mutation-contracts';
 	import { Button } from '$lib/components/ui/button';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import type { KustoColumn, KustoTable } from '$lib/types/kusto-schema';
@@ -41,7 +41,9 @@
 		{/snippet}
 	</DropdownMenu.Trigger>
 	<DropdownMenu.Content align="end" class="w-52">
-		<DropdownMenu.Label class="truncate" title={column.name}>Action for column {column.name}</DropdownMenu.Label>
+		<DropdownMenu.Label class="truncate" title={column.name}
+			>Action for column {column.name}</DropdownMenu.Label
+		>
 		<DropdownMenu.Separator />
 		<DropdownMenu.Item onSelect={() => selectAction('rename')}>
 			<FilePenLineIcon />

@@ -36,7 +36,7 @@ import {
 } from '$lib/kusto/table-management';
 import type { CancellableExecution } from '$lib/types/query-result';
 
-type DatabaseMutationAction = 'create' | 'rename' | 'drop';
+import type { DatabaseMutationAction } from '$lib/admin/mutation-contracts';
 type MockSchemaStore = Pick<ClusterConnectionStore, 'updateMockSchema'>;
 
 type ExecutionStarters = {

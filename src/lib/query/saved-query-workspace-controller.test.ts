@@ -140,6 +140,24 @@ describe('saved query workspace controller', () => {
 		expect(context.state.dialogOpen).toBe(false);
 	});
 
+	it('keeps the save dialog open when durable storage rejects the write', () => {
+		const context = setup([]);
+		const tab = context.session.queryTabs[0];
+		context.session.updateQueryTab(tab.id, { database: 'Analytics', query: 'Events | count' });
+		context.state.name = 'Event count';
+		context.state.dialogOpen = true;
+		Object.defineProperty(context.store, 'storageError', {
+			value: 'Saved queries could not be stored locally.'
+		});
+		vi.mocked(context.store.save).mockReturnValueOnce(undefined);
+
+		context.controller.saveNew(tab);
+
+		expect(context.state.dialogOpen).toBe(true);
+		expect(context.state.nameError).toBe('Saved queries could not be stored locally.');
+		expect(context.session.getQueryTab(tab.id)?.savedQueryId).toBeUndefined();
+	});
+
 	it('updates an existing saved query without opening the dialog', () => {
 		const context = setup();
 		const tab = context.session.createQueryTab('Analytics', `${savedQuery.query}\n| count`, {

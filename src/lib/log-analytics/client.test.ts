@@ -7,7 +7,12 @@ import type {
 
 vi.mock('./auth', () => ({ acquireLogAnalyticsToken: vi.fn(async () => 'access-token') }));
 
-import { LOG_ANALYTICS_QUERY_PREFER, parseLogAnalyticsMetadata, startLogAnalyticsQuery } from './client';
+import {
+	loadLogAnalyticsSchema,
+	LOG_ANALYTICS_QUERY_PREFER,
+	parseLogAnalyticsMetadata,
+	startLogAnalyticsQuery
+} from './client';
 
 describe('Log Analytics query options', () => {
 	it('models nested Azure query diagnostics', () => {
@@ -151,5 +156,67 @@ describe('parseLogAnalyticsMetadata', () => {
 				}
 			]
 		});
+	});
+
+	it('preserves cancellation while reading a metadata response body', async () => {
+		const controller = new AbortController();
+		const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => ({
+			ok: true,
+			headers: new Headers(),
+			json: () =>
+				new Promise((_, reject) => {
+					const signal = init?.signal as AbortSignal;
+					signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+				})
+		}));
+		vi.stubGlobal('fetch', fetchMock);
+
+		try {
+			const loading = loadLogAnalyticsSchema(
+				{
+					workspaceId: 'workspace-id',
+					workspaceResourceId: '/subscriptions/sub/resourceGroups/rg/providers/workspaces/ws',
+					tenantId: 'tenant-id',
+					clientId: 'client-id'
+				},
+				'Production logs',
+				controller.signal
+			);
+			await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+			controller.abort(new DOMException('Metadata load cancelled.', 'AbortError'));
+
+			await expect(loading).rejects.toMatchObject({ name: 'AbortError' });
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it('reports an HTTP failure when a metadata error body cannot be parsed', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => ({
+				ok: false,
+				status: 500,
+				json: async () => {
+					throw new Error('Invalid response body.');
+				}
+			}))
+		);
+
+		try {
+			await expect(
+				loadLogAnalyticsSchema(
+					{
+						workspaceId: 'workspace-id',
+						workspaceResourceId: '/subscriptions/sub/resourceGroups/rg/providers/workspaces/ws',
+						tenantId: 'tenant-id',
+						clientId: 'client-id'
+					},
+					'Production logs'
+				)
+			).rejects.toThrow('HTTP 500');
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 });

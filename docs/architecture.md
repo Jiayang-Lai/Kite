@@ -83,7 +83,7 @@ The capability policy in `connection-capabilities.ts` tells the UI which feature
 | Remote / local Kustainer | Backend schema endpoint and Azure Kusto SDK query request | Management commands and table mutations; database display-name changes; optional Kustainer ingestion when configured |
 | Log Analytics | Metadata and query calls to the Logs APIs | Query-only; schema mutation, management commands, and ingestion are unavailable |
 
-Drivers are registered by connection kind, so adding a kind requires a typed driver and a capability policy instead of conditionals throughout the UI. Schema loads and runtime disposal are serialized through one transition queue. This prevents overlapping DuckDB-WASM transitions and ensures that a remote connection is validated before inactive emulated sessions are released.
+Drivers are registered by connection kind, so adding a kind requires a typed driver and a capability policy instead of conditionals throughout the UI. Remote schema requests run independently and accept cancellation, while DuckDB-WASM acquisition and disposal remain serialized through a transition queue. This prevents a stalled remote request from blocking a later connection and still ensures that a remote connection is validated before inactive emulated sessions are released. Workspace schema loads have a deadline, and superseded loads are aborted before a newer selection starts.
 
 Connection switching commits only after schema loading succeeds. The lifecycle controller rejects stale responses, restores only selections that still exist, resets query operations when required, and retains the previous usable schema when a candidate connection fails. Log Analytics schema may be reused for five minutes; other loaded schemas remain in the shared session until an explicit refresh or mutation refresh.
 
@@ -93,7 +93,7 @@ Removing an emulated connection is a recoverable two-phase operation: Kite first
 
 `query-workspace.svelte` composes the query experience. It delegates focused responsibilities to controllers:
 
-1. `ConnectionLifecycleController` loads a selected connection’s schema, suppresses stale schema responses, restores valid Explorer selection, and handles failed connection retries.
+1. `ConnectionLifecycleController` is the sole owner of connection transition state. It loads a selected connection’s schema, cancels superseded requests, suppresses stale responses, restores valid Explorer selection, and handles failed connection retries. Explorer and Admin derive loading, error, and active-connection state directly from the controller and dispose it when their workspace unmounts.
 2. `QueryTabController` owns tab creation, selection, close confirmation, dirty-state detection, and two-tab comparisons.
 3. `QueryExecutionController` records a recent query, starts a `ConnectionRuntime` execution, writes results or formatted diagnostics back to the owning tab, and supports cancellation. It owns a separate cancellable operation for each running tab, so queries may complete independently when the user switches tabs or starts another query.
 4. `SavedQueryWorkspaceController` coordinates save/update dialogs, dirty saved-query state, loading saved queries into tabs, and navigation from non-editor views.
@@ -111,7 +111,7 @@ Emulation is local-first:
 2. The DuckDB-WASM client executes SQL in a managed browser worker session.
 3. `emulation/cluster.ts` maps DuckDB metadata to Kite’s Kusto-shaped schema and exposes cancellable query execution.
 4. `emulation/schema-management.ts` translates reviewed table changes into transactional DuckDB DDL and comments.
-5. `emulation/data-ingestion.ts` builds guarded CSV/Parquet ingestion statements and validates remote-file URLs.
+5. `admin/ingestion-adapter.ts` gives the workspace one execution contract, while `emulation/data-ingestion.ts` and the Kustainer adapter perform provider-specific ingestion. The emulated implementation builds guarded CSV/Parquet statements and validates remote-file URLs.
 
 DuckDB is imported lazily and maintains at most one session promise per connection ID. Persistent sessions keep a manifest of Kite's logical databases, checkpoint after durable changes, and acquire an exclusive browser Web Lock so the same OPFS database cannot be opened by another tab. Worker, connection, database, and lock resources are released together on disposal.
 

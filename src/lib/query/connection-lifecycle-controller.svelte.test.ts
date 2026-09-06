@@ -118,9 +118,13 @@ describe('connection lifecycle controller', () => {
 	it('ignores a stale schema response after a newer selection succeeds', async () => {
 		const second = deferred<KustoDatabaseSchema>();
 		const third = deferred<KustoDatabaseSchema>();
+		const signals: AbortSignal[] = [];
 		lifecycleMocks.createConnectionRuntime.mockImplementation(
 			(cluster: KustoClusterConnection) => ({
-				loadSchema: () => (cluster.id === secondCluster.id ? second.promise : third.promise)
+				loadSchema: (signal: AbortSignal) => {
+					signals.push(signal);
+					return cluster.id === secondCluster.id ? second.promise : third.promise;
+				}
 			})
 		);
 		const { controller, session, onSchemaReady } = createController();
@@ -129,6 +133,8 @@ describe('connection lifecycle controller', () => {
 		const olderRefresh = controller.refresh();
 		controller.state.selectedClusterId = thirdCluster.id;
 		const latestRefresh = controller.refresh();
+		expect(signals[0].aborted).toBe(true);
+		expect(signals[1].aborted).toBe(false);
 		third.resolve(schema('ThirdDb'));
 		await latestRefresh;
 		second.resolve(schema('SecondDb'));
@@ -170,6 +176,33 @@ describe('connection lifecycle controller', () => {
 
 		expect(controller.state.connectionStatus).toBe('error');
 		expect(controller.state.connectionError).toBe('The connection returned no databases.');
+	});
+
+	it('returns without loading when the selected connection no longer exists', async () => {
+		const { controller } = createController();
+		controller.state.selectedClusterId = 'missing';
+
+		await controller.refresh();
+
+		expect(lifecycleMocks.createConnectionRuntime).not.toHaveBeenCalled();
+	});
+
+	it('aborts a schema load when the connection deadline expires', async () => {
+		vi.useFakeTimers();
+		lifecycleMocks.createConnectionRuntime.mockReturnValue({
+			loadSchema: (signal: AbortSignal) =>
+				new Promise((_, reject) => {
+					signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+				})
+		});
+		const { controller } = createController();
+
+		const refresh = controller.refresh();
+		await vi.advanceTimersByTimeAsync(90_000);
+		await refresh;
+
+		expect(controller.state.connectionStatus).toBe('error');
+		expect(controller.state.connectionError).toBe('Schema loading timed out.');
 	});
 
 	it('leaves the current selection untouched when a dirty-tab switch is declined', () => {

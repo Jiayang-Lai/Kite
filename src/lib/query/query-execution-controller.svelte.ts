@@ -1,10 +1,8 @@
-import { LogAnalyticsQueryRequestError } from '$lib/log-analytics/client';
-import { getKustoErrorMessage } from '$lib/kusto/query-client';
 import { createCancellableOperation } from '$lib/query/cancellable-operation.svelte';
 import type { QueryTab } from '$lib/cluster/cluster-session.svelte';
 import type { ConnectionRuntime } from '$lib/cluster/cluster-runtime';
 import type { RecentQueryStore } from '$lib/query/recent-query-store.svelte';
-import type { QueryResult } from '$lib/types/query-result';
+import { QueryRequestError, type QueryResult } from '$lib/types/query-result';
 
 export type QueryExecutionState = {
 	queryText: string;
@@ -52,6 +50,10 @@ function formatFailure(
 		return `Line ${diagnostic.line}, column ${diagnostic.column}${code}: ${diagnostic.message}`;
 	});
 	return `${serverMessage}\n\nEditor diagnostics:\n${lines.join('\n')}`;
+}
+
+function errorMessage(error: unknown) {
+	return error instanceof Error ? error.message : String(error);
 }
 
 /** Owns query result state, cancellation, and stale-response suppression for one workspace. */
@@ -128,9 +130,9 @@ export function createQueryExecutionController(options: QueryExecutionController
 					if (options.getActiveTab()?.id === tab.id) state.result = result;
 				},
 				onError: (error) => {
-					const message = formatFailure(getKustoErrorMessage(error), options.getDiagnostics());
+					const message = formatFailure(errorMessage(error), options.getDiagnostics());
 					const update: Partial<Omit<QueryTab, 'id'>> = { result: undefined, error: message };
-					if (error instanceof LogAnalyticsQueryRequestError) {
+					if (error instanceof QueryRequestError) {
 						update.errorRequestId = error.requestId;
 						update.errorRaw = error.response;
 					}

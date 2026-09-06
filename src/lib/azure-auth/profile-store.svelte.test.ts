@@ -118,6 +118,7 @@ describe('Azure authentication profile store', () => {
 
 	it('accepts account updates dispatched by the authentication callback', () => {
 		const store = createAzureAuthenticationProfileStore();
+		store.hydrate();
 		const profile = store.add({ name: 'Production', tenantId: 'tenant', clientId: 'client' });
 
 		window.dispatchEvent(
@@ -127,5 +128,56 @@ describe('Azure authentication profile store', () => {
 		);
 
 		expect(store.profiles[0].account).toEqual(account);
+		expect(
+			JSON.parse(localStorage.getItem(AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY) ?? '[]')[0].account
+		).toEqual(account);
+		store.dispose();
+	});
+
+	it('preserves stored profiles when an account event arrives before hydration', () => {
+		localStorage.setItem(
+			AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY,
+			JSON.stringify([storedProfile()])
+		);
+		const store = createAzureAuthenticationProfileStore();
+
+		window.dispatchEvent(new CustomEvent(ACCOUNT_EVENT, { detail: { id: 'profile', account } }));
+		store.hydrate();
+
+		expect(store.profiles).toEqual([storedProfile()]);
+		expect(
+			JSON.parse(localStorage.getItem(AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY) ?? '[]')
+		).toEqual([storedProfile()]);
+		store.dispose();
+	});
+
+	it('keeps an account update in memory when profile persistence fails', () => {
+		const store = createAzureAuthenticationProfileStore();
+		store.hydrate();
+		const profile = store.add({ name: 'Production', tenantId: 'tenant', clientId: 'client' });
+		vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+			throw new DOMException('Storage is full.', 'QuotaExceededError');
+		});
+
+		window.dispatchEvent(new CustomEvent(ACCOUNT_EVENT, { detail: { id: profile.id, account } }));
+
+		expect(store.profiles[0].account).toEqual(account);
+		store.dispose();
+	});
+
+	it('ignores malformed and unknown account events and disposes safely before hydration', () => {
+		const unhydrated = createAzureAuthenticationProfileStore();
+		unhydrated.dispose();
+
+		const store = createAzureAuthenticationProfileStore();
+		store.hydrate();
+		const profile = store.add({ name: 'Production', tenantId: 'tenant', clientId: 'client' });
+		window.dispatchEvent(new Event(ACCOUNT_EVENT));
+		window.dispatchEvent(
+			new CustomEvent(ACCOUNT_EVENT, { detail: { id: 'unknown-profile', account } })
+		);
+
+		expect(store.profiles).toEqual([profile]);
+		store.dispose();
 	});
 });

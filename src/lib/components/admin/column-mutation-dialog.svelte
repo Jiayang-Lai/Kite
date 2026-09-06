@@ -11,6 +11,7 @@
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import * as Select from '$lib/components/ui/select';
 	import { Spinner } from '$lib/components/ui/spinner';
+	import type { ColumnMutationAction } from '$lib/admin/mutation-contracts';
 	import { createReviewablePlan } from '$lib/admin/reviewable-plan.svelte';
 	import {
 		buildChangeColumnTypePlan,
@@ -22,8 +23,6 @@
 		type TableSchemaSnapshot
 	} from '$lib/kusto/table-management';
 	import type { KustoColumn, KustoTable } from '$lib/types/kusto-schema';
-
-	export type ColumnMutationAction = 'rename' | 'change-type' | 'drop';
 
 	type ColumnMutationDialogProps = {
 		open?: boolean;

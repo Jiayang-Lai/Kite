@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 
 import QueryWorkspaceWrapper from '../../../../tests/fixtures/query-workspace-wrapper.svelte';
@@ -42,5 +42,24 @@ describe('QueryWorkspace', () => {
 		await expect
 			.element(screen.getByRole('heading', { name: 'Save query' }))
 			.not.toBeInTheDocument();
+	});
+
+	it('switches clusters through the shared connection lifecycle', async () => {
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		const screen = await render(
+			QueryWorkspace,
+			{ view: 'overview' },
+			{ wrapper: QueryWorkspaceWrapper }
+		);
+
+		await screen.getByRole('button', { name: 'Toggle cluster explorer' }).click();
+		const clusterLabel = screen.getByTitle('Mock cluster');
+		await expect.element(clusterLabel).toBeVisible();
+		const clusterSelector = clusterLabel.element().closest('button');
+		expect(clusterSelector).not.toBeNull();
+		clusterSelector?.click();
+		await screen.getByRole('menuitem', { name: /Emulated cluster/ }).click();
+
+		await expect.element(screen.getByText('Explore Emulated cluster')).toBeVisible();
 	});
 });

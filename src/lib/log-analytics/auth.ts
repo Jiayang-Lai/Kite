@@ -4,7 +4,10 @@ import type {
 	LogAnalyticsAccountBinding,
 	LogAnalyticsConnectionConfiguration
 } from '$lib/kusto/query-client';
-import { AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY } from '$lib/azure-auth/profile-store.svelte';
+import {
+	AZURE_AUTHENTICATION_PROFILE_ACCOUNT_EVENT,
+	AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY
+} from '$lib/azure-auth/profile-store.svelte';
 import { azureMsalClientManager as logAnalyticsSessionManager } from '$lib/azure-auth/msal-client-manager';
 
 const LEGACY_AZURE_SESSIONS_STORAGE_KEY = 'kite:azure-sessions:v1';
@@ -34,27 +37,12 @@ function resolveAzureAuthenticationProfile(config: LogAnalyticsConnectionConfigu
 }
 
 function persistAuthenticationProfileAccount(config: LogAnalyticsConnectionConfiguration) {
-	if (!config.authenticationProfileId || typeof localStorage === 'undefined') return;
-	try {
-		const profiles = JSON.parse(
-			localStorage.getItem(AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY) ?? '[]'
-		) as StoredAzureAuthenticationProfile[];
-		localStorage.setItem(
-			AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY,
-			JSON.stringify(
-				profiles.map((profile) =>
-					profile.id === config.authenticationProfileId
-						? { ...profile, account: config.account }
-						: profile
-				)
-			)
-		);
-		window.dispatchEvent(
-			new CustomEvent('kite:azure-authentication-profile-account', {
-				detail: { id: config.authenticationProfileId, account: config.account }
-			})
-		);
-	} catch {}
+	if (!config.authenticationProfileId || typeof window === 'undefined') return;
+	window.dispatchEvent(
+		new CustomEvent(AZURE_AUTHENTICATION_PROFILE_ACCOUNT_EVENT, {
+			detail: { id: config.authenticationProfileId, account: config.account }
+		})
+	);
 }
 
 /** Compatibility facade for Log Analytics authentication callers. */
@@ -65,7 +53,9 @@ export function toLogAnalyticsAccountBinding(account: AccountInfo): LogAnalytics
 }
 
 export function getLogAnalyticsAccount(config: LogAnalyticsConnectionConfiguration) {
-	return logAnalyticsSessionManager.getAccountForConnection(resolveAzureAuthenticationProfile(config));
+	return logAnalyticsSessionManager.getAccountForConnection(
+		resolveAzureAuthenticationProfile(config)
+	);
 }
 
 export async function connectLogAnalytics(config: LogAnalyticsConnectionConfiguration) {
@@ -80,7 +70,9 @@ export function logoutLogAnalytics(config: LogAnalyticsConnectionConfiguration) 
 }
 
 export async function acquireLogAnalyticsToken(config: LogAnalyticsConnectionConfiguration) {
-	const token = await logAnalyticsSessionManager.acquireToken(resolveAzureAuthenticationProfile(config));
+	const token = await logAnalyticsSessionManager.acquireToken(
+		resolveAzureAuthenticationProfile(config)
+	);
 	persistAuthenticationProfileAccount(config);
 	return token;
 }

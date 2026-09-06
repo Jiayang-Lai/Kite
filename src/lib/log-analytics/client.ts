@@ -2,7 +2,7 @@ import { acquireLogAnalyticsToken } from '$lib/log-analytics/auth';
 import type { LogAnalyticsConnectionConfiguration } from '$lib/kusto/query-client';
 import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 import type { LogAnalyticsQueryError, LogAnalyticsQueryStatistics } from '$lib/types/log-analytics';
-import type { QueryExecution, QueryResult } from '$lib/types/query-result';
+import { QueryRequestError, type QueryExecution, type QueryResult } from '$lib/types/query-result';
 import { normalizeResultValue } from '$lib/query/result-value';
 
 const ENDPOINT = 'https://api.loganalytics.azure.com/v1/workspaces';
@@ -29,13 +29,13 @@ type MetadataFunction = { name?: string; body?: string; description?: string };
 type MetadataResponse = { tables?: MetadataTable[]; functions?: MetadataFunction[] };
 
 /** Preserves Azure's request correlation and structured error response for the results UI. */
-export class LogAnalyticsQueryRequestError extends Error {
+export class LogAnalyticsQueryRequestError extends QueryRequestError {
 	constructor(
 		message: string,
 		readonly requestId?: string,
 		readonly response?: unknown
 	) {
-		super(message);
+		super(message, requestId, response);
 		this.name = 'LogAnalyticsQueryRequestError';
 	}
 }
@@ -103,7 +103,10 @@ async function requestMetadata(
 		...(isPortalFunctionMetadata ? { body: '' } : {}),
 		signal
 	});
-	const payload: unknown = await response.json().catch(() => undefined);
+	const payload: unknown = await response.json().catch((error: unknown) => {
+		if (signal.aborted) throw error;
+		return undefined;
+	});
 	if (!response.ok) {
 		const error = payload as LogsResponse | undefined;
 		const detail = error?.error?.message ?? error?.error?.code;
@@ -150,12 +153,12 @@ export function parseLogAnalyticsMetadata(
 
 export async function loadLogAnalyticsSchema(
 	config: LogAnalyticsConnectionConfiguration,
-	connectionName: string
+	connectionName: string,
+	signal: AbortSignal = new AbortController().signal
 ): Promise<KustoDatabaseSchema> {
-	const controller = new AbortController();
 	const [tableResponse, functionResponse] = await Promise.all([
-		requestMetadata(config, 'categories,solutions,tables,workspaces', controller.signal),
-		requestMetadata(config, 'resourceTypes,functions', controller.signal)
+		requestMetadata(config, 'categories,solutions,tables,workspaces', signal),
+		requestMetadata(config, 'resourceTypes,functions', signal)
 	]);
 	return parseLogAnalyticsMetadata(
 		tableResponse,

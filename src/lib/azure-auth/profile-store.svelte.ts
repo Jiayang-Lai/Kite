@@ -41,6 +41,7 @@ function isProfile(value: unknown): value is AzureAuthenticationProfile {
 export function createAzureAuthenticationProfileStore(): AzureAuthenticationProfileStore {
 	let profiles = $state<AzureAuthenticationProfile[]>([]);
 	let hydrated = false;
+	let listening = false;
 	function persist(next: AzureAuthenticationProfile[]) {
 		if (browser)
 			localStorage.setItem(AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY, JSON.stringify(next));
@@ -52,11 +53,11 @@ export function createAzureAuthenticationProfileStore(): AzureAuthenticationProf
 		const next = profiles.map((profile) =>
 			profile.id === detail.id ? { ...profile, account: detail.account } : profile
 		);
-		persist(next);
+		try {
+			persist(next);
+		} catch {}
 		profiles = next;
 	};
-	if (browser)
-		window.addEventListener(AZURE_AUTHENTICATION_PROFILE_ACCOUNT_EVENT, acceptAccountUpdate);
 	return {
 		get profiles() {
 			return profiles;
@@ -69,10 +70,13 @@ export function createAzureAuthenticationProfileStore(): AzureAuthenticationProf
 				const value: unknown = JSON.parse(
 					current ?? localStorage.getItem(LEGACY_AZURE_SESSIONS_STORAGE_KEY) ?? '[]'
 				);
-				if (!Array.isArray(value)) return;
-				profiles = value.filter(isProfile);
-				if (!current) persist(profiles);
+				if (Array.isArray(value)) {
+					profiles = value.filter(isProfile);
+					if (!current) persist(profiles);
+				}
 			} catch {}
+			window.addEventListener(AZURE_AUTHENTICATION_PROFILE_ACCOUNT_EVENT, acceptAccountUpdate);
+			listening = true;
 		},
 		add(draft) {
 			const profile = { ...draft, id: crypto.randomUUID() };
@@ -115,8 +119,10 @@ export function createAzureAuthenticationProfileStore(): AzureAuthenticationProf
 			profiles = next;
 		},
 		dispose() {
-			if (browser)
+			if (browser && listening) {
 				window.removeEventListener(AZURE_AUTHENTICATION_PROFILE_ACCOUNT_EVENT, acceptAccountUpdate);
+				listening = false;
+			}
 		}
 	};
 }

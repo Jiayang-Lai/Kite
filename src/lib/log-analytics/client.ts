@@ -103,7 +103,10 @@ async function requestMetadata(
 		...(isPortalFunctionMetadata ? { body: '' } : {}),
 		signal
 	});
-	const payload: unknown = await response.json().catch(() => undefined);
+	const payload: unknown = await response.json().catch((error: unknown) => {
+		if (signal.aborted) throw error;
+		return undefined;
+	});
 	if (!response.ok) {
 		const error = payload as LogsResponse | undefined;
 		const detail = error?.error?.message ?? error?.error?.code;

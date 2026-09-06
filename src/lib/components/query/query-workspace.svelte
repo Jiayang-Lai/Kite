@@ -195,7 +195,7 @@
 		getActiveClusterId: () => clusterSession.activeClusterId,
 		getSelectedDatabase: () => selectedDatabase,
 		getRuntime: () => activeRuntime,
-		canExecute: () => activeCapabilities.queryExecutor !== 'none',
+		canExecute: () => !isClusterSwitching && activeCapabilities.queryExecutor !== 'none',
 		getDiagnostics: () => editorComponent?.getDiagnostics() ?? [],
 		updateTab: (tabId, update) => clusterSession.updateQueryTab(tabId, update)
 	});
@@ -228,7 +228,9 @@
 	const activeClusterUrl = $derived(connectionLifecycle.state.activeClusterUrl);
 	const selectedClusterId = $derived(connectionLifecycle.state.selectedClusterId);
 	const hasCluster = $derived(Boolean(databaseSchema));
-	const isQueryable = $derived(hasCluster && activeCapabilities.queryExecutor !== 'none');
+	const isQueryable = $derived(
+		!isClusterSwitching && hasCluster && activeCapabilities.queryExecutor !== 'none'
+	);
 	const isSelectedLogAnalyticsCluster = $derived(
 		clusters.find((cluster) => cluster.id === selectedClusterId)?.kind === 'log-analytics'
 	);

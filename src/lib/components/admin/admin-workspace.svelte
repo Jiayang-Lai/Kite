@@ -188,8 +188,8 @@
 
 	function switchCluster(clusterId: string) {
 		if (clusterId === selectedClusterId || isClusterSwitching) return;
-		connectionLifecycle.state.selectedClusterId = clusterId;
-		void connectCluster(clusterId);
+		connectionLifecycle.switchCluster(clusterId);
+		syncConnectionSelection();
 	}
 
 	function addCluster(draft: NewClusterConnection) {

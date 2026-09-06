@@ -51,6 +51,7 @@ const clusterDrivers = {
 			await enqueueTransition(async () => {
 				throwIfAborted(signal);
 				await disposeInactiveDuckDbSessions();
+				throwIfAborted(signal);
 			});
 			return schema;
 		},
@@ -65,6 +66,7 @@ const clusterDrivers = {
 			await enqueueTransition(async () => {
 				throwIfAborted(signal);
 				await disposeInactiveDuckDbSessions();
+				throwIfAborted(signal);
 			});
 			return schema;
 		},
@@ -79,6 +81,7 @@ const clusterDrivers = {
 			await enqueueTransition(async () => {
 				throwIfAborted(signal);
 				await disposeInactiveDuckDbSessions();
+				throwIfAborted(signal);
 			});
 			return schema;
 		},
@@ -91,13 +94,16 @@ const clusterDrivers = {
 		kind: 'emulated',
 		capabilities: getConnectionCapabilities,
 		loadSchema(cluster, signal) {
-			return enqueueTransition(async () => {
+			const operation = enqueueTransition(async () => {
 				throwIfAborted(signal);
 				registerEmulatedStorage(cluster.id, cluster.emulatedStorage);
 				await disposeInactiveDuckDbSessions(cluster.id);
 				throwIfAborted(signal);
-				return waitForSchema(loadEmulatedSchema(cluster.id), signal);
+				const schema = await loadEmulatedSchema(cluster.id);
+				throwIfAborted(signal);
+				return schema;
 			});
+			return waitForSchema(operation, signal);
 		},
 		startQuery: (cluster, database, query) => startEmulatedQuery(cluster.id, database, query),
 		dispose: (cluster) => disposeDuckDb(cluster.id)

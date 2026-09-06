@@ -34,4 +34,24 @@ describe('AdminWorkspace', () => {
 		await screen.rerender({ view: 'ingestion' });
 		await expect.element(screen.getByText('Data ingestion', { exact: true }).first()).toBeVisible();
 	});
+
+	it('switches clusters through the shared connection lifecycle', async () => {
+		const screen = await render(
+			AdminWorkspace,
+			{ view: 'overview' },
+			{ wrapper: AppContextWrapper }
+		);
+
+		await screen.getByRole('button', { name: 'Toggle admin navigation' }).click();
+		const clusterLabel = screen.getByTitle('Mock cluster');
+		await expect.element(clusterLabel).toBeVisible();
+		const clusterSelector = clusterLabel.element().closest('button');
+		expect(clusterSelector).not.toBeNull();
+		clusterSelector?.click();
+		await screen.getByRole('menuitem', { name: /Emulated cluster/ }).click();
+
+		await expect
+			.element(screen.getByRole('heading', { name: 'Operate Emulated cluster' }))
+			.toBeVisible();
+	});
 });

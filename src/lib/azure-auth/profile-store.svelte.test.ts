@@ -164,4 +164,20 @@ describe('Azure authentication profile store', () => {
 		expect(store.profiles[0].account).toEqual(account);
 		store.dispose();
 	});
+
+	it('ignores malformed and unknown account events and disposes safely before hydration', () => {
+		const unhydrated = createAzureAuthenticationProfileStore();
+		unhydrated.dispose();
+
+		const store = createAzureAuthenticationProfileStore();
+		store.hydrate();
+		const profile = store.add({ name: 'Production', tenantId: 'tenant', clientId: 'client' });
+		window.dispatchEvent(new Event(ACCOUNT_EVENT));
+		window.dispatchEvent(
+			new CustomEvent(ACCOUNT_EVENT, { detail: { id: 'unknown-profile', account } })
+		);
+
+		expect(store.profiles).toEqual([profile]);
+		store.dispose();
+	});
 });

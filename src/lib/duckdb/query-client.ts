@@ -312,11 +312,42 @@ export async function dropDuckDbDatabase(sessionId: string, name: string, fallba
 }
 
 /** Executes SQL against one emulated cluster's DuckDB session. */
-export async function executeDuckDbSql(sql: string, sessionId: string): Promise<DuckDbQueryResult> {
-	const session = await getSession(sessionId);
+export async function executeDuckDbSql(
+	sql: string,
+	sessionId: string,
+	signal?: AbortSignal
+): Promise<DuckDbQueryResult> {
+	const sessionPromise = getSession(sessionId);
+	const session = await sessionPromise;
+	throwIfAborted(signal);
 	const startedAt = performance.now();
-	const table = await session.connection.query(rewritePersistentSql(session, sql));
-	return materializeDuckDbResult(table, performance.now() - startedAt);
+	let termination: Promise<void> | undefined;
+	let rejectAbort: ((reason?: unknown) => void) | undefined;
+	const aborted = signal
+		? new Promise<never>((_resolve, reject) => {
+				rejectAbort = reject;
+			})
+		: undefined;
+	const abort = () => {
+		// The shared catalog connection has no reliable per-query cancellation. Remove the
+		// session before terminating its worker so a later transition can create a clean one.
+		if (sessionPromises.get(sessionId) === sessionPromise) sessionPromises.delete(sessionId);
+		termination = terminateDuckDbSession(session);
+		rejectAbort?.(signal?.reason ?? new DOMException('Query cancelled.', 'AbortError'));
+	};
+	signal?.addEventListener('abort', abort, { once: true });
+	try {
+		const query = session.connection.query(rewritePersistentSql(session, sql));
+		const table = aborted ? await Promise.race([query, aborted]) : await query;
+		throwIfAborted(signal);
+		return materializeDuckDbResult(table, performance.now() - startedAt);
+	} catch (cause) {
+		if (signal?.aborted) throw signal.reason ?? new DOMException('Query cancelled.', 'AbortError');
+		throw cause;
+	} finally {
+		signal?.removeEventListener('abort', abort);
+		await termination;
+	}
 }
 
 /** Executes SQL and adapts the response for Kite's query result renderer. */
@@ -456,6 +487,16 @@ export async function disposeDuckDb(sessionId: string): Promise<void> {
 	} finally {
 		await session?.lockLease?.release().catch(() => undefined);
 	}
+}
+
+/** Immediately terminates a session whose shared connection cannot cancel a stalled query. */
+async function terminateDuckDbSession(session: DuckDbSession): Promise<void> {
+	await session.database.terminate().catch(() => undefined);
+	await session.lockLease?.release().catch(() => undefined);
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+	if (signal?.aborted) throw signal.reason ?? new DOMException('Query cancelled.', 'AbortError');
 }
 
 /** Releases every initialized DuckDB session except the session that is becoming active. */

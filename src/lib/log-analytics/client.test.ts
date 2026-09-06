@@ -190,4 +190,33 @@ describe('parseLogAnalyticsMetadata', () => {
 			vi.unstubAllGlobals();
 		}
 	});
+
+	it('reports an HTTP failure when a metadata error body cannot be parsed', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => ({
+				ok: false,
+				status: 500,
+				json: async () => {
+					throw new Error('Invalid response body.');
+				}
+			}))
+		);
+
+		try {
+			await expect(
+				loadLogAnalyticsSchema(
+					{
+						workspaceId: 'workspace-id',
+						workspaceResourceId: '/subscriptions/sub/resourceGroups/rg/providers/workspaces/ws',
+						tenantId: 'tenant-id',
+						clientId: 'client-id'
+					},
+					'Production logs'
+				)
+			).rejects.toThrow('HTTP 500');
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
 });

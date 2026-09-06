@@ -183,4 +183,28 @@ describe('saved query browser persistence', () => {
 		expect(store.queries).toEqual([]);
 		expect(store.storageError).toBe('Saved queries could not be stored locally.');
 	});
+
+	it('keeps saved queries unchanged when update or removal persistence fails', () => {
+		const store = createSavedQueryStore();
+		const first = store.save({
+			clusterId: 'cluster',
+			database: 'Samples',
+			name: 'First',
+			query: 'print Value = 1'
+		});
+		const second = store.save({
+			clusterId: 'cluster',
+			database: 'Samples',
+			name: 'Second',
+			query: 'print Value = 2'
+		});
+		if (!first || !second) throw new Error('Expected both queries to be saved.');
+		vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+			throw new DOMException('Quota exceeded', 'QuotaExceededError');
+		});
+
+		expect(store.update(first.id, { ...first, name: 'Changed' })).toBeUndefined();
+		expect(store.remove(second.id)).toBe(false);
+		expect(store.queries).toEqual([second, first]);
+	});
 });

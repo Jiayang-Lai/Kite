@@ -178,6 +178,33 @@ describe('connection lifecycle controller', () => {
 		expect(controller.state.connectionError).toBe('The connection returned no databases.');
 	});
 
+	it('returns without loading when the selected connection no longer exists', async () => {
+		const { controller } = createController();
+		controller.state.selectedClusterId = 'missing';
+
+		await controller.refresh();
+
+		expect(lifecycleMocks.createConnectionRuntime).not.toHaveBeenCalled();
+	});
+
+	it('aborts a schema load when the connection deadline expires', async () => {
+		vi.useFakeTimers();
+		lifecycleMocks.createConnectionRuntime.mockReturnValue({
+			loadSchema: (signal: AbortSignal) =>
+				new Promise((_, reject) => {
+					signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+				})
+		});
+		const { controller } = createController();
+
+		const refresh = controller.refresh();
+		await vi.advanceTimersByTimeAsync(90_000);
+		await refresh;
+
+		expect(controller.state.connectionStatus).toBe('error');
+		expect(controller.state.connectionError).toBe('Schema loading timed out.');
+	});
+
 	it('leaves the current selection untouched when a dirty-tab switch is declined', () => {
 		const { controller, session, onQueryExecutionReset } = createController();
 		session.updateQueryTab(session.activeQueryTabId, { query: 'StormEvents | take 1' });

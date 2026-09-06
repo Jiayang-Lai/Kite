@@ -99,7 +99,7 @@ const clusterDrivers = {
 				registerEmulatedStorage(cluster.id, cluster.emulatedStorage);
 				await disposeInactiveDuckDbSessions(cluster.id);
 				throwIfAborted(signal);
-				const schema = await loadEmulatedSchema(cluster.id);
+				const schema = await loadEmulatedSchema(cluster.id, signal);
 				throwIfAborted(signal);
 				return schema;
 			});

@@ -11,7 +11,8 @@ import { acquireLogAnalyticsToken, getLogAnalyticsAccount, logoutLogAnalytics } 
 
 describe('Log Analytics authentication', () => {
 	it('logs out the cached account and requires a new interactive sign-in', async () => {
-		vi.stubGlobal('window', { location: { origin: 'https://kite.example.test' } });
+		const dispatchEvent = vi.fn();
+		vi.stubGlobal('window', { location: { origin: 'https://kite.example.test' }, dispatchEvent });
 		const account = {
 			homeAccountId: 'home-account-id',
 			localAccountId: 'local-account-id',
@@ -22,6 +23,7 @@ describe('Log Analytics authentication', () => {
 			workspaceId: 'workspace-id',
 			tenantId: 'tenant-id',
 			clientId: 'client-id',
+			authenticationProfileId: 'profile-id',
 			account
 		};
 		const firstClient = {
@@ -49,6 +51,12 @@ describe('Log Analytics authentication', () => {
 			await expect(acquireLogAnalyticsToken(config)).resolves.toBe('new-token');
 			expect(secondClient.loginPopup).toHaveBeenCalledWith(
 				expect.objectContaining({ prompt: 'select_account' })
+			);
+			expect(dispatchEvent).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: 'kite:azure-authentication-profile-account',
+					detail: { id: 'profile-id', account }
+				})
 			);
 		} finally {
 			vi.unstubAllGlobals();

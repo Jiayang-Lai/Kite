@@ -49,6 +49,9 @@ describe('ingestion adapter', () => {
 	});
 
 	it('normalizes provider-specific cancellation messages', () => {
+		expect(formatIngestionError(new Error('Cluster unavailable.'), 'emulated')).toBe(
+			'Cluster unavailable.'
+		);
 		expect(formatIngestionError(new Error('Command cancelled.'), 'emulated')).toContain(
 			'DuckDB rolled back'
 		);

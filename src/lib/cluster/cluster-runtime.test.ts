@@ -6,7 +6,8 @@ const runtimeMocks = vi.hoisted(() => ({
 	disposeInactiveDuckDbSessions: vi.fn<(activeSessionId?: string) => Promise<void>>(),
 	getMockClusterSchema: vi.fn(),
 	loadBackendSchema: vi.fn(),
-	loadEmulatedSchema: vi.fn(),
+	loadEmulatedSchema:
+		vi.fn<(clusterId: string, signal?: AbortSignal) => Promise<KustoDatabaseSchema>>(),
 	loadLogAnalyticsSchema: vi.fn(),
 	registerEmulatedStorage: vi.fn(),
 	startEmulatedQuery: vi.fn(),
@@ -150,6 +151,35 @@ describe('cluster runtime lifecycle', () => {
 		expect(runtimeMocks.disposeInactiveDuckDbSessions).toHaveBeenCalledOnce();
 	});
 
+	it('supports direct driver loads without a cancellation signal', async () => {
+		await expect(getClusterDriver(remoteCluster).loadSchema(remoteCluster)).resolves.toBe(schema);
+		expect(runtimeMocks.loadBackendSchema).toHaveBeenCalledWith(remoteCluster.url);
+	});
+
+	it('provides an AbortError when a driver receives an aborted signal without a reason', async () => {
+		const signal = { aborted: true, reason: undefined } as AbortSignal;
+
+		await expect(
+			getClusterDriver(mockCluster).loadSchema(mockCluster, signal)
+		).rejects.toMatchObject({
+			name: 'AbortError'
+		});
+	});
+
+	it('provides an AbortError when an in-flight provider signal aborts without a reason', async () => {
+		const signal = Object.assign(new EventTarget(), {
+			aborted: false,
+			reason: undefined
+		}) as unknown as AbortSignal;
+		runtimeMocks.loadBackendSchema.mockReturnValueOnce(new Promise(() => undefined));
+		const loading = getClusterDriver(remoteCluster).loadSchema(remoteCluster, signal);
+		Object.defineProperty(signal, 'aborted', { value: true });
+
+		signal.dispatchEvent(new Event('abort'));
+
+		await expect(loading).rejects.toMatchObject({ name: 'AbortError' });
+	});
+
 	it('does not let a stalled remote schema request block an emulated transition', async () => {
 		let finishRemote!: (value: KustoDatabaseSchema) => void;
 		runtimeMocks.loadBackendSchema.mockReturnValueOnce(
@@ -165,6 +195,10 @@ describe('cluster runtime lifecycle', () => {
 		await expect(emulated).resolves.toBe(schema);
 		expect(runtimeMocks.disposeInactiveDuckDbSessions).toHaveBeenCalledWith(emulatedCluster.id);
 		expect(runtimeMocks.loadEmulatedSchema).toHaveBeenCalledOnce();
+		expect(runtimeMocks.loadEmulatedSchema).toHaveBeenCalledWith(
+			emulatedCluster.id,
+			expect.any(AbortSignal)
+		);
 
 		finishRemote(schema);
 		expect(await remote).toMatchObject({ name: 'AbortError' });
@@ -196,12 +230,12 @@ describe('cluster runtime lifecycle', () => {
 		expect(runtimeMocks.disposeInactiveDuckDbSessions).toHaveBeenNthCalledWith(2, 'emulated-2');
 	});
 
-	it('keeps an aborted emulated schema operation in the transition queue until it settles', async () => {
-		let finishFirstSchema!: (value: KustoDatabaseSchema) => void;
-		runtimeMocks.loadEmulatedSchema.mockReturnValueOnce(
-			new Promise<KustoDatabaseSchema>((resolve) => {
-				finishFirstSchema = resolve;
-			})
+	it('cancels a stalled emulated schema operation before the next transition', async () => {
+		runtimeMocks.loadEmulatedSchema.mockImplementationOnce(
+			(_clusterId, signal) =>
+				new Promise<KustoDatabaseSchema>((_resolve, reject) => {
+					signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+				})
 		);
 
 		const first = createConnectionRuntime(emulatedCluster)
@@ -211,10 +245,6 @@ describe('cluster runtime lifecycle', () => {
 
 		const second = createConnectionRuntime({ ...emulatedCluster, id: 'emulated-2' }).loadSchema();
 		expect(await first).toMatchObject({ name: 'AbortError' });
-		await Promise.resolve();
-		expect(runtimeMocks.disposeInactiveDuckDbSessions).toHaveBeenCalledTimes(1);
-
-		finishFirstSchema(schema);
 		await second;
 		expect(runtimeMocks.disposeInactiveDuckDbSessions).toHaveBeenNthCalledWith(2, 'emulated-2');
 	});

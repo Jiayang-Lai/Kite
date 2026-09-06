@@ -96,9 +96,16 @@ function toKustoType(type: string) {
 }
 
 /** Reads an emulated cluster's live DuckDB catalog into Monaco-Kusto's schema shape. */
-export async function loadEmulatedSchema(clusterId: string): Promise<KustoDatabaseSchema> {
+export async function loadEmulatedSchema(
+	clusterId: string,
+	signal?: AbortSignal
+): Promise<KustoDatabaseSchema> {
 	const persistent = await isPersistentDuckDbSession(clusterId);
-	const result = await executeDuckDbSql(persistent ? PERSISTENT_SCHEMA_SQL : SCHEMA_SQL, clusterId);
+	const result = await executeDuckDbSql(
+		persistent ? PERSISTENT_SCHEMA_SQL : SCHEMA_SQL,
+		clusterId,
+		signal
+	);
 	const internalCatalogName = await getDuckDbInternalCatalogName(clusterId);
 	const indexes = Object.fromEntries(result.columns.map((column, index) => [column.name, index]));
 	const schema: KustoDatabaseSchema = {};

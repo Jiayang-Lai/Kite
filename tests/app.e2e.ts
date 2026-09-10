@@ -488,6 +488,7 @@ test('persists, reopens, updates, and deletes a saved query', async ({ page }) =
 	await page.getByRole('button', { name: 'Open query' }).click();
 	await expect(page).toHaveURL(/\/explorer\/query$/);
 	await expect(page.getByRole('tab', { name: /Persistent saved query/ })).toBeVisible();
+	await expect(editorSurface).toContainText('print Message = "Saved before reload"');
 
 	await editorSurface.click();
 	await page.keyboard.press('Control+A');

@@ -305,6 +305,16 @@
 	});
 
 	$effect(() => {
+		if (view !== 'editor' || !activeQueryTab) return;
+		// QueryWorkspace is recreated when navigating from the saved-query list to the
+		// editor. The tabs live in the app-wide session, while executionState belongs
+		// to this workspace instance, so hydrate it from the selected shared tab.
+		// Without this, a cached schema skips onSchemaReady and Monaco receives an
+		// empty value even though the tab itself contains the saved query.
+		queryExecution.loadTab(activeQueryTab);
+	});
+
+	$effect(() => {
 		const tab = activeQueryTab;
 		if (tab && tab.database !== selectedDatabase) {
 			clusterSession.updateQueryTab(tab.id, { database: selectedDatabase });

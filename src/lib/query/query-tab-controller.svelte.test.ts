@@ -95,6 +95,34 @@ describe('query tab controller', () => {
 		expect(onTabClosing).not.toHaveBeenCalled();
 	});
 
+	it('replaces the final tab so a closed query cannot remain in the editor', () => {
+		const savedQuery: SavedQuery = {
+			id: 'saved',
+			clusterId: 'cluster',
+			database: 'Alpha',
+			name: 'Saved query',
+			query: 'StormEvents | take 10',
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z'
+		};
+		const { controller, session, onTabLoaded } = createController([savedQuery]);
+		const closedTab = session.queryTabs[0];
+		session.updateQueryTab(closedTab.id, {
+			database: savedQuery.database,
+			query: savedQuery.query,
+			savedQueryId: savedQuery.id,
+			savedQueryName: savedQuery.name
+		});
+
+		controller.close(closedTab);
+
+		const replacement = session.queryTabs[0];
+		expect(replacement).toMatchObject({ database: '', query: '', isRunning: false });
+		expect(replacement.id).not.toBe(closedTab.id);
+		expect(session.activeQueryTabId).toBe(replacement.id);
+		expect(onTabLoaded).toHaveBeenLastCalledWith(replacement);
+	});
+
 	it('ends comparison when either compared tab closes', () => {
 		const { controller, session, onTabClosing } = createController();
 		const first = session.queryTabs[0];

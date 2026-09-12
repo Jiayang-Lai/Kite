@@ -143,15 +143,17 @@ export function createClusterSession(initialClusterId: string): ClusterSession {
 
 	function closeQueryTab(id: string) {
 		if (queryTabs.length === 1) {
-			const tab = queryTabs[0];
-			tab.database = '';
-			tab.query = '';
-			tab.result = undefined;
-			tab.error = undefined;
-			tab.errorRequestId = undefined;
-			tab.errorRaw = undefined;
-			tab.savedQueryId = undefined;
-			tab.savedQueryName = undefined;
+			// Replace, rather than clear, the final tab. The editor is keyed by tab ID and
+			// deliberately does not sync external values while the user types; retaining the
+			// ID would leave its old visible content in place after the tab has been cleared.
+			const tab: QueryTab = {
+				id: createQueryTabId(),
+				database: '',
+				query: '',
+				isRunning: false
+			};
+			queryTabs = [tab];
+			activeQueryTabId = tab.id;
 			return;
 		}
 

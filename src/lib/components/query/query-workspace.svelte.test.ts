@@ -48,11 +48,36 @@ describe('QueryWorkspace', () => {
 		await expect
 			.element(screen.getByRole('heading', { name: 'Save query' }))
 			.not.toBeInTheDocument();
+		const cleanBeforeUnload = new Event('beforeunload', { cancelable: true });
+		window.dispatchEvent(cleanBeforeUnload);
+		expect(cleanBeforeUnload.defaultPrevented).toBe(false);
+
+		const monaco = await import('monaco-editor/esm/vs/editor/editor.api.js');
+		const editorModel = monaco.editor
+			.getModels()
+			.find((model) => model.getValue() === 'Events | count');
+		expect(editorModel).toBeDefined();
+		editorModel?.setValue('Events | count1');
+		await expect.element(screen.getByText('Unsaved changes')).toBeInTheDocument();
+
+		await screen.getByRole('button', { name: 'Expand all' }).click();
+		await expect.element(screen.getByRole('button', { name: 'Collapse all' })).toBeInTheDocument();
+
+		(
+			screen.getByRole('button', { name: 'Collapse results drawer' }).element() as HTMLButtonElement
+		).click();
+		await expect
+			.element(screen.getByRole('button', { name: 'Expand results drawer' }))
+			.toBeInTheDocument();
+		(
+			screen.getByRole('button', { name: 'Expand results drawer' }).element() as HTMLButtonElement
+		).click();
 
 		(screen.getByRole('button', { name: 'New query tab' }).element() as HTMLButtonElement).click();
 		await expect.element(screen.getByRole('tab', { name: 'Untitled query' })).toBeVisible();
 		(screen.getByRole('button', { name: 'Compare' }).element() as HTMLButtonElement).click();
-		await expect.element(screen.getByLabelText('Query comparison')).toBeVisible();
+		const comparison = screen.getByLabelText('Query comparison');
+		await expect.element(comparison).toBeVisible();
 
 		(screen.getByRole('button', { name: 'Close diff' }).element() as HTMLButtonElement).click();
 		await expect.element(screen.getByLabelText('Query comparison')).not.toBeInTheDocument();
@@ -61,7 +86,6 @@ describe('QueryWorkspace', () => {
 		(firstTab.element().querySelector('button') as HTMLButtonElement).dispatchEvent(
 			new MouseEvent('click', { bubbles: true, shiftKey: true })
 		);
-		const comparison = screen.getByLabelText('Query comparison');
 		await expect.element(comparison).toBeVisible();
 
 		const comparisonRunButton = screen.getByRole('button', { name: 'Run' });

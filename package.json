@@ -51,7 +51,7 @@
 		"@sveltejs/vite-plugin-svelte": "^7.3.0",
 		"@tailwindcss/typography": "^0.5.19",
 		"@tailwindcss/vite": "^4.3.3",
-		"@vitest/browser-playwright": "^4.1.11",
+		"@vitest/browser-playwright": "^5.0.0",
 		"@vitest/coverage-v8": "^4.1.10",
 		"bits-ui": "^2.19.0",
 		"clsx": "^2.1.1",

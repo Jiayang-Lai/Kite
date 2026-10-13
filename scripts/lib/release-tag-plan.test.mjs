@@ -35,7 +35,10 @@ describe('planReleaseTag', () => {
 	});
 
 	it('refuses to tag a version that is already released', () => {
-		const tags = [{ name: 'v0.2.0', sha: 'rc2' }];
+		const tags = [
+			{ name: 'v0.2.0-rc.2', sha: 'rc2' },
+			{ name: 'v0.2.0', sha: 'rc2' }
+		];
 		for (const type of ['release-candidate', 'stable']) {
 			expect(() => planReleaseTag({ type, candidateSha: 'main', versionAt, tags })).toThrow(
 				'already released'
@@ -58,7 +61,49 @@ describe('planReleaseTag', () => {
 	it('requires a release candidate before a stable release', () => {
 		expect(() =>
 			planReleaseTag({ type: 'stable', candidateSha: 'main', versionAt, tags: [] })
-		).toThrow('No release candidate exists for 0.2.0');
+		).toThrow('No release candidate exists');
+	});
+
+	it('promotes the pending candidate after main bumps to the next version', () => {
+		const tags = [
+			{ name: 'v0.1.0-rc.1', sha: 'old' },
+			{ name: 'v0.0.9-rc.3', sha: 'older' }
+		];
+		expect(planReleaseTag({ type: 'stable', versionAt, tags })).toEqual({
+			tag: 'v0.1.0',
+			sha: 'old',
+			version: '0.1.0'
+		});
+	});
+
+	it('promotes the candidate for the newest version, not an abandoned older one', () => {
+		const tags = [
+			{ name: 'v0.1.0-rc.9', sha: 'old' },
+			{ name: 'v0.2.0-rc.1', sha: 'rc1' },
+			{ name: 'v0.10.0-rc.1', sha: 'ten' }
+		];
+		const versionsWithTen = { ...versions, ten: '0.10.0' };
+		expect(
+			planReleaseTag({ type: 'stable', versionAt: (sha) => versionsWithTen[sha], tags }).tag
+		).toBe('v0.10.0');
+	});
+
+	it('refuses to promote an abandoned candidate older than the latest release', () => {
+		const tags = [
+			{ name: 'v0.1.0-rc.1', sha: 'old' },
+			{ name: 'v0.2.0-rc.1', sha: 'rc1' },
+			{ name: 'v0.2.0', sha: 'rc1' }
+		];
+		expect(() => planReleaseTag({ type: 'stable', versionAt, tags })).toThrow(
+			'v0.2.0 is already released'
+		);
+	});
+
+	it('refuses a candidate whose package.json does not match its tag', () => {
+		const tags = [{ name: 'v0.3.0-rc.1', sha: 'rc1' }];
+		expect(() => planReleaseTag({ type: 'stable', versionAt, tags })).toThrow(
+			'has package.json version 0.2.0, not 0.3.0'
+		);
 	});
 
 	it('rejects a prerelease or malformed package.json version', () => {

@@ -5,12 +5,12 @@ const STABLE_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
  * typed by hand.
  *
  * - A release candidate tags `candidateSha` (a commit on main) as the next `vX.Y.Z-rc.N`.
- * - A stable release tags the commit of the latest release candidate for that version, because
- *   production must deploy exactly what final UAT approved.
+ * - A stable release tags the commit of the newest release candidate, because production must deploy exactly what final UAT approved. `candidateSha` is
+ *   ignored, so later version bumps on main do not change which candidate is promoted.
  *
  * @param {object} input
  * @param {'release-candidate' | 'stable'} input.type
- * @param {string} input.candidateSha Commit proposed for a release candidate.
+ * @param {string} [input.candidateSha] Commit proposed for a release candidate.
  * @param {(sha: string) => string} input.versionAt Returns package.json's version at a commit.
  * @param {{ name: string, sha: string }[]} input.tags Existing tags and the commits they resolve to.
  * @returns {{ tag: string, sha: string, version: string }}
@@ -33,14 +33,14 @@ export function planReleaseTag({ type, candidateSha, versionAt, tags }) {
 	}
 
 	if (type === 'stable') {
-		const version = requireStableVersion(versionAt(candidateSha), candidateSha);
-		requireUnreleased(version, tagNames);
-		const latest = releaseCandidates(version, tags)[0];
+		// The candidate decides the version, so a version bump already merged to main cannot block
+		// promoting the release candidate that is awaiting approval.
+		const latest = releaseCandidates(undefined, tags)[0];
 		if (!latest) {
-			throw new Error(
-				`No release candidate exists for ${version}. Create and approve a release candidate first.`
-			);
+			throw new Error('No release candidate exists. Create and approve a release candidate first.');
 		}
+		const { version } = latest;
+		requireUnreleased(version, tagNames);
 		const candidateVersion = versionAt(latest.sha);
 		if (candidateVersion !== version) {
 			throw new Error(
@@ -70,13 +70,24 @@ function requireUnreleased(version, tagNames) {
 	}
 }
 
-/** Release candidates for a version, newest first. */
+/** Release candidates for `version` (every version when omitted), newest first. */
 function releaseCandidates(version, tags) {
-	const pattern = new RegExp(`^v${version.replaceAll('.', '\\.')}-rc\\.([1-9]\\d*)$`);
+	const pattern = /^v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))-rc\.([1-9]\d*)$/;
 	return tags
-		.map((tag) => ({ ...tag, number: Number(pattern.exec(tag.name)?.[1]) }))
-		.filter((tag) => Number.isInteger(tag.number))
-		.sort((left, right) => right.number - left.number);
+		.map((tag) => {
+			const match = pattern.exec(tag.name);
+			return match && { ...tag, version: match[1], number: Number(match[2]) };
+		})
+		.filter((tag) => tag && (version === undefined || tag.version === version))
+		.sort(
+			(left, right) => compareVersions(right.version, left.version) || right.number - left.number
+		);
+}
+
+function compareVersions(left, right) {
+	const leftParts = left.split('.').map(Number);
+	const rightParts = right.split('.').map(Number);
+	return leftParts.reduce((order, part, index) => order || part - rightParts[index], 0);
 }
 
 function shortSha(sha) {

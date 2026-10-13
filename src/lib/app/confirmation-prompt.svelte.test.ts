@@ -30,4 +30,20 @@ describe('confirmation prompt', () => {
 		prompt.respond(false);
 		await expect(second).resolves.toBe(false);
 	});
+
+	it('ignores a late response for a request that was already answered', async () => {
+		const prompt = createConfirmationPrompt();
+		const firstRequest = { ...request };
+		const first = prompt.ask(firstRequest);
+		prompt.respond(true, firstRequest);
+		await expect(first).resolves.toBe(true);
+
+		const secondRequest = { ...request, title: 'Cancel running query?' };
+		const second = prompt.ask(secondRequest);
+		prompt.respond(false, firstRequest);
+		expect(prompt.request).toBe(secondRequest);
+
+		prompt.respond(true, secondRequest);
+		await expect(second).resolves.toBe(true);
+	});
 });

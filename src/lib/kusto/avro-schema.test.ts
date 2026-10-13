@@ -61,6 +61,55 @@ describe('validateAvroSchema', () => {
 					default: {}
 				}
 			])
+		],
+		[
+			'aliases, dotted names, and error records',
+			{
+				type: 'error',
+				name: 'com.example.Failure',
+				aliases: ['Problem', '.other.Problem'],
+				fields: [
+					{ name: 'kind', type: { type: 'enum', name: 'Kind', symbols: ['A'] }, default: 'A' },
+					{ name: 'again', type: 'com.example.Kind' }
+				]
+			}
+		],
+		[
+			'defaults for every primitive type',
+			record([
+				{ name: 'n', type: 'null', default: null },
+				{ name: 'b', type: 'boolean', default: true },
+				{ name: 'l', type: 'long', default: 2 ** 40 },
+				{ name: 'f', type: 'float', default: 1.5 },
+				{ name: 'd', type: 'double', default: 2.5 },
+				{ name: 'by', type: 'bytes', default: '\u00ff' },
+				{ name: 's', type: 'string', default: '', order: 'descending' }
+			])
+		],
+		[
+			'record defaults with explicit field values',
+			record([
+				{
+					name: 'inner',
+					type: record([{ name: 'n', type: 'int' }], { name: 'Inner' }),
+					default: { n: 1 }
+				},
+				{ name: 'empty', type: record([], { name: 'Empty' }), default: null }
+			])
+		],
+		[
+			'full names that override the namespace attribute for nested references',
+			record([
+				{
+					name: 'inner',
+					type: {
+						type: 'record',
+						name: 'actual.Inner',
+						namespace: 'ignored',
+						fields: [{ name: 'next', type: ['null', 'Inner'] }]
+					}
+				}
+			])
 		]
 	])('accepts %s', (_name, schema) => {
 		expect(() => validateAvroSchema(schema)).not.toThrow();
@@ -146,6 +195,61 @@ describe('validateAvroSchema', () => {
 			'invalid namespaces',
 			record([{ name: 'a', type: 'int' }], { namespace: 'bad-ns' }),
 			'invalid name'
+		],
+		['non-object schemas', 5, 'unknown type'],
+		['unknown object types', record([{ name: 'a', type: { type: 'decimal' } }]), 'unknown type'],
+		['non-string names', { type: 'fixed', name: 1, size: 1 }, 'a name must be a string'],
+		['non-array aliases', record([], { aliases: 'Other' }), 'invalid aliases'],
+		['non-string aliases', record([], { aliases: [1] }), 'an alias must be a string'],
+		['invalid aliases', record([], { aliases: ['bad-alias'] }), 'invalid name'],
+		['non-array record fields', record([], { fields: {} }), 'non-array record fields'],
+		['non-object record fields', record(['a']), 'invalid record field'],
+		['empty enum symbols', { type: 'enum', name: 'E', symbols: [] }, 'invalid enum symbols'],
+		['non-name enum symbols', { type: 'enum', name: 'E', symbols: ['1'] }, 'invalid enum symbol'],
+		[
+			'enum defaults outside the symbols',
+			{ type: 'enum', name: 'E', symbols: ['A'], default: 'B' },
+			'invalid enum default'
+		],
+		['maps without values', { type: 'map' }, 'missing map values'],
+		[
+			'out-of-range long defaults',
+			record([{ name: 'a', type: 'long', default: 2 ** 60 }]),
+			'incompatible field default'
+		],
+		[
+			'boolean defaults of the wrong type',
+			record([{ name: 'a', type: 'boolean', default: 0 }]),
+			'incompatible field default'
+		],
+		[
+			'map defaults given as arrays',
+			record([{ name: 'a', type: { type: 'map', values: 'int' }, default: [] }]),
+			'incompatible field default'
+		],
+		[
+			'array defaults with invalid items',
+			record([{ name: 'a', type: { type: 'array', items: 'int' }, default: ['x'] }]),
+			'incompatible field default'
+		],
+		[
+			'null defaults for records with fields',
+			record([
+				{ name: 'a', type: record([{ name: 'n', type: 'int' }], { name: 'Inner' }), default: null }
+			]),
+			'incompatible field default'
+		],
+		[
+			'record defaults missing a required field',
+			record([
+				{ name: 'a', type: record([{ name: 'n', type: 'int' }], { name: 'Inner' }), default: {} }
+			]),
+			'incompatible field default'
+		],
+		[
+			'record defaults that refer to the enclosing record',
+			record([{ name: 'self', type: 'Events', default: {} }]),
+			'incompatible field default'
 		]
 	])('rejects %s', (_name, schema, message) => {
 		expect(() => validateAvroSchema(schema)).toThrow(message);

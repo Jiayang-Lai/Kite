@@ -4,7 +4,9 @@
  * Kite previously validated templates with avsc's `Type.forSchema`, which compiles record types
  * with `new Function` and therefore needs a Content Security Policy with 'unsafe-eval'. This
  * module accepts and rejects the same schemas as avsc 5.7 without logical types: logical types
- * are ignored, matching the Avro specification's fallback to the underlying type.
+ * are ignored, matching the Avro specification's fallback to the underlying type. One deliberate
+ * difference follows the specification: a record with a full name ignores its `namespace`
+ * attribute when resolving the names inside it.
  */
 
 const PRIMITIVE_TYPES = new Set([
@@ -170,12 +172,12 @@ function parseRecord(
 	recordTypeName: 'record' | 'error',
 	parentScope: Scope
 ): AvroType {
-	// A record's namespace applies to the types nested in its fields.
+	// A record's namespace applies to the types nested in its fields. A full name wins over the
+	// `namespace` attribute, which the Avro specification ignores in that case (avsc does not).
 	let namespace = parentScope.namespace;
-	if (schema.namespace !== undefined) namespace = schema.namespace as string;
-	else if (typeof schema.name === 'string' && schema.name.includes('.')) {
+	if (typeof schema.name === 'string' && schema.name.includes('.')) {
 		namespace = schema.name.slice(0, schema.name.lastIndexOf('.'));
-	}
+	} else if (schema.namespace !== undefined) namespace = schema.namespace as string;
 	const scope: Scope = { namespace, registry: parentScope.registry };
 
 	const type: AvroType & { kind: 'record' } = { kind: 'record', typeName: recordTypeName };

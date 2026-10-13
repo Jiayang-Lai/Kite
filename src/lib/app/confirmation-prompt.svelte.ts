@@ -14,10 +14,18 @@ export type ConfirmAction = (request: ConfirmationRequest) => Promise<boolean>;
  * Render `ConfirmationPromptDialog` with the returned prompt to display requests.
  */
 export function createConfirmationPrompt() {
-	let pending = $state<{ request: ConfirmationRequest; resolve: (confirmed: boolean) => void }>();
+	let pending = $state.raw<{
+		request: ConfirmationRequest;
+		resolve: (confirmed: boolean) => void;
+	}>();
 
-	function respond(confirmed: boolean) {
+	/**
+	 * Answers the pending request. Pass `request` to answer only that request, so a late close
+	 * from a dialog that already submitted cannot decline a newer question.
+	 */
+	function respond(confirmed: boolean, request?: ConfirmationRequest) {
 		const current = pending;
+		if (request && current?.request !== request) return;
 		pending = undefined;
 		current?.resolve(confirmed);
 	}

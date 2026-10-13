@@ -531,4 +531,75 @@ describe('connection lifecycle controller', () => {
 		pending.resolve(schema('SecondDb'));
 		await vi.waitFor(() => expect(session.activeClusterId).toBe(secondCluster.id));
 	});
+
+	it('connects to a requested cluster and reports whether it became ready', async () => {
+		lifecycleMocks.createConnectionRuntime.mockImplementation(
+			(cluster: KustoClusterConnection) => ({
+				loadSchema: () =>
+					cluster.id === thirdCluster.id
+						? Promise.reject(new Error('Unreachable.'))
+						: Promise.resolve(schema(`${cluster.name}Db`))
+			})
+		);
+		const { controller, session } = createController();
+
+		await expect(controller.connect(secondCluster.id)).resolves.toBe(true);
+		expect(controller.activeCluster?.id).toBe(secondCluster.id);
+		expect(session.selectedDatabase).toBe('SecondDb');
+
+		await expect(controller.connect(thirdCluster.id)).resolves.toBe(false);
+		expect(controller.state.connectionError).toBe('Unreachable.');
+		expect(controller.activeCluster?.id).toBe(secondCluster.id);
+	});
+
+	it('restores the selected function when its database reloads', async () => {
+		const withFunction: KustoDatabaseSchema = {
+			FirstDb: {
+				...schema('FirstDb').FirstDb,
+				functions: [{ name: 'Recent', body: '{}', inputParameters: [] }]
+			}
+		};
+		lifecycleMocks.createConnectionRuntime.mockReturnValue({
+			loadSchema: () => Promise.resolve(withFunction)
+		});
+		const { controller, session } = createController();
+		session.selectedFunction = 'Recent';
+
+		await controller.refresh();
+		expect(session.selectedFunction).toBe('Recent');
+
+		session.selectedFunction = 'Missing';
+		await controller.refresh();
+		expect(session.selectedFunction).toBeUndefined();
+	});
+
+	it('adds a connection by switching to it', async () => {
+		lifecycleMocks.createConnectionRuntime.mockReturnValue({
+			loadSchema: () => Promise.resolve(schema('ThirdDb'))
+		});
+		const { controller, store, onQueryExecutionReset } = createController();
+		vi.mocked(store.add).mockReturnValue(thirdCluster);
+
+		await controller.addCluster({ name: 'Third', url: thirdCluster.url, kind: 'remote' });
+		expect(controller.state.selectedClusterId).toBe(thirdCluster.id);
+		expect(onQueryExecutionReset).toHaveBeenCalledOnce();
+		await vi.waitFor(() => expect(controller.state.connectionStatus).toBe('ready'));
+	});
+
+	it('reloads only the selected connection after it is edited', async () => {
+		lifecycleMocks.createConnectionRuntime.mockReturnValue({
+			loadSchema: () => Promise.resolve(schema('FirstDb'))
+		});
+		const { controller, store, onQueryExecutionReset } = createController();
+		const draft = { name: 'Renamed', url: secondCluster.url, kind: 'remote' as const };
+
+		controller.editCluster(secondCluster.id, draft);
+		expect(store.update).toHaveBeenCalledWith(secondCluster.id, draft);
+		expect(onQueryExecutionReset).not.toHaveBeenCalled();
+		expect(lifecycleMocks.createConnectionRuntime).not.toHaveBeenCalled();
+
+		controller.editCluster(firstCluster.id, draft);
+		expect(onQueryExecutionReset).toHaveBeenCalledOnce();
+		await vi.waitFor(() => expect(controller.state.connectionStatus).toBe('ready'));
+	});
 });

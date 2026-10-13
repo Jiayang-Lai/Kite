@@ -9,7 +9,6 @@ const options = parseOptions(process.argv.slice(2));
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
 
 const mainSha = git('rev-parse', 'origin/main^{commit}');
-const candidateSha = git('rev-parse', `${options.commit || mainSha}^{commit}`);
 const isOnMain = (sha) => {
 	try {
 		git('merge-base', '--is-ancestor', sha, mainSha);
@@ -18,8 +17,13 @@ const isOnMain = (sha) => {
 		return false;
 	}
 };
-if (!isOnMain(candidateSha)) {
-	throw new Error(`${candidateSha} is not a commit on main.`);
+// Only a release candidate takes a commit; a stable release promotes an existing candidate.
+let candidateSha;
+if (options.type === 'release-candidate') {
+	candidateSha = git('rev-parse', `${options.commit || mainSha}^{commit}`);
+	if (!isOnMain(candidateSha)) {
+		throw new Error(`${candidateSha} is not a commit on main.`);
+	}
 }
 
 const tags = git(

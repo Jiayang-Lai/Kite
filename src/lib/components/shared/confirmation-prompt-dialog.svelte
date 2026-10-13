@@ -5,20 +5,21 @@
 	let { prompt }: { prompt: ConfirmationPrompt } = $props();
 </script>
 
-{#if prompt.request}
+<!-- Keyed by request: each question gets its own dialog, and its close only answers that question. -->
+{#each prompt.request ? [prompt.request] : [] as request (request)}
 	<ConfirmationDialog
 		bind:open={
-			() => Boolean(prompt.request),
+			() => prompt.request === request,
 			(open) => {
 				// Closing without submitting (Cancel, Escape, or the overlay) declines the request.
-				if (!open) prompt.respond(false);
+				if (!open) prompt.respond(false, request);
 			}
 		}
-		title={prompt.request.title}
-		description={prompt.request.description}
+		title={request.title}
+		description={request.description}
 		descriptionId="confirmation-prompt-description"
-		actionLabel={prompt.request.actionLabel}
-		variant={prompt.request.variant ?? 'destructive'}
-		onsubmit={() => prompt.respond(true)}
+		actionLabel={request.actionLabel}
+		variant={request.variant ?? 'destructive'}
+		onsubmit={() => prompt.respond(true, request)}
 	/>
-{/if}
+{/each}

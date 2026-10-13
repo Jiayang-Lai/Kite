@@ -90,3 +90,31 @@ resource "github_actions_environment_variable" "cloudflare_pages_branch" {
     github_repository_environment.production,
   ]
 }
+
+# Holds the release-tag GitHub App credentials. Only runs from main can use it, so a modified
+# workflow on another branch cannot create release tags.
+resource "github_repository_environment" "release_tagging" {
+  repository        = github_repository.kite.name
+  environment       = "release-tagging"
+  can_admins_bypass = false
+
+  deployment_branch_policy {
+    protected_branches     = false
+    custom_branch_policies = true
+  }
+}
+
+resource "github_repository_environment_deployment_policy" "release_tagging" {
+  repository     = github_repository.kite.name
+  environment    = github_repository_environment.release_tagging.environment
+  branch_pattern = "main"
+}
+
+resource "github_actions_environment_variable" "release_tag_app_id" {
+  count = local.release_tag_app_id == null ? 0 : 1
+
+  repository    = github_repository.kite.name
+  environment   = github_repository_environment.release_tagging.environment
+  variable_name = "RELEASE_TAG_APP_ID"
+  value         = tostring(local.release_tag_app_id)
+}

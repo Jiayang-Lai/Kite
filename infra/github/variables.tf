@@ -89,3 +89,15 @@ variable "production_prevent_self_review" {
   type        = bool
   default     = false
 }
+
+variable "release_tag_app_id" {
+  description = "App ID of the GitHub App used by the Create release tag workflow, recorded by scripts/create-release-tag-app.mjs. When set, only that App can create, update, or delete v* tags. Leave null until the App is registered. (The App is private, so Terraform cannot look it up by slug with a fine-grained token.)"
+  type        = number
+  default     = null
+}
+
+variable "allow_admin_release_tag_bypass" {
+  description = "Break-glass: also let repository administrators create, update, or delete v* tags directly after release_tag_app_id is set."
+  type        = bool
+  default     = false
+}

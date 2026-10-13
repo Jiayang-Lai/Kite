@@ -1,10 +1,12 @@
-.PHONY: help scan sbom vuln version-bump ff-merge tf-init tf-plan tf-apply \
+.PHONY: help scan sbom vuln version-bump ff-merge tf tf-run tf-init tf-plan tf-apply \
 	tf-github-init tf-github-plan tf-github-apply \
 	tf-cloudflare-init tf-cloudflare-plan tf-cloudflare-apply \
 	tf-azure-init tf-azure-plan tf-azure-apply
 
 TF_ROOT ?= infra/github
 TF_ENV_FILE ?= $(TF_ROOT)/.env
+# Extra arguments for the init/plan/apply targets, for example TF_ARGS=-out=tfplan.
+TF_ARGS ?=
 TF_CREDENTIALS := GITHUB_TOKEN CLOUDFLARE_API_TOKEN
 
 define run_terraform
@@ -43,14 +45,21 @@ ff-merge: ## Fast-forward merge the dev branch to main
 	git checkout main
 	git merge --ff-only dev
 
+tf: ## Run any Terraform command with a root's .env loaded: make tf ROOT=github CMD="plan -out=tfplan"
+	@test -n "$(ROOT)" -a -n "$(CMD)" || { echo 'Usage: make tf ROOT=<github|cloudflare|azure> CMD="<terraform arguments>"'; exit 1; }
+	@$(MAKE) --no-print-directory tf-run TF_ROOT=infra/$(ROOT) TF_ENV_FILE=infra/$(ROOT)/.env CMD='$(CMD)'
+
+tf-run:
+	$(call run_terraform,$(CMD))
+
 tf-init: ## Initialize a Terraform root with credentials from its .env file
-	$(call run_terraform,init)
+	$(call run_terraform,init $(TF_ARGS))
 
 tf-plan: ## Plan a Terraform root with credentials from its .env file
-	$(call run_terraform,plan)
+	$(call run_terraform,plan $(TF_ARGS))
 
 tf-apply: ## Apply a Terraform root with credentials from its .env file
-	$(call run_terraform,apply)
+	$(call run_terraform,apply $(TF_ARGS))
 
 tf-github-init: ## Initialize the GitHub Terraform root
 	@$(MAKE) --no-print-directory tf-init TF_ROOT=infra/github TF_ENV_FILE=infra/github/.env

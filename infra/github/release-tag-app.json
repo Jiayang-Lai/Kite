@@ -1,0 +1,15 @@
+{
+	"name": "Kite release tags",
+	"url": "https://github.com/Jiayang-Lai/Kite",
+	"description": "Creates Kite's v* release tags for the Create release tag workflow. Defined in infra/github/release-tag-app.json and registered by scripts/create-release-tag-app.mjs.",
+	"public": false,
+	"hook_attributes": {
+		"url": "https://github.com/Jiayang-Lai/Kite",
+		"active": false
+	},
+	"default_permissions": {
+		"contents": "write"
+	},
+	"default_events": [],
+	"request_oauth_on_install": false
+}

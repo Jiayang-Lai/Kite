@@ -7,6 +7,12 @@
 - Optional: a local Kustainer instance for executing Kusto queries
 - Optional: the .NET 10 SDK and `wasm-tools` workload for rebuilding the KQL translator
 
+## Use the dev container
+
+The repository includes a VS Code dev container with Node.js, the .NET SDK, the GitHub CLI, Terraform, and Playwright's Chromium. Open the folder in VS Code and choose **Dev Containers: Reopen in Container**; `.devcontainer/post-create.sh` restores the submodule and dependencies on creation.
+
+Rebuilds reuse large downloads. Chromium's system libraries are an image layer in `.devcontainer/Dockerfile`, and Playwright browsers, the npm cache, and NuGet packages live in the `kite-playwright-browsers`, `kite-npm-cache`, and `kite-nuget-packages` Docker volumes, which survive rebuilds. To start from empty caches, remove those volumes with `docker volume rm` while the container is stopped.
+
 ## Run the development server
 
 ```bash
@@ -30,7 +36,7 @@ dotnet workload restore vendor/kql-to-sql/src/KqlWasmBridge/KqlWasmBridge.csproj
 npm run build:kql-wasm
 ```
 
-`npm run build` verifies that the generated framework files are present before producing a deployable application.
+`npm run build` verifies that the generated framework files are present before producing a deployable application. After Vite finishes, its `postbuild` step (`scripts/generate-csp-headers.mjs`) hashes the inline scripts in the prerendered pages and writes the `Content-Security-Policy-Report-Only` header for the selected build target. `npm run preview` serves that header, and the end-to-end tests fail on any policy violation. See [Security headers and Content Security Policy](architecture.md#security-headers-and-content-security-policy).
 
 ## Validate a change
 
@@ -60,7 +66,7 @@ npm run test:e2e:install
 | Command                           | Description                                           |
 | --------------------------------- | ----------------------------------------------------- |
 | `npm run dev`                     | Start the development server                          |
-| `npm run build`                   | Generate sources and create a production build        |
+| `npm run build`                   | Generate sources, build, and write the CSP header     |
 | `npm run build:container`         | Create the static production build for a container    |
 | `npm run build:kql-wasm`          | Build the vendored KQL translator bridge              |
 | `npm run preview`                 | Preview the production build locally                  |

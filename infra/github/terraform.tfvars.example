@@ -12,3 +12,7 @@ cloudflare_pages_production_branch = "your-configured-production-branch"
 # require_last_push_approval      = true
 # production_reviewer_user_ids    = [32904024]
 # production_prevent_self_review  = true
+
+# Set by scripts/create-release-tag-app.mjs after it registers the release-tag GitHub App:
+# release_tag_app_id             = 1234567
+# allow_admin_release_tag_bypass = false

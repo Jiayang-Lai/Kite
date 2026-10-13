@@ -1,0 +1,93 @@
+name: Create release tag
+run-name: Create ${{ inputs.type }} tag
+
+# The only supported way to create v* release tags. The tag name comes from package.json, so a
+# release can never be tagged with a version that differs from the code it ships. The tag
+# ruleset lets only the release-tag GitHub App create v* tags; see infra/github/rulesets.tf.
+on:
+  workflow_dispatch:
+    inputs:
+      type:
+        description: Release to create
+        required: true
+        type: choice
+        options:
+          - release-candidate
+          - stable
+      commit:
+        description: Commit on main for a release candidate (default is the latest main commit). Ignored for stable releases, which tag the latest release candidate.
+        required: false
+        type: string
+
+# Serialize tag creation so two runs cannot claim the same release-candidate number.
+concurrency:
+  group: create-release-tag
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  create:
+    name: Create ${{ inputs.type }} tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The environment only admits runs from main, so a modified copy of this workflow on another
+    # branch cannot read the GitHub App key.
+    environment: release-tagging
+    steps:
+      - name: Check out main with tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Plan the release tag
+        id: plan
+        env:
+          RELEASE_TYPE: ${{ inputs.type }}
+          RELEASE_COMMIT: ${{ inputs.commit }}
+        run: |
+          node scripts/plan-release-tag.mjs \
+            --type "$RELEASE_TYPE" \
+            --commit "$RELEASE_COMMIT" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Validate the tag against the tagged commit
+        env:
+          RELEASE_SHA: ${{ steps.plan.outputs.sha }}
+          RELEASE_TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          git checkout --detach "$RELEASE_SHA"
+          npm run --silent release:validate-tag -- --tag "$RELEASE_TAG"
+
+      - name: Create a GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.RELEASE_TAG_APP_ID }}
+          private-key: ${{ secrets.RELEASE_TAG_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      # Tags created with GITHUB_TOKEN do not start other workflows, so the App token is also what
+      # lets the new tag trigger the Release workflow.
+      - name: Create the tag
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          RELEASE_SHA: ${{ steps.plan.outputs.sha }}
+          RELEASE_TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/$RELEASE_TAG" \
+            -f sha="$RELEASE_SHA" > /dev/null
+          {
+            echo "### Created \`$RELEASE_TAG\`"
+            echo
+            echo "Commit: \`$RELEASE_SHA\`. The Release workflow now validates and deploys it."
+          } >> "$GITHUB_STEP_SUMMARY"

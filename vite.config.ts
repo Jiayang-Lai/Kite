@@ -187,8 +187,19 @@ export default defineConfig({
 				test: {
 					name: 'server',
 					environment: 'node',
-					include: ['src/**/*.{test,spec}.{js,ts}', 'scripts/**/*.{test,spec}.{js,mjs,ts}'],
+					include: ['src/**/*.{test,spec}.{js,ts}'],
 					exclude: ['src/**/*.svelte.{test,spec}.{js,ts}']
+				}
+			},
+
+			// Build and release scripts run on plain Node, so their tests do not load the app's Vite
+			// config, whose browser polyfills replace modules such as `fs` and `crypto`.
+			{
+				test: {
+					name: 'scripts',
+					environment: 'node',
+					expect: { requireAssertions: true },
+					include: ['scripts/**/*.{test,spec}.{js,mjs,ts}']
 				}
 			}
 		]

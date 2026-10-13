@@ -154,10 +154,25 @@ v1.2.0-rc.2
 
 Creating an RC tag freezes the candidate identity. The tag must:
 
+- match the `version` in `package.json` on the tagged commit (`v1.2.0-rc.1` requires `1.2.0`), which `npm run release:validate-tag` enforces;
 - point to a commit contained in `main`;
 - identify a commit that passed the required CI checks;
 - identify an artifact successfully deployed to integration UAT; and
-- be created only by an authorized maintainer or release workflow.
+- be created by the **Create release tag** workflow.
+
+Prepare a release through a normal pull request before tagging: set the version with `npm version 1.2.0 --no-git-tag-version` (or `make version-bump` for the next patch version), and add the release's user-facing changes to `CHANGELOG.md`. The `--no-git-tag-version` flag stops npm from committing or tagging, because tags are created only after the change merges to `main`.
+
+### Creating release tags
+
+Release tags are created only by the manually run **Create release tag** workflow (`create-release-tag.yml`). Nobody types a version: the workflow derives the tag from `package.json`, so a tag cannot disagree with the code it releases.
+
+1. Open **Actions → Create release tag → Run workflow** on `main`.
+2. Choose the release type:
+   - **release-candidate** tags the latest `main` commit, or the commit entered in **commit**, as the next `vX.Y.Z-rc.N`.
+   - **stable** tags the commit of the latest release candidate for that version as `vX.Y.Z`. It ignores **commit** and fails if no release candidate exists.
+3. The workflow refuses a version that is already released, a commit outside `main`, and a second release candidate on an already-tagged commit. It then creates the tag, which starts the Release workflow.
+
+The `Protect release tags` ruleset lets only the workflow's GitHub App create, update, or delete `v*` tags, and the App key is available only to runs from `main`. Setup and the administrator break-glass setting are described in [GitHub repository infrastructure](../infra/github/README.md).
 
 The release-candidate environment changes only when a new RC tag is created. New commits on `main` continue to deploy to integration UAT but do not replace the frozen release candidate.
 
@@ -166,14 +181,14 @@ If UAT discovers a defect:
 1. Fix the defect through the normal pull-request workflow.
 2. Squash merge the fix into `main`.
 3. Build and validate the new `main` commit in integration UAT.
-4. Create the next RC tag on that commit.
+4. Run **Create release tag** with **release-candidate** to tag that commit as the next RC.
 5. Repeat final UAT.
 
 An existing RC tag is never moved, reused, or deleted to hide a failed candidate. Each attempt gets a new prerelease number.
 
 ## Production release
 
-After final UAT approval, create the corresponding stable semantic-version tag:
+After final UAT approval, run **Create release tag** with **stable** to create the corresponding stable semantic-version tag:
 
 ```text
 v1.2.0
@@ -189,7 +204,7 @@ v1.2.0 ────────┘
 
 The production workflow accepts stable semantic-version tags only. Tags with a prerelease suffix, including `-rc.N`, must never trigger production deployment.
 
-Stable tags and their release records are immutable. Tag creation, updates, and deletion are restricted to authorized maintainers or release automation. Publishing the stable tag represents release approval; an additional protected-environment approval may be required when separation of duties is needed.
+Stable tags and their release records are immutable. Tag creation, updates, and deletion are restricted to the **Create release tag** workflow's GitHub App. Publishing the stable tag represents release approval; an additional protected-environment approval may be required when separation of duties is needed.
 
 ## Release readiness
 
@@ -264,7 +279,7 @@ Because `main` is the only long-lived branch, a released hotfix does not require
 - Preview, UAT, RC, and production configuration and secrets are isolated from each other.
 - Production credentials are unavailable to pull-request, integration UAT, and RC jobs.
 - The deployment system records the source commit, tag, pull request, environment, initiator, run identifier, artifact checksum, and result.
-- Only authorized maintainers can create release tags or initiate a production deployment or rollback.
+- Only maintainers who can run the **Create release tag** workflow can create release tags, and only authorized maintainers can initiate a production deployment or rollback.
 - A single deployment owner must be used for each environment to avoid duplicate deployments.
 
 ## Failure and rollback policy
@@ -302,6 +317,7 @@ Every deployment should record:
 | `pull-request.yml` | Pull request targeting `main` | Runs unprivileged validation and uploads the prospective merge artifact |
 | `preview.yml` | Successful Pull Request workflow | Verifies the current internal PR and deploys its artifact using trusted `main` tooling |
 | `main-uat.yml` | Push to `main` | Runs validation, retains the commit artifact, deploys integration UAT, and runs a smoke test |
+| `create-release-tag.yml` | Manual run on `main` | Derives the next RC or stable tag from `package.json` and creates it with the release-tag GitHub App |
 | `release.yml` | Tag matching `v*` | Validates the tag, retains the approved RC artifact, and promotes it to RC or production |
 
 The pull-request workflow never receives Cloudflare credentials. A separate `workflow_run` workflow defined on trusted `main` verifies that the successful run belongs to the current revision of an open, same-repository pull request targeting `main`. It then downloads that run's validated artifact and deploys it with dependencies installed from the trusted `main` lockfile. Pull requests from forks therefore run validation but cannot start a credential-bearing deployment job. Because `workflow_run` itself is associated with `main`, the preview job disables GitHub's automatic environment deployment record and explicitly creates a transient deployment for the originating PR head SHA. The resulting preview URL and deployment status therefore appear on the pull request.
@@ -330,7 +346,8 @@ The container publisher pushes the canonical `v...` tag, captures its registry m
 | `npm run test:smoke -- --url <url>` | Verify a deployed environment with retries |
 | `npm run test:ci` | Run formatting, type, unit, build, and end-to-end validation |
 | `npm run security:audit` | Fail on high or critical production dependency advisories |
-| `npm run release:validate-tag -- --tag <tag>` | Validate stable and RC semantic-version tags |
+| `npm run release:validate-tag -- --tag <tag>` | Validate a stable or RC semantic-version tag and check that it matches `package.json` |
+| `npm run setup:release-tag-app` | Register the release-tag GitHub App from its manifest and store its key; see [GitHub repository infrastructure](../infra/github/README.md#release-tag-github-app) |
 | `chrnorm/deployment-action@v2` | Create the preview's transient GitHub Deployment |
 | `chrnorm/deployment-status@v2` | Record the preview deployment URL and final status |
 | `cloudflare/wrangler-action@v3` | Upload the verified artifact to Cloudflare Pages in Actions |
@@ -357,15 +374,18 @@ Terraform creates these GitHub Environments:
 | `integration-uat`   | Commits on `main`      | `uat`                                            |
 | `release-candidate` | RC tags                | `release-candidate`                              |
 | `production`        | Stable tags            | The Pages project's configured production branch |
+| `release-tagging`   | Runs from `main`       | None; holds the release-tag GitHub App key       |
 
 Terraform under `infra/github` creates the environments, deployment source policies, Actions variables, repository merge settings, and branch and tag rulesets. Configure the following values:
 
-| Name                            | Kind                 | Scope                   |
-| ------------------------------- | -------------------- | ----------------------- |
-| `CLOUDFLARE_ACCOUNT_ID`         | Repository variable  | All four environments   |
-| `CLOUDFLARE_PAGES_PROJECT_NAME` | Repository variable  | All four environments   |
-| `CLOUDFLARE_PAGES_BRANCH`       | Environment variable | UAT, RC, and production |
-| `CLOUDFLARE_API_TOKEN`          | Environment secret   | All four environments   |
+| Name                            | Kind                 | Scope                           |
+| ------------------------------- | -------------------- | ------------------------------- |
+| `CLOUDFLARE_ACCOUNT_ID`         | Repository variable  | All four environments           |
+| `CLOUDFLARE_PAGES_PROJECT_NAME` | Repository variable  | All four environments           |
+| `CLOUDFLARE_PAGES_BRANCH`       | Environment variable | UAT, RC, and production         |
+| `CLOUDFLARE_API_TOKEN`          | Environment secret   | All four environments           |
+| `RELEASE_TAG_APP_ID`            | Environment variable | `release-tagging`               |
+| `RELEASE_TAG_APP_PRIVATE_KEY`   | Environment secret   | `release-tagging`, set manually |
 
 The first signed release creates the `kite-signatures` GHCR package. Make that package public so users can verify the public `kite` image without registry credentials, and confirm that it is connected to this repository with Actions write access. The release job's immediate verification is authenticated and can succeed before public visibility is configured, but anonymous consumer verification cannot.
 
@@ -381,18 +401,16 @@ The GitHub Terraform root deliberately does not handle the Cloudflare token. The
 
 ## Creating a release
 
-After selecting a successful integration UAT commit, create and push the first RC tag:
+Make sure `package.json` and `CHANGELOG.md` on `main` carry the new version. After selecting a successful integration UAT commit, run the **Create release tag** workflow with **release-candidate**, entering the commit SHA if it is not the latest `main` commit. The workflow creates `vX.Y.Z-rc.1`, or the next free RC number. The same steps from the GitHub CLI:
 
 ```bash
-git tag -a v1.2.0-rc.1 <commit-sha> -m "Kite v1.2.0-rc.1"
-git push origin v1.2.0-rc.1
+gh workflow run create-release-tag.yml --ref main -f type=release-candidate -f commit=<commit-sha>
 ```
 
-Create a new RC tag for every corrected candidate. After the final RC deployment passes UAT, create the stable tag on the same commit:
+Create a new RC for every corrected candidate. After the final RC deployment passes UAT, create the stable tag, which the workflow places on that RC's commit:
 
 ```bash
-git tag -a v1.2.0 <same-commit-sha> -m "Kite v1.2.0"
-git push origin v1.2.0
+gh workflow run create-release-tag.yml --ref main -f type=stable
 ```
 
-Do not create the stable tag until the RC workflow and final UAT have completed successfully.
+Do not create the stable tag until the RC workflow and final UAT have completed successfully. Pushing a `v*` tag directly is rejected by the tag ruleset.

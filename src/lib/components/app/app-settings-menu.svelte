@@ -96,7 +96,7 @@
 		id: string;
 		tenantId: string;
 		clientId: string;
-		account?: import('$lib/kusto/query-client').LogAnalyticsAccountBinding;
+		account?: import('$lib/cluster/connections').LogAnalyticsAccountBinding;
 	}) {
 		const account = profile.account;
 		return account
@@ -112,7 +112,7 @@
 		id: string;
 		tenantId: string;
 		clientId: string;
-		account?: import('$lib/kusto/query-client').LogAnalyticsAccountBinding;
+		account?: import('$lib/cluster/connections').LogAnalyticsAccountBinding;
 	}) {
 		profileAuthenticationError = '';
 		const account = profile.account;
@@ -141,7 +141,7 @@
 		id: string;
 		tenantId: string;
 		clientId: string;
-		account?: import('$lib/kusto/query-client').LogAnalyticsAccountBinding;
+		account?: import('$lib/cluster/connections').LogAnalyticsAccountBinding;
 	}) {
 		if (signingOutProfileId) return;
 		profileAuthenticationError = '';
@@ -225,7 +225,7 @@
 						</div>
 						<div class="grid flex-1 text-left text-sm leading-tight">
 							<span class="truncate font-medium">Settings</span>
-							<span class="text-muted-foreground truncate text-xs">Tinker tinker</span>
+							<span class="truncate text-xs text-muted-foreground">Tinker tinker</span>
 						</div>
 						<ChevronsUpDownIcon class="ms-auto size-4" />
 					</Sidebar.MenuButton>
@@ -284,13 +284,13 @@
 				{#if profileView === 'current'}
 					<div class="mb-4">
 						<h3 class="text-sm font-medium">Current profiles</h3>
-						<p class="text-muted-foreground mt-1 text-sm">
+						<p class="mt-1 text-sm text-muted-foreground">
 							Reusable Microsoft Entra authentication profiles saved in this browser.
 						</p>
 					</div>
 					{#if profileAuthenticationError}
 						<p
-							class="border-destructive/30 bg-destructive/10 text-destructive mb-4 rounded-md border px-3 py-2 text-sm"
+							class="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
 							role="alert"
 						>
 							{profileAuthenticationError}
@@ -300,7 +300,7 @@
 						<div class="grid gap-5 rounded-md border p-4">
 							<div>
 								<h4 class="text-sm font-medium">Remove {profileToRemove.name}?</h4>
-								<p class="text-muted-foreground mt-1 text-sm">
+								<p class="mt-1 text-sm text-muted-foreground">
 									Remove this Kite profile only, or also clear its Kite sign-in.
 								</p>
 							</div>
@@ -337,28 +337,28 @@
 												<p class="truncate text-sm font-medium">{profile.name}</p>
 												{#if activeLogAnalyticsAuthenticationProfileId === profile.id}
 													<span
-														class="bg-primary/10 text-primary shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium"
+														class="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary"
 													>
 														Current connection
 													</span>
 												{/if}
 											</div>
 											{#if profile.account}
-												<p class="text-muted-foreground truncate text-xs">
+												<p class="truncate text-xs text-muted-foreground">
 													Signed in as {profile.account.username}
 												</p>
 											{/if}
-											<p class="text-muted-foreground truncate text-xs">
+											<p class="truncate text-xs text-muted-foreground">
 												Tenant ID: {profile.tenantId}
 											</p>
-											<p class="text-muted-foreground truncate text-xs">
+											<p class="truncate text-xs text-muted-foreground">
 												Application ID: {profile.clientId}
 											</p>
 										</div>
 									</div>
 									{#if signingOutProfileId === profile.id}
 										<div class="flex flex-wrap items-center justify-end gap-2 sm:flex-nowrap">
-											<span class="text-muted-foreground text-xs">Waiting for Entra…</span>
+											<span class="text-xs text-muted-foreground">Waiting for Entra…</span>
 											<Button
 												variant="ghost"
 												size="sm"
@@ -391,7 +391,7 @@
 									>
 								</div>
 							{:else}
-								<p class="text-muted-foreground p-6 text-center text-sm">
+								<p class="p-6 text-center text-sm text-muted-foreground">
 									No Azure authentication profiles have been created.
 								</p>
 							{/each}
@@ -400,7 +400,7 @@
 				{:else}
 					<div class="mb-5">
 						<h3 class="text-sm font-medium">New Azure authentication profile</h3>
-						<p class="text-muted-foreground mt-1 text-sm">
+						<p class="mt-1 text-sm text-muted-foreground">
 							Create a reusable Microsoft Entra authentication profile.
 						</p>
 					</div>

@@ -9,7 +9,8 @@ import type { KustoDatabase, KustoDatabaseSchema } from '$lib/types/kusto-schema
 import type { ClusterConnectionStore } from '$lib/cluster/cluster-connection-store.svelte';
 import { getConnectionCapabilities } from '$lib/cluster/connection-capabilities';
 import { createDatabaseMutationController } from './database-mutation-controller.svelte';
-import { getKustoErrorMessage } from '$lib/kusto/query-client';
+import { getErrorMessage } from '$lib/query/error-message';
+import { isOperationCancelled } from '$lib/types/query-result';
 import {
 	snapshotLoadedTable,
 	type CreateTablePlan,
@@ -234,9 +235,8 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 			state.editorSnapshot = verification.snapshot;
 		} catch (error) {
 			if (!current.controller.isCurrent(requestId)) return;
-			const message = getKustoErrorMessage(error);
-			if (message !== 'Command cancelled.')
-				state.mutationError = `Kite could not verify the current table schema. The update is disabled until verification succeeds.\n\n${message}`;
+			if (!isOperationCancelled(error))
+				state.mutationError = `Kite could not verify the current table schema. The update is disabled until verification succeeds.\n\n${getErrorMessage(error)}`;
 		} finally {
 			if (current.controller.finish(requestId)) {
 				state.isPreparingEditor = false;
@@ -274,8 +274,7 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 			state.mutationSuccess = `${database}.${table}: ${plan.summary}.`;
 			state.editorOpen = state.columnEditorOpen = state.columnOrderOpen = false;
 		} catch (error) {
-			if (current.controller.isCurrent(requestId))
-				state.mutationError = getKustoErrorMessage(error);
+			if (current.controller.isCurrent(requestId)) state.mutationError = getErrorMessage(error);
 		} finally {
 			if (current.controller.finish(requestId)) state.isMutating = false;
 		}
@@ -307,8 +306,7 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 			state.createTableOpen = false;
 			current.options.setSelectedDatabase(database);
 		} catch (error) {
-			if (current.controller.isCurrent(requestId))
-				state.createTableError = getKustoErrorMessage(error);
+			if (current.controller.isCurrent(requestId)) state.createTableError = getErrorMessage(error);
 		} finally {
 			if (current.controller.finish(requestId)) state.isCreatingTable = false;
 		}
@@ -334,7 +332,7 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 			await current.options.onrefreshschema?.(clusterId);
 			state.mutationSuccess = `Table ${state.tableDropDatabaseName}.${state.tableDropTableName} removed.`;
 		} catch (error) {
-			throw new Error(getKustoErrorMessage(error));
+			throw new Error(getErrorMessage(error));
 		} finally {
 			if (current.controller.finish(requestId)) state.isDroppingTable = false;
 		}
@@ -370,7 +368,7 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 						? `Database ${target} renamed to ${next}.`
 						: `Database ${target} deleted.`;
 		} catch (error) {
-			throw new Error(getKustoErrorMessage(error));
+			throw new Error(getErrorMessage(error));
 		} finally {
 			if (current.controller.finish(requestId)) state.isDatabaseMutating = false;
 		}

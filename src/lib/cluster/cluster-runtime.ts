@@ -16,6 +16,11 @@ import { getMockClusterSchema } from './mock-cluster-schema';
 
 export type { ClusterConnectionOfKind, ClusterKind } from './connections';
 
+// Deliberately module-scoped: these coordinate browser-wide resources rather than holding
+// application state. DuckDB-WASM sessions are shared by every workspace in the tab, so their
+// acquisition and release must be serialized globally. A route change can mount the next
+// workspace before the previous one is destroyed, so the latest schema load is also tracked
+// here to supersede a load that belongs to a workspace that is being torn down.
 let transitionQueue = Promise.resolve();
 let activeSchemaLoad: AbortController | undefined;
 

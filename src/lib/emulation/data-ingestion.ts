@@ -1,7 +1,11 @@
 import { startDuckDbFileQuery, type DuckDbRegisteredFileSource } from '$lib/duckdb/lazy-client';
 import { loadEmulatedSchema } from '$lib/emulation/cluster';
 import { qualifyDuckDbTable, quoteDuckDbString } from '$lib/emulation/sql-format';
-import type { QueryExecution, QueryResult } from '$lib/types/query-result';
+import {
+	OperationCancelledError,
+	type QueryExecution,
+	type QueryResult
+} from '$lib/types/query-result';
 
 export type EmulatedIngestionFormat = 'csv' | 'parquet';
 
@@ -118,7 +122,7 @@ export function startEmulatedIngestion(request: EmulatedIngestionRequest): Query
 	const promise = (async () => {
 		const source = prepareSource(request);
 		const schema = await loadEmulatedSchema(request.clusterId);
-		if (cancelled) throw new Error('Query cancelled.');
+		if (cancelled) throw new OperationCancelledError('Query cancelled.');
 		const database = schema[request.database];
 		if (!database) throw new Error(`Database “${request.database}” no longer exists.`);
 		if (!database.tables.some((table) => table.name === request.table)) {
@@ -141,7 +145,7 @@ export function startEmulatedIngestion(request: EmulatedIngestionRequest): Query
 		activeExecution = execution;
 		if (cancelled) execution.cancel();
 		const result = await execution.promise;
-		if (cancelled) throw new Error('Query cancelled.');
+		if (cancelled) throw new OperationCancelledError('Query cancelled.');
 		return summarizeResult(result, request, source.label);
 	})();
 

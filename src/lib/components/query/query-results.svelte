@@ -100,7 +100,7 @@
 			</Tabs.Trigger>
 		</Tabs.List>
 
-		<div class="text-muted-foreground flex shrink-0 items-center gap-1 text-[10px] sm:gap-2">
+		<div class="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground sm:gap-2">
 			{#if isRunning}
 				<Spinner class="size-3" />
 				<span>Running</span>
@@ -129,27 +129,27 @@
 			{#if error}
 				<div class="h-full min-h-0 overflow-y-auto p-3">
 					<div
-						class="border-destructive/30 bg-destructive/10 text-destructive mx-auto w-full max-w-3xl rounded-md border p-3 text-xs"
+						class="mx-auto w-full max-w-3xl rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
 					>
 						<p class="font-medium">{operationLabel} failed</p>
 						<p class="mt-1 whitespace-pre-wrap">{error}</p>
 						{#if errorRequestId}
 							<p class="mt-3 text-[11px]">
 								Request ID:
-								<span class="ml-1 break-all font-mono text-foreground">{errorRequestId}</span>
+								<span class="ml-1 font-mono break-all text-foreground">{errorRequestId}</span>
 							</p>
 						{/if}
 						{#if rawError}
 							<details class="mt-3 rounded border border-current/20 bg-background/50 p-2">
 								<summary class="cursor-pointer font-medium">Raw error JSON</summary>
 								<pre
-									class="mt-2 overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] text-foreground">{rawError}</pre>
+									class="mt-2 overflow-x-auto font-mono text-[11px] break-words whitespace-pre-wrap text-foreground">{rawError}</pre>
 							</details>
 						{/if}
 					</div>
 				</div>
 			{:else if isRunning && !result}
-				<div class="text-muted-foreground grid h-full place-items-center text-xs">
+				<div class="grid h-full place-items-center text-xs text-muted-foreground">
 					<div class="flex items-center gap-2">
 						<Spinner class="size-4" /> Running {operationLabel.toLowerCase()}…
 					</div>
@@ -157,11 +157,11 @@
 			{:else if result?.columns.length}
 				<ResultTable {result} />
 			{:else if result}
-				<div class="text-muted-foreground grid h-full place-items-center px-4 text-center text-xs">
+				<div class="grid h-full place-items-center px-4 text-center text-xs text-muted-foreground">
 					Query completed successfully without a tabular result.
 				</div>
 			{:else}
-				<div class="text-muted-foreground grid h-full place-items-center px-4 text-center text-xs">
+				<div class="grid h-full place-items-center px-4 text-center text-xs text-muted-foreground">
 					Run a {operationLabel.toLowerCase()} to see its results.
 				</div>
 			{/if}
@@ -187,7 +187,7 @@
 								{#each queryDetails as detail (detail.label)}
 									<div class="min-w-0">
 										<dt>{detail.label}</dt>
-										<dd class="mt-0.5 break-words font-medium text-foreground">{detail.value}</dd>
+										<dd class="mt-0.5 font-medium break-words text-foreground">{detail.value}</dd>
 									</div>
 								{/each}
 							</dl>
@@ -199,7 +199,7 @@
 									>Raw Azure statistics</summary
 								>
 								<pre
-									class="text-muted-foreground mt-2 overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px]">{rawStatistics}</pre>
+									class="mt-2 overflow-x-auto font-mono text-[11px] break-words whitespace-pre-wrap text-muted-foreground">{rawStatistics}</pre>
 							</details>
 						{/if}
 					{:else if !error}

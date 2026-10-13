@@ -7,7 +7,7 @@ const msal = vi.hoisted(() => ({
 
 vi.mock('@azure/msal-browser', () => msal);
 
-import type { LogAnalyticsConnectionConfiguration } from '$lib/kusto/query-client';
+import type { LogAnalyticsConnectionConfiguration } from '$lib/cluster/connections';
 import { LOG_ANALYTICS_SCOPE, LogAnalyticsSessionManager } from './session-manager';
 
 const account = {

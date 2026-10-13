@@ -1,8 +1,13 @@
 import { acquireLogAnalyticsToken } from '$lib/log-analytics/auth';
-import type { LogAnalyticsConnectionConfiguration } from '$lib/kusto/query-client';
+import type { LogAnalyticsConnectionConfiguration } from '$lib/cluster/connections';
 import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 import type { LogAnalyticsQueryError, LogAnalyticsQueryStatistics } from '$lib/types/log-analytics';
-import { QueryRequestError, type QueryExecution, type QueryResult } from '$lib/types/query-result';
+import {
+	OperationCancelledError,
+	QueryRequestError,
+	type QueryExecution,
+	type QueryResult
+} from '$lib/types/query-result';
 import { normalizeResultValue } from '$lib/query/result-value';
 
 const ENDPOINT = 'https://api.loganalytics.azure.com/v1/workspaces';
@@ -204,7 +209,7 @@ export function startLogAnalyticsQuery(
 			};
 		})
 		.catch((error: unknown) => {
-			if (cancelled) throw new Error('Query cancelled.');
+			if (cancelled) throw new OperationCancelledError('Query cancelled.');
 			if (controller.signal.aborted) throw new Error('Query timed out.');
 			throw error;
 		})

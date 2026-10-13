@@ -53,12 +53,14 @@ cp terraform.tfvars.example terraform.tfvars
 
 Confirm that `pages_production_branch` matches the production branch configured on the existing Pages project. Then initialise, format, validate, and inspect the plan:
 
+From the repository root (each command loads the credentials from `infra/cloudflare/.env`; see [Running Terraform](../README.md#running-terraform)):
+
 ```bash
-terraform init
-terraform fmt -check -recursive
-terraform validate
-terraform plan -out=tfplan
-terraform apply tfplan
+make tf ROOT=cloudflare CMD=init
+make tf ROOT=cloudflare CMD="fmt -check -recursive"
+make tf ROOT=cloudflare CMD=validate
+make tf ROOT=cloudflare CMD="plan -out=tfplan"
+make tf ROOT=cloudflare CMD="apply tfplan"
 ```
 
 The first apply imports the existing Pages project and custom-domain attachment, creates the least-privilege deployment token, and replaces `CLOUDFLARE_API_TOKEN` in each GitHub environment with that token.
@@ -72,10 +74,8 @@ If permission-group discovery reports zero Pages Write matches, verify that the 
 Policy changes do not necessarily change the secret value. Explicitly replace the token when rotating it:
 
 ```bash
-terraform plan \
-  -replace=cloudflare_account_token.github_actions_pages \
-  -out=tfplan
-terraform apply tfplan
+make tf ROOT=cloudflare CMD="plan -replace=cloudflare_account_token.github_actions_pages -out=tfplan"
+make tf ROOT=cloudflare CMD="apply tfplan"
 ```
 
 The token uses `create_before_destroy`, and the GitHub secrets depend on its value. Terraform therefore creates the replacement and updates all four environment secrets before deleting the superseded token. Afterward, run a non-production deployment and confirm that the new credential works. If it does not, use the bootstrap identity to create another replacement.

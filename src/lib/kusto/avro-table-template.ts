@@ -1,6 +1,7 @@
 import type { KiteAvroTableTemplate } from '$lib/generated/kite-avro-table-template';
 import type { KustoScalarType, NewTableColumn } from '$lib/kusto/table-management';
 import type { KustoDatabase, KustoTable } from '$lib/types/kusto-schema';
+import { validateAvroSchema } from './avro-schema';
 
 export const MAX_AVRO_TABLE_TEMPLATE_BYTES = 256 * 1024;
 
@@ -123,9 +124,7 @@ export async function parseAvroTableTemplate(source: string): Promise<ImportedAv
 
 	const template = supportedRecord(parsed);
 	try {
-		// Avro's browser implementation is intentionally loaded only when a user imports a template.
-		const { default: avsc } = await import('avsc');
-		avsc.Type.forSchema(template as unknown as Parameters<typeof avsc.Type.forSchema>[0]);
+		validateAvroSchema(template);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		throw new Error(`Invalid Avro table template: ${message}`);

@@ -24,7 +24,7 @@
 	import { Spinner } from '$lib/components/ui/spinner';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import type { NewClusterConnection } from '$lib/cluster/cluster-connection-store.svelte';
-	import type { KustoClusterConnection } from '$lib/kusto/query-client';
+	import type { KustoClusterConnection } from '$lib/cluster/connections';
 
 	const sidebar = Sidebar.useSidebar();
 	const azureAuthenticationProfiles = getAzureAuthenticationProfileStore();
@@ -148,7 +148,7 @@
 						aria-disabled={disabled || locked}
 					>
 						<div
-							class="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg"
+							class="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground"
 						>
 							{#if selectedCluster?.kind === 'mock'}
 								<FlaskConicalIcon class="size-4" />
@@ -176,12 +176,12 @@
 								{/if}
 							</div>
 							{#if switching}
-								<span class="text-muted-foreground truncate text-xs" aria-live="polite">
+								<span class="truncate text-xs text-muted-foreground" aria-live="polite">
 									Switching to {selectedCluster?.name ?? selectedClusterId}…
 								</span>
 							{:else}
 								<span
-									class="text-muted-foreground truncate text-xs"
+									class="truncate text-xs text-muted-foreground"
 									title={selectedCluster?.description ?? clusterTypeSummary(selectedCluster)}
 								>
 									{selectedCluster?.description ?? clusterTypeSummary(selectedCluster)}
@@ -190,7 +190,7 @@
 						</div>
 						{#if locked}
 							<LockIcon
-								class="text-muted-foreground ms-auto size-4"
+								class="ms-auto size-4 text-muted-foreground"
 								aria-label="Cluster selection locked"
 							/>
 						{:else if switching}
@@ -206,10 +206,10 @@
 				side={sidebar.isMobile ? 'bottom' : 'right'}
 				align="start"
 				sideOffset={4}
-				class="bg-popover text-popover-foreground w-96 max-w-[calc(100vw-4rem)] rounded-md border p-1 shadow-md"
+				class="w-96 max-w-[calc(100vw-4rem)] rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
 			>
 				<DropdownMenu.Group>
-					<DropdownMenu.GroupHeading class="text-muted-foreground px-2 py-1.5 text-xs font-medium">
+					<DropdownMenu.GroupHeading class="px-2 py-1.5 text-xs font-medium text-muted-foreground">
 						Clusters
 					</DropdownMenu.GroupHeading>
 					{#each clusters as cluster (cluster.id)}
@@ -218,7 +218,7 @@
 								{#snippet child({ props })}
 									<DropdownMenu.Item
 										{...props}
-										class="data-highlighted:bg-accent data-highlighted:text-accent-foreground flex cursor-default items-center gap-2 rounded-sm px-2 py-2 text-sm outline-none"
+										class="flex cursor-default items-center gap-2 rounded-sm px-2 py-2 text-sm outline-none data-highlighted:bg-accent data-highlighted:text-accent-foreground"
 										onpointerenter={() => (tooltipClusterId = cluster.id)}
 										onpointerleave={() => (tooltipClusterId = undefined)}
 										onfocus={() => (tooltipClusterId = cluster.id)}
@@ -252,7 +252,7 @@
 										<div class="grid min-w-0 flex-1 gap-0.5">
 											<span class="truncate">{cluster.name}</span>
 											{#if cluster.description}
-												<span class="text-muted-foreground truncate text-xs">
+												<span class="truncate text-xs text-muted-foreground">
 													{cluster.description}
 												</span>
 											{/if}
@@ -265,7 +265,7 @@
 												/>
 											{/if}
 											{#if cluster.id === selectedClusterId}
-												<span class="text-muted-foreground text-xs">Current</span>
+												<span class="text-xs text-muted-foreground">Current</span>
 											{/if}
 										</div>
 									</DropdownMenu.Item>
@@ -299,7 +299,7 @@
 				{#if selectedCluster?.kind === 'log-analytics' && selectedCluster.logAnalytics && selectedAzureAuthenticationProfile}
 					<DropdownMenu.Group>
 						<DropdownMenu.GroupHeading
-							class="text-muted-foreground px-2 py-1.5 text-xs font-medium"
+							class="px-2 py-1.5 text-xs font-medium text-muted-foreground"
 						>
 							Authentication Status
 						</DropdownMenu.GroupHeading>
@@ -328,14 +328,14 @@
 					<DropdownMenu.Separator />
 				{/if}
 				<DropdownMenu.Item
-					class="data-highlighted:bg-accent data-highlighted:text-accent-foreground flex cursor-default items-center gap-2 rounded-sm px-2 py-2 text-sm font-medium outline-none"
+					class="flex cursor-default items-center gap-2 rounded-sm px-2 py-2 text-sm font-medium outline-none data-highlighted:bg-accent data-highlighted:text-accent-foreground"
 					onSelect={openAddCluster}
 				>
 					<PlusIcon class="size-4" />
 					Add cluster
 				</DropdownMenu.Item>
 				<DropdownMenu.Item
-					class="data-highlighted:bg-accent data-highlighted:text-accent-foreground flex cursor-default items-center gap-2 rounded-sm px-2 py-2 text-sm font-medium outline-none"
+					class="flex cursor-default items-center gap-2 rounded-sm px-2 py-2 text-sm font-medium outline-none data-highlighted:bg-accent data-highlighted:text-accent-foreground"
 					disabled={customClusters.length === 0}
 					onSelect={() => (manageClustersOpen = true)}
 				>

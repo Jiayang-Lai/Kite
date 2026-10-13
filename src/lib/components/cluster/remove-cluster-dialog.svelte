@@ -1,6 +1,6 @@
 <script lang="ts">
 	import ConfirmationDialog from '$lib/components/admin/confirmation-dialog.svelte';
-	import type { KustoClusterConnection } from '$lib/kusto/query-client';
+	import type { KustoClusterConnection } from '$lib/cluster/connections';
 
 	type RemoveClusterDialogProps = {
 		open?: boolean;
@@ -44,9 +44,7 @@
 			Kite will switch to the Mock cluster and close all open query tabs after removal.
 		</p>
 	{:else}
-		<p class={warningMessageClass}>
-			Kite will not switch clusters after removal.
-		</p>
+		<p class={warningMessageClass}>Kite will not switch clusters after removal.</p>
 	{/if}
 	{#if removesStoredData}
 		<p class={warningMessageClass}>

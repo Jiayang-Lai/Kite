@@ -148,7 +148,7 @@
 		<div
 			bind:this={tabList}
 			class:cursor-grabbing={dragPointerId !== undefined}
-			class="flex h-full min-w-0 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+			class="flex h-full min-w-0 [scrollbar-width:none] items-center overflow-x-auto [&::-webkit-scrollbar]:hidden"
 			role="tablist"
 			aria-label="Query tabs"
 			tabindex="0"
@@ -167,7 +167,7 @@
 				<div
 					data-query-tab-id={tab.id}
 					class={cn(
-						'group flex h-full min-w-0 shrink-0 items-center border-r border-t-2 border-t-transparent px-2 text-xs transition-colors',
+						'group flex h-full min-w-0 shrink-0 items-center border-t-2 border-r border-t-transparent px-2 text-xs transition-colors',
 						tab.id === activeTab?.id
 							? 'border-t-primary bg-primary/10 text-foreground'
 							: isModified
@@ -204,7 +204,7 @@
 					>
 						{#if isDirty(tab)}
 							<span
-								class="bg-primary mr-1 inline-block size-1.5 shrink-0 rounded-full"
+								class="mr-1 inline-block size-1.5 shrink-0 rounded-full bg-primary"
 								aria-hidden="true"
 							></span>
 							<span class="sr-only">Unsaved changes </span>

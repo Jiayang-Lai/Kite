@@ -2,8 +2,9 @@ import {
 	startEmulatedIngestion,
 	type EmulatedIngestionRequest
 } from '$lib/emulation/data-ingestion';
-import { getKustoErrorMessage, startKustoManagementCommand } from '$lib/kusto/query-client';
-import type { QueryExecution } from '$lib/types/query-result';
+import { startKustoManagementCommand } from '$lib/kusto/query-client';
+import { getErrorMessage } from '$lib/query/error-message';
+import { isOperationCancelled, type QueryExecution } from '$lib/types/query-result';
 
 export type IngestionRequest =
 	| { kind: 'emulated'; request: EmulatedIngestionRequest }
@@ -17,8 +18,7 @@ export function startIngestion(request: IngestionRequest): QueryExecution {
 }
 
 export function formatIngestionError(error: unknown, kind: IngestionRequest['kind']) {
-	const message = getKustoErrorMessage(error);
-	if (message !== 'Command cancelled.') return message;
+	if (!isOperationCancelled(error)) return getErrorMessage(error);
 	return kind === 'emulated'
 		? 'Ingestion cancelled. DuckDB rolled back the active append.'
 		: 'Stopped waiting for ingestion. The Kusto operation may still complete.';

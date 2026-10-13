@@ -11,8 +11,9 @@
 		ExplorerQuery,
 		ExplorerSelection
 	} from '$lib/components/query/database-explorer/cluster-explorer-types';
+	import { createConfirmationPrompt } from '$lib/app/confirmation-prompt.svelte';
+	import ConfirmationPromptDialog from '$lib/components/shared/confirmation-prompt-dialog.svelte';
 	import { getClusterSession } from '$lib/cluster/cluster-session.svelte';
-	import { getPersistedActiveClusterId } from '$lib/cluster/active-cluster-preference';
 	import {
 		getClusterConnectionStore,
 		type NewClusterConnection
@@ -51,32 +52,21 @@
 	const clusters = $derived(clusterConnectionStore.clusters);
 	const customClusters = $derived(clusterConnectionStore.customClusters);
 	const clusterSession = getClusterSession();
+	const confirmationPrompt = createConfirmationPrompt();
 	const recentQueryStore = getRecentQueryStore();
 	const savedQueryStore = getSavedQueryStore();
 	let isTableMutating = $state(false);
 	let explorerFilter = $state('');
-	let selectedDatabase = $state(clusterSession.selectedDatabase);
-	let selectedTable = $state(clusterSession.selectedTable);
-	let selectedFunction = $state(clusterSession.selectedFunction);
-	let hasInitializedConnection = false;
-	const initialCluster =
-		clusterConnectionStore.clusters.find(
-			(cluster) => cluster.id === clusterSession.activeClusterId
-		) ?? clusterConnectionStore.clusters[0];
 	const connectionLifecycle = createConnectionLifecycleController({
 		store: clusterConnectionStore,
 		session: clusterSession,
-		initialCluster,
-		onQueryExecutionReset: () => undefined,
-		onSchemaReady: () => undefined,
-		onstatechange: () => syncConnectionSelection()
+		confirm: confirmationPrompt.ask
 	});
 	const connectionStatus = $derived(connectionLifecycle.state.connectionStatus);
 	const connectionError = $derived(connectionLifecycle.state.connectionError);
 	const isClusterSwitching = $derived(connectionLifecycle.state.isClusterSwitching);
 	const selectedClusterId = $derived(connectionLifecycle.state.selectedClusterId);
 	const failedClusterId = $derived(connectionLifecycle.state.failedClusterId);
-	const activeClusterUrl = $derived(connectionLifecycle.state.activeClusterUrl);
 	const databaseSchema = $derived(clusterSession.databaseSchema);
 	const databaseCount = $derived(Object.keys(databaseSchema ?? {}).length);
 	const tableCount = $derived(
@@ -88,6 +78,7 @@
 	const activeCluster = $derived(
 		clusters.find((cluster) => cluster.id === clusterSession.activeClusterId)
 	);
+	const activeClusterUrl = $derived(activeCluster?.url ?? '');
 	const activeCapabilities = $derived(getConnectionCapabilities(activeCluster));
 	const isMockCluster = $derived(activeCluster?.kind === 'mock');
 	const isEmulatedCluster = $derived(activeCluster?.kind === 'emulated');
@@ -137,9 +128,6 @@
 	);
 
 	function selectRecentQuery(query: ExplorerQuery) {
-		selectedDatabase = query.database;
-		selectedTable = undefined;
-		selectedFunction = undefined;
 		clusterSession.selectedDatabase = query.database;
 		clusterSession.selectedTable = undefined;
 		clusterSession.selectedFunction = undefined;
@@ -168,77 +156,16 @@
 		clusterSession.setExplorerExpansion(clusterSession.activeClusterId, change);
 	}
 
-	async function connectCluster(clusterId = selectedClusterId) {
-		const state = connectionLifecycle.state;
-		state.selectedClusterId = clusterId;
-		state.selectedDatabase = selectedDatabase;
-		state.selectedTable = selectedTable;
-		state.selectedFunction = selectedFunction;
-		await connectionLifecycle.refresh();
-		syncConnectionSelection();
-		return state.connectionStatus === 'ready';
-	}
-
-	function syncConnectionSelection() {
-		const state = connectionLifecycle.state;
-		selectedDatabase = state.selectedDatabase;
-		selectedTable = state.selectedTable;
-		selectedFunction = state.selectedFunction;
-	}
-
 	function switchCluster(clusterId: string) {
-		if (clusterId === selectedClusterId || isClusterSwitching) return;
 		connectionLifecycle.switchCluster(clusterId);
-		syncConnectionSelection();
 	}
-
-	function addCluster(draft: NewClusterConnection) {
-		const cluster = clusterConnectionStore.add(draft);
-		switchCluster(cluster.id);
-	}
-
-	function editCluster(clusterId: string, draft: NewClusterConnection) {
-		clusterConnectionStore.update(clusterId, draft);
-		if (clusterId === selectedClusterId) void connectCluster(clusterId);
-	}
-
-	async function removeCluster(clusterId: string) {
-		await connectionLifecycle.removeCluster(clusterId);
-		syncConnectionSelection();
-	}
-
-	function retryFailedCluster() {
-		connectionLifecycle.retry();
-		syncConnectionSelection();
-	}
-
-	function dismissConnectionFailure() {
-		connectionLifecycle.dismissFailure();
-	}
-
-	$effect(() => {
-		clusterSession.selectedDatabase = selectedDatabase;
-		clusterSession.selectedTable = selectedTable;
-		clusterSession.selectedFunction = selectedFunction;
-	});
 
 	$effect(() => {
 		explorerExpansion = clusterSession.getExplorerExpansion(clusterSession.activeClusterId);
 	});
 
 	$effect(() => {
-		if (!clusterConnectionStore.hydrated || hasInitializedConnection) return;
-		hasInitializedConnection = true;
-		void connectionLifecycle.retryPendingCleanups();
-		const persistedClusterId = getPersistedActiveClusterId();
-		if (
-			!clusterSession.databaseSchema &&
-			persistedClusterId &&
-			clusters.some((cluster) => cluster.id === persistedClusterId)
-		) {
-			connectionLifecycle.state.selectedClusterId = persistedClusterId;
-		}
-		if (!clusterSession.databaseSchema) void connectCluster();
+		if (clusterConnectionStore.hydrated) connectionLifecycle.initialize();
 	});
 
 	onDestroy(() => connectionLifecycle.dispose());
@@ -252,9 +179,9 @@
 		disabled={isClusterSwitching || isTableMutating}
 		switching={isClusterSwitching}
 		onclusterchange={switchCluster}
-		onclusteradd={addCluster}
-		onclusteredit={editCluster}
-		onclusterremove={removeCluster}
+		onclusteradd={connectionLifecycle.addCluster}
+		onclusteredit={connectionLifecycle.editCluster}
+		onclusterremove={connectionLifecycle.removeCluster}
 		onlinkauthenticationprofile={(clusterId, authenticationProfileId) => {
 			clusterConnectionStore.linkLogAnalyticsAuthenticationProfile(
 				clusterId,
@@ -271,9 +198,9 @@
 		{connectionStatus}
 		showCluster
 		clusterDisabled={isClusterSwitching || isTableMutating || connectionStatus === 'loading'}
-		bind:selectedDatabase
-		bind:selectedTable
-		bind:selectedFunction
+		bind:selectedDatabase={clusterSession.selectedDatabase}
+		bind:selectedTable={clusterSession.selectedTable}
+		bind:selectedFunction={clusterSession.selectedFunction}
 		expansionState={explorerExpansion}
 		onexpansionchange={updateExplorerExpansion}
 		{recentQueries}
@@ -285,7 +212,7 @@
 		onrecentquerydelete={deleteRecentQuery}
 	/>
 	{#if connectionStatus === 'error' && !databaseSchema}
-		<p class="text-destructive px-4 pb-2 text-xs" role="alert">
+		<p class="px-4 pb-2 text-xs text-destructive" role="alert">
 			Unable to load cluster schema: {connectionError}
 		</p>
 	{/if}
@@ -306,7 +233,7 @@
 		sidebarToggleLabel="Toggle admin navigation"
 	>
 		{#if view === 'commands'}
-			<p class="text-muted-foreground mt-1 text-sm">{activeView.description}</p>
+			<p class="mt-1 text-sm text-muted-foreground">{activeView.description}</p>
 		{/if}
 	</AppHeader>
 
@@ -337,7 +264,7 @@
 			{:then module}
 				<module.default
 					databases={databaseSchema}
-					bind:selectedDatabase
+					bind:selectedDatabase={clusterSession.selectedDatabase}
 					expansionState={explorerExpansion}
 					onexpansionchange={updateExplorerExpansion}
 					clusterId={clusterSession.activeClusterId}
@@ -345,7 +272,7 @@
 					clusterName={activeClusterName}
 					isLoading={connectionStatus === 'loading'}
 					onrefreshschema={async (clusterId) => {
-						if (!(await connectCluster(clusterId))) {
+						if (!(await connectionLifecycle.connect(clusterId))) {
 							throw new Error('The backend schema refresh did not complete.');
 						}
 					}}
@@ -366,7 +293,7 @@
 			{:then module}
 				<module.default
 					databases={databaseSchema}
-					bind:selectedDatabase
+					bind:selectedDatabase={clusterSession.selectedDatabase}
 					clusterUrl={activeClusterUrl}
 					clusterName={activeClusterName}
 					{isMockCluster}
@@ -374,7 +301,7 @@
 					{isLogAnalyticsCluster}
 					managementCommands={activeCapabilities.managementCommands}
 					onrefreshschema={async () => {
-						await connectCluster(clusterSession.activeClusterId);
+						await connectionLifecycle.connect(clusterSession.activeClusterId);
 					}}
 				/>
 			{/await}
@@ -389,8 +316,8 @@
 				{#key clusterSession.activeClusterId}
 					<module.default
 						databases={databaseSchema}
-						bind:selectedDatabase
-						bind:selectedTable
+						bind:selectedDatabase={clusterSession.selectedDatabase}
+						bind:selectedTable={clusterSession.selectedTable}
 						clusterId={clusterSession.activeClusterId}
 						clusterUrl={activeClusterUrl}
 						clusterName={activeClusterName}
@@ -411,8 +338,10 @@
 			{failedClusterName}
 			{activeClusterName}
 			error={connectionError}
-			oncontinue={dismissConnectionFailure}
-			onretry={retryFailedCluster}
+			oncontinue={connectionLifecycle.dismissFailure}
+			onretry={connectionLifecycle.retry}
 		/>
 	{/if}
 </AppShell>
+
+<ConfirmationPromptDialog prompt={confirmationPrompt} />

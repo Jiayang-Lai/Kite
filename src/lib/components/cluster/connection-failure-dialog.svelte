@@ -41,7 +41,7 @@
 
 		<Card.Content>
 			<p
-				class="text-muted-foreground max-h-28 overflow-y-auto whitespace-pre-wrap rounded-md bg-background/70 p-2 font-mono text-xs"
+				class="max-h-28 overflow-y-auto rounded-md bg-background/70 p-2 font-mono text-xs whitespace-pre-wrap text-muted-foreground"
 			>
 				{error}
 			</p>

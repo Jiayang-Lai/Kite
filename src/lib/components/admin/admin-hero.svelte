@@ -62,7 +62,7 @@
 <section class="min-h-0 flex-1 overflow-auto">
 	<div class="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
 		<header class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-			<div class="min-w-0 max-w-3xl">
+			<div class="max-w-3xl min-w-0">
 				<div class="flex flex-wrap items-center gap-2">
 					<Badge variant="secondary">
 						<DatabaseZapIcon />
@@ -75,7 +75,7 @@
 				<h1 class="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
 					Operate <span class="text-primary">{clusterName}</span>
 				</h1>
-				<p class="text-muted-foreground mt-2 max-w-2xl text-sm leading-6 sm:text-base">
+				<p class="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
 					Review connection health and available administrative capabilities before making changes.
 				</p>
 			</div>
@@ -117,7 +117,7 @@
 				</Card.Header>
 				<Card.Content class="flex flex-col gap-4">
 					<div class="flex items-center justify-between gap-3">
-						<span class="text-muted-foreground text-sm">Connection</span>
+						<span class="text-sm text-muted-foreground">Connection</span>
 						<Badge variant={connectionStatus === 'error' ? 'destructive' : 'secondary'}>
 							{#if connectionStatus === 'ready'}
 								<CircleCheckIcon /> Ready
@@ -129,11 +129,11 @@
 						</Badge>
 					</div>
 					<div class="flex items-center justify-between gap-3">
-						<span class="text-muted-foreground text-sm">Databases</span>
+						<span class="text-sm text-muted-foreground">Databases</span>
 						<span class="text-sm font-medium">{databaseCount}</span>
 					</div>
 					<div class="flex items-center justify-between gap-3">
-						<span class="text-muted-foreground text-sm">Tables</span>
+						<span class="text-sm text-muted-foreground">Tables</span>
 						<span class="text-sm font-medium">{tableCount}</span>
 					</div>
 				</Card.Content>

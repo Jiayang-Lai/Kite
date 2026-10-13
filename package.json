@@ -1,7 +1,7 @@
 {
 	"name": "kite",
 	"private": true,
-	"version": "0.0.13",
+	"version": "0.1.0",
 	"type": "module",
 	"packageManager": "npm@11.14.1",
 	"engines": {
@@ -20,13 +20,14 @@
 		"dev": "vite dev",
 		"prebuild": "npm run generate && npm run download:kusto-docs && npm run verify:kql-wasm",
 		"build": "vite build",
+		"postbuild": "node scripts/generate-csp-headers.mjs",
 		"build:container": "node scripts/build-container.mjs",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"lint": "prettier --check .",
-		"lint:ci": "prettier --check package.json playwright.config.ts README.md docs/*.md infra/README.md infra/*/README.md scripts .github tests",
+		"lint:ci": "prettier --check .",
 		"format": "prettier --write .",
 		"test:unit": "vitest",
 		"test:unit:run": "vitest --run",
@@ -38,7 +39,8 @@
 		"test:smoke": "node scripts/smoke-test.mjs",
 		"test:ci": "npm run check:generated && npm run lint:ci && npm run check && npm run test:unit:run && npm run build && npm run test:e2e:run",
 		"security:audit": "npm audit --omit=dev --audit-level=high",
-		"release:validate-tag": "node scripts/validate-release-tag.mjs"
+		"release:validate-tag": "node scripts/validate-release-tag.mjs",
+		"setup:release-tag-app": "node scripts/create-release-tag-app.mjs"
 	},
 	"devDependencies": {
 		"@fontsource-variable/inter": "^5.3.0",
@@ -82,7 +84,6 @@
 		"@kusto/monaco-kusto": "^15.0.0",
 		"@tanstack/svelte-table": "^9.2.4",
 		"@tanstack/svelte-virtual": "^3.13.36",
-		"avsc": "^5.7.9",
 		"azure-kusto-data": "^7.2.0",
 		"mode-watcher": "^1.1.0",
 		"monaco-editor": "^0.55.1"
@@ -90,6 +91,8 @@
 	"overrides": {
 		"@kusto/monaco-kusto": {
 			"@kusto/language-service-next": "^12.4.0"
-		}
+		},
+		"dompurify": "^3.4.17",
+		"uuid": "^14.0.3"
 	}
 }

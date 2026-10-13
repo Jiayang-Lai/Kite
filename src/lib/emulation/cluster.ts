@@ -6,7 +6,7 @@ import {
 } from '$lib/duckdb/lazy-client';
 import { translateKqlToSql } from '$lib/kql/wasm-translator';
 import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
-import type { QueryExecution } from '$lib/types/query-result';
+import { OperationCancelledError, type QueryExecution } from '$lib/types/query-result';
 import { quoteDuckDbIdentifier } from './sql-format';
 
 export { quoteDuckDbIdentifier } from './sql-format';
@@ -167,14 +167,14 @@ export function startEmulatedQuery(
 	let cancelled = false;
 	const promise = (async () => {
 		const translation = await translateKqlToSql(kql);
-		if (cancelled) throw new Error('Query cancelled.');
+		if (cancelled) throw new OperationCancelledError('Query cancelled.');
 		if (!translation.success || !translation.sql) {
 			throw new Error(translation.error || 'The KQL query could not be translated.');
 		}
 
 		const sql = `USE ${quoteDuckDbIdentifier(database)};\n${translation.sql}`;
 		const result = await executeDuckDbQuery(sql, clusterId);
-		if (cancelled) throw new Error('Query cancelled.');
+		if (cancelled) throw new OperationCancelledError('Query cancelled.');
 		return result;
 	})();
 

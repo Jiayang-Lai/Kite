@@ -48,16 +48,40 @@ resource "github_repository_ruleset" "protect_main" {
   }
 }
 
+# The release-tag App is registered from infra/github/release-tag-app.json by
+# scripts/create-release-tag-app.mjs, which records its ID in terraform.tfvars.
+locals {
+  release_tag_app_id = var.release_tag_app_id
+}
+
 resource "github_repository_ruleset" "protect_release_tags" {
   name        = "Protect release tags"
   repository  = github_repository.kite.name
   target      = "tag"
   enforcement = "active"
 
-  bypass_actors {
-    actor_id    = 5
-    actor_type  = "RepositoryRole"
-    bypass_mode = "always"
+  # The Create release tag workflow authenticates as this GitHub App, making it the only way to
+  # create v* tags once release_tag_app_id is set.
+  dynamic "bypass_actors" {
+    for_each = local.release_tag_app_id == null ? [] : [local.release_tag_app_id]
+
+    content {
+      actor_id    = bypass_actors.value
+      actor_type  = "Integration"
+      bypass_mode = "always"
+    }
+  }
+
+  # Administrators keep tag access until the App is configured, and afterwards only as an
+  # explicit break-glass setting.
+  dynamic "bypass_actors" {
+    for_each = local.release_tag_app_id == null || var.allow_admin_release_tag_bypass ? [1] : []
+
+    content {
+      actor_id    = 5
+      actor_type  = "RepositoryRole"
+      bypass_mode = "always"
+    }
   }
 
   conditions {

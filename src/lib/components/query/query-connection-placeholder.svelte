@@ -27,7 +27,7 @@
 	aria-live="polite"
 >
 	{#if status === 'loading'}
-		<div class="text-muted-foreground flex flex-col items-center gap-3 text-sm">
+		<div class="flex flex-col items-center gap-3 text-sm text-muted-foreground">
 			<Spinner class="size-6" />
 			<p>Connecting to {clusterName}…</p>
 			{#if showSignInTip}
@@ -45,7 +45,7 @@
 	{:else}
 		<div class="max-w-md text-center">
 			<h2 class="font-semibold">Could not connect to Kusto</h2>
-			<p class="text-muted-foreground mt-2 text-sm">{error}</p>
+			<p class="mt-2 text-sm text-muted-foreground">{error}</p>
 			<Button class="mt-4" variant="outline" onclick={onretry}>
 				<RefreshCwIcon />
 				Retry

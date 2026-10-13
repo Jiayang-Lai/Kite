@@ -125,14 +125,11 @@
 		selectedFunction = functionName;
 		setDatabaseExpanded(databaseName, true);
 	}
-
 </script>
 
 {#snippet databaseTree()}
 	<Sidebar.MenuSub
-		class={isCollapsedDesktop
-			? 'mx-0 translate-x-0 border-l-0 px-0'
-			: 'mx-1.5 translate-x-0 px-1'}
+		class={isCollapsedDesktop ? 'mx-0 translate-x-0 border-l-0 px-0' : 'mx-1.5 translate-x-0 px-1'}
 	>
 		{#each filteredDatabases as databaseName (databaseName)}
 			{@const expanded = isDatabaseExpanded(databaseName)}
@@ -145,9 +142,9 @@
 					<button
 						type="button"
 						class={cn(
-							'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 pr-8 text-left text-sm outline-none focus-visible:ring-2',
+							'flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 pr-8 text-left text-sm text-sidebar-foreground outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring',
 							selectedDatabase === databaseName &&
-								'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+								'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
 						)}
 						onclick={() => selectDatabase(databaseName)}
 						title={databaseName}
@@ -170,7 +167,7 @@
 				</Sidebar.MenuSubItem>
 
 				<Collapsible.Content>
-					<div class="border-sidebar-border ms-1.5 mt-0.5 border-s ps-1.5">
+					<div class="ms-1.5 mt-0.5 border-s border-sidebar-border ps-1.5">
 						<Collapsible.Root
 							class="group/object-group"
 							open={isGroupExpanded(databaseName, 'tables')}
@@ -178,19 +175,19 @@
 						>
 							<Collapsible.Trigger
 								type="button"
-								class="hover:bg-sidebar-accent/50 focus-visible:ring-sidebar-ring flex h-8 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-xs font-semibold tracking-wide uppercase outline-none focus-visible:ring-2"
+								class="flex h-8 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-xs font-semibold tracking-wide uppercase outline-none hover:bg-sidebar-accent/50 focus-visible:ring-2 focus-visible:ring-sidebar-ring"
 							>
 								<ChevronRightIcon
-									class="text-muted-foreground size-3.5 transition-transform group-data-[state=open]/object-group:rotate-90"
+									class="size-3.5 text-muted-foreground transition-transform group-data-[state=open]/object-group:rotate-90"
 								/>
-								<TablePropertiesIcon class="text-muted-foreground size-3.5" />
+								<TablePropertiesIcon class="size-3.5 text-muted-foreground" />
 								<span class="min-w-0 flex-1 truncate">Tables</span>
-								<span class="text-muted-foreground font-normal normal-case"
+								<span class="font-normal text-muted-foreground normal-case"
 									>{databases[databaseName].tables.length}</span
 								>
 							</Collapsible.Trigger>
 							<Collapsible.Content>
-							{@const visibleTables = getVisibleTables(databaseName)}
+								{@const visibleTables = getVisibleTables(databaseName)}
 								<VirtualizedSchemaObjectList
 									items={visibleTables}
 									kind="table"
@@ -207,14 +204,14 @@
 						>
 							<Collapsible.Trigger
 								type="button"
-								class="hover:bg-sidebar-accent/50 focus-visible:ring-sidebar-ring mt-0.5 flex h-8 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-xs font-semibold tracking-wide uppercase outline-none focus-visible:ring-2"
+								class="mt-0.5 flex h-8 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-xs font-semibold tracking-wide uppercase outline-none hover:bg-sidebar-accent/50 focus-visible:ring-2 focus-visible:ring-sidebar-ring"
 							>
 								<ChevronRightIcon
-									class="text-muted-foreground size-3.5 transition-transform group-data-[state=open]/object-group:rotate-90"
+									class="size-3.5 text-muted-foreground transition-transform group-data-[state=open]/object-group:rotate-90"
 								/>
-								<SquareFunctionIcon class="text-muted-foreground size-3.5" />
+								<SquareFunctionIcon class="size-3.5 text-muted-foreground" />
 								<span class="min-w-0 flex-1 truncate">Functions</span>
-								<span class="text-muted-foreground font-normal normal-case"
+								<span class="font-normal text-muted-foreground normal-case"
 									>{databases[databaseName].functions?.length ?? 0}</span
 								>
 							</Collapsible.Trigger>
@@ -232,7 +229,7 @@
 				</Collapsible.Content>
 			</Collapsible.Root>
 		{:else}
-			<p class="text-muted-foreground px-2 py-3 text-xs">No databases found.</p>
+			<p class="px-2 py-3 text-xs text-muted-foreground">No databases found.</p>
 		{/each}
 	</Sidebar.MenuSub>
 {/snippet}
@@ -243,11 +240,7 @@
 			<Sidebar.MenuItem>
 				<Popover.Trigger openOnHover openDelay={0} closeDelay={150}>
 					{#snippet child({ props })}
-						<Sidebar.MenuButton
-							{...props}
-							isActive={dropdownOpen}
-							aria-label="Browse databases"
-						>
+						<Sidebar.MenuButton {...props} isActive={dropdownOpen} aria-label="Browse databases">
 							{#snippet child({ props })}
 								<a {...props} href="/explorer/query" onclick={(event) => event.stopPropagation()}>
 									<DatabaseSearchIcon />
@@ -270,7 +263,7 @@
 								<p class="px-2 text-xs font-medium">Databases</p>
 								<div class="relative mt-2">
 									<SearchIcon
-										class="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2"
+										class="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
 									/>
 									<Input
 										bind:value={filter}

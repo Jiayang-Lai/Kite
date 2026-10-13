@@ -37,7 +37,15 @@ make tf-azure-plan
 make tf-azure-apply
 ```
 
-The generic targets remain available when needed, for example `make tf-plan TF_ROOT=infra/github`. GitHub and Cloudflare targets require a trusted `.env` file in the selected root; Azure targets use the Azure CLI identity and load `infra/azure/.env` only when that file exists. The targets export loaded assignments only inside the Make recipe's child shell and unset the known token variables when Terraform exits. The `.env` files are ignored by Git. Do not use an untrusted `.env` file because loading it executes shell syntax.
+For any other Terraform command, or to pass arguments, use the general target, which loads the same `.env` file:
+
+```sh
+make tf ROOT=github CMD="plan -out=tfplan"
+make tf ROOT=github CMD="apply tfplan"
+make tf ROOT=cloudflare CMD="state list"
+```
+
+The per-root targets also accept extra arguments through `TF_ARGS`, for example `make tf-github-plan TF_ARGS=-out=tfplan`, and the generic targets remain available, for example `make tf-plan TF_ROOT=infra/github`. GitHub and Cloudflare targets require a trusted `.env` file in the selected root; Azure targets use the Azure CLI identity and load `infra/azure/.env` only when that file exists. The targets export loaded assignments only inside the Make recipe's child shell and unset the known token variables when Terraform exits. The `.env` files are ignored by Git. Do not use an untrusted `.env` file because loading it executes shell syntax.
 
 If Terraform is invoked directly instead, remove credentials from the current shell after it completes with `unset GITHUB_TOKEN CLOUDFLARE_API_TOKEN`.
 

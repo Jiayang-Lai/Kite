@@ -1,6 +1,6 @@
 import { releaseClusterRuntime } from '$lib/cluster/cluster-runtime';
 import { deletePersistentDuckDbStorage } from '$lib/duckdb/storage';
-import type { KustoClusterConnection } from '$lib/kusto/query-client';
+import type { KustoClusterConnection } from '$lib/cluster/connections';
 
 const STORAGE_KEY = 'kite:pending-emulated-cluster-cleanup:v1';
 

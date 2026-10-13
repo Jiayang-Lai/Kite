@@ -11,7 +11,7 @@ const emulationMocks = vi.hoisted(() => ({
 vi.mock('$lib/emulation/schema-management', () => emulationMocks);
 
 import { createSchemaMutationAdapter } from './schema-mutation-adapter';
-import type { KustoClusterConnection } from '$lib/kusto/query-client';
+import type { KustoClusterConnection } from '$lib/cluster/connections';
 import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 import type { QueryResult } from '$lib/types/query-result';
 

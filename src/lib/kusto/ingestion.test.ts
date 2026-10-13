@@ -33,7 +33,7 @@ describe('Kusto ingestion commands', () => {
 	});
 
 	it('quotes non-simple table names', () => {
-		expect(quoteKustoEntity("Odd table's name")).toBe("['Odd table''s name']");
+		expect(quoteKustoEntity("Odd table's name")).toBe("['Odd table\\'s name']");
 	});
 
 	it('builds a mounted Parquet ingestion command', () => {
@@ -64,7 +64,7 @@ describe('Kusto ingestion commands', () => {
 				ignoreFirstRecord: true
 			})
 		).toBe(
-			".ingest into table ['Imported events'](h'https://storage.example/events.csv?sig=reader''s-token') with (format=\"csv\", ignoreFirstRecord=true)"
+			".ingest into table ['Imported events'](h'https://storage.example/events.csv?sig=reader\\'s-token') with (format=\"csv\", ignoreFirstRecord=true)"
 		);
 	});
 

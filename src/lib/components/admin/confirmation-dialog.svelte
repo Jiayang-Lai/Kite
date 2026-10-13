@@ -72,7 +72,7 @@
 					</div>
 				{/if}
 				{#if action.state.error}
-					<p class="text-destructive text-sm whitespace-pre-wrap" role="alert">
+					<p class="text-sm whitespace-pre-wrap text-destructive" role="alert">
 						{action.state.error}
 					</p>
 				{/if}

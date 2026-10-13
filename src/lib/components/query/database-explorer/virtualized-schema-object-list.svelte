@@ -71,18 +71,20 @@
 								<button
 									type="button"
 									class={cn(
-										'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left text-xs outline-none focus-visible:ring-2',
-										selected && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+										'flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left text-xs text-sidebar-foreground outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring',
+										selected && 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
 									)}
 									onclick={() => onselect(item.name)}
 									aria-pressed={selected}
 								>
 									{#if kind === 'table'}
-										<TablePropertiesIcon class="text-muted-foreground size-3.5 shrink-0" />
+										<TablePropertiesIcon class="size-3.5 shrink-0 text-muted-foreground" />
 									{:else}
-										<SquareFunctionIcon class="text-muted-foreground size-3.5 shrink-0" />
+										<SquareFunctionIcon class="size-3.5 shrink-0 text-muted-foreground" />
 									{/if}
-									<span class="min-w-0 flex-1 truncate font-mono" title={item.name}>{item.name}</span>
+									<span class="min-w-0 flex-1 truncate font-mono" title={item.name}
+										>{item.name}</span
+									>
 								</button>
 							</div>
 						</Sidebar.MenuSubItem>
@@ -91,7 +93,7 @@
 			</Sidebar.MenuSub>
 		</div>
 	{:else}
-		<p class="text-muted-foreground px-2 py-2 text-xs">
+		<p class="px-2 py-2 text-xs text-muted-foreground">
 			No {kind === 'table' ? 'tables' : 'functions'} found.
 		</p>
 	{/if}

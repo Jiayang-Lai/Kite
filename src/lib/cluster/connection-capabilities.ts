@@ -1,4 +1,4 @@
-import type { KustoClusterConnection } from '$lib/kusto/query-client';
+import type { KustoClusterConnection } from '$lib/cluster/connections';
 
 export type DatabaseCapabilities = {
 	create: boolean;

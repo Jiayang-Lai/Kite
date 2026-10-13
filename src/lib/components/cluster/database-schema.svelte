@@ -231,7 +231,7 @@
 {#snippet highlightedText(text: string)}
 	{#each getHighlightedSegments(text) as segment}
 		{#if segment.highlighted}
-			<mark class="bg-primary/20 text-foreground rounded-sm px-0.5">{segment.text}</mark>
+			<mark class="rounded-sm bg-primary/20 px-0.5 text-foreground">{segment.text}</mark>
 		{:else}
 			{segment.text}
 		{/if}
@@ -249,13 +249,13 @@
 		<div class="flex items-start justify-between gap-3">
 			<div class="flex min-w-0 items-center gap-2">
 				{#if focusedFunction}
-					<SquareFunctionIcon class="text-muted-foreground size-4 shrink-0" />
+					<SquareFunctionIcon class="size-4 shrink-0 text-muted-foreground" />
 				{:else}
-					<DatabaseIcon class="text-muted-foreground size-4 shrink-0" />
+					<DatabaseIcon class="size-4 shrink-0 text-muted-foreground" />
 				{/if}
 				<div class="min-w-0">
 					<h2 class="truncate text-sm font-semibold">{database.prettyName ?? database.name}</h2>
-					<p class="text-muted-foreground text-xs">
+					<p class="text-xs text-muted-foreground">
 						{database.prettyName && database.prettyName !== database.name
 							? database.name
 							: (selectedFunction ??
@@ -281,7 +281,7 @@
 		{#if !focusedFunction}
 			<div class="relative mt-3 sm:mt-4">
 				<SearchIcon
-					class="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+					class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
 				/>
 				<Input bind:value={filter} class="pl-9" placeholder="Filter tables or columns" />
 			</div>
@@ -300,14 +300,14 @@
 				<article class="min-w-0 overflow-hidden rounded-lg border bg-muted/20">
 					<div class="border-b p-3">
 						<div class="flex min-w-0 items-center gap-2">
-							<SquareFunctionIcon class="text-muted-foreground size-4 shrink-0" />
-							<h3 class="min-w-0 break-all font-mono text-sm font-semibold">
+							<SquareFunctionIcon class="size-4 shrink-0 text-muted-foreground" />
+							<h3 class="min-w-0 font-mono text-sm font-semibold break-all">
 								{focusedFunction.name}
 							</h3>
 							<Badge variant="secondary" class="ml-auto shrink-0">Stored function</Badge>
 						</div>
 						{#if focusedFunction.docstring}
-							<p class="text-muted-foreground mt-2 text-xs">{focusedFunction.docstring}</p>
+							<p class="mt-2 text-xs text-muted-foreground">{focusedFunction.docstring}</p>
 						{/if}
 					</div>
 
@@ -315,7 +315,7 @@
 						<section aria-labelledby="function-signature-heading">
 							<h4
 								id="function-signature-heading"
-								class="text-muted-foreground mb-1.5 text-[10px] font-semibold tracking-wider uppercase"
+								class="mb-1.5 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
 							>
 								Signature
 							</h4>
@@ -327,7 +327,7 @@
 						<section aria-labelledby="function-parameters-heading">
 							<h4
 								id="function-parameters-heading"
-								class="text-muted-foreground mb-1.5 text-[10px] font-semibold tracking-wider uppercase"
+								class="mb-1.5 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
 							>
 								Parameters
 							</h4>
@@ -336,7 +336,7 @@
 									{#each focusedFunction.inputParameters as parameter (parameter.name)}
 										<div class="min-w-0 px-2.5 py-2">
 											<div class="flex min-w-0 items-center gap-2">
-												<dt class="min-w-0 flex-1 break-all font-mono text-xs font-medium">
+												<dt class="min-w-0 flex-1 font-mono text-xs font-medium break-all">
 													{parameter.name}
 												</dt>
 												<Badge variant="outline" class="shrink-0 font-mono text-[11px]">
@@ -344,10 +344,10 @@
 												</Badge>
 											</div>
 											{#if parameter.docstring}
-												<dd class="text-muted-foreground mt-1 text-xs">{parameter.docstring}</dd>
+												<dd class="mt-1 text-xs text-muted-foreground">{parameter.docstring}</dd>
 											{/if}
 											{#if parameter.cslDefaultValue}
-												<dd class="text-muted-foreground mt-1 text-[11px]">
+												<dd class="mt-1 text-[11px] text-muted-foreground">
 													Default: <code>{parameter.cslDefaultValue}</code>
 												</dd>
 											{/if}
@@ -355,14 +355,14 @@
 									{/each}
 								</dl>
 							{:else}
-								<p class="text-muted-foreground text-xs">This function has no parameters.</p>
+								<p class="text-xs text-muted-foreground">This function has no parameters.</p>
 							{/if}
 						</section>
 
 						<section aria-labelledby="function-body-heading">
 							<h4
 								id="function-body-heading"
-								class="text-muted-foreground mb-1.5 text-[10px] font-semibold tracking-wider uppercase"
+								class="mb-1.5 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
 							>
 								Body
 							</h4>
@@ -389,24 +389,24 @@
 									<article
 										class={cn(
 											'min-w-0 overflow-hidden rounded-lg border bg-muted/20',
-											selectedTable === table.name && 'ring-primary/20 ring-2'
+											selectedTable === table.name && 'ring-2 ring-primary/20'
 										)}
 									>
 										<button
 											type="button"
-											class="hover:bg-muted/60 focus-visible:ring-ring/50 flex w-full min-w-0 items-center gap-2 p-2.5 text-left transition-colors outline-none focus-visible:ring-[3px] disabled:cursor-default disabled:hover:bg-transparent sm:p-3"
+											class="flex w-full min-w-0 items-center gap-2 p-2.5 text-left transition-colors outline-none hover:bg-muted/60 focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-default disabled:hover:bg-transparent sm:p-3"
 											aria-expanded={expanded}
 											disabled={Boolean(debouncedFilter.trim())}
 											onclick={() => toggleTable(table.name)}
 										>
 											<ChevronRightIcon
 												class={cn(
-													'text-muted-foreground size-4 shrink-0 transition-transform',
+													'size-4 shrink-0 text-muted-foreground transition-transform',
 													expanded && 'rotate-90'
 												)}
 											/>
-											<TablePropertiesIcon class="text-muted-foreground size-4 shrink-0" />
-											<h3 class="min-w-0 flex-1 break-all font-mono text-sm font-medium">
+											<TablePropertiesIcon class="size-4 shrink-0 text-muted-foreground" />
+											<h3 class="min-w-0 flex-1 font-mono text-sm font-medium break-all">
 												{@render highlightedText(table.name)}
 											</h3>
 											<Badge variant="secondary" class="shrink-0">
@@ -420,7 +420,7 @@
 												{#if table.docstring || tableActions}
 													<div class="mb-2.5 flex items-start justify-between gap-3">
 														{#if table.docstring}
-															<p class="text-muted-foreground min-w-0 text-xs">
+															<p class="min-w-0 text-xs text-muted-foreground">
 																{@render highlightedText(table.docstring)}
 															</p>
 														{:else}
@@ -438,11 +438,11 @@
 															class="flex min-w-0 flex-col items-start gap-1.5 px-2.5 py-2 min-[380px]:flex-row min-[380px]:items-center min-[380px]:justify-between min-[380px]:gap-3 sm:px-3"
 														>
 															<div class="min-w-0">
-																<dt class="break-all font-mono text-xs font-medium">
+																<dt class="font-mono text-xs font-medium break-all">
 																	{@render highlightedText(column.name)}
 																</dt>
 																{#if column.docstring}
-																	<dd class="text-muted-foreground mt-0.5 text-xs">
+																	<dd class="mt-0.5 text-xs text-muted-foreground">
 																		{@render highlightedText(column.docstring)}
 																	</dd>
 																{/if}
@@ -464,7 +464,7 @@
 						{/each}
 					</div>
 				{:else}
-					<p class="text-muted-foreground py-8 text-center text-sm">
+					<p class="py-8 text-center text-sm text-muted-foreground">
 						{#if debouncedFilter.trim()}
 							No tables or columns match “{debouncedFilter}”.
 						{:else}

@@ -1,4 +1,4 @@
-import { appendFile } from 'node:fs/promises';
+import { appendFile, readFile } from 'node:fs/promises';
 
 const options = parseOptions(process.argv.slice(2));
 const stablePattern = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
@@ -22,6 +22,14 @@ const metadata = {
 	version: baseTag.slice(1),
 	rcNumber: candidateMatch?.[4] ?? ''
 };
+
+// Published images and the application report package.json's version, so a tag must match it.
+const packageVersion = JSON.parse(await readFile('package.json', 'utf8')).version;
+if (packageVersion !== metadata.version) {
+	throw new Error(
+		`Release tag "${options.tag}" does not match package.json version ${packageVersion}. Update package.json before tagging.`
+	);
+}
 
 if (options.githubOutput) {
 	const output = Object.entries(metadata)

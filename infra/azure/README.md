@@ -27,14 +27,15 @@ Use an encrypted remote state backend with locking before applying. A starting `
 
 ## Configure and apply
 
+From the repository root (the targets use your Azure CLI sign-in and load `infra/azure/.env` only when it exists; see [Running Terraform](../README.md#running-terraform)):
+
 ```bash
-cd infra/azure
-cp terraform.tfvars.example terraform.tfvars
-terraform init
-terraform fmt -check -recursive
-terraform validate
-terraform plan -out=tfplan
-terraform apply tfplan
+cp infra/azure/terraform.tfvars.example infra/azure/terraform.tfvars
+make tf ROOT=azure CMD=init
+make tf ROOT=azure CMD="fmt -check -recursive"
+make tf ROOT=azure CMD=validate
+make tf ROOT=azure CMD="plan -out=tfplan"
+make tf ROOT=azure CMD="apply tfplan"
 ```
 
 Replace the placeholder principal ID in `workspace_log_reader_principal_ids` with an Entra user or, preferably, Entra security-group object ID. Remove the example entry completely if role assignments are managed elsewhere.

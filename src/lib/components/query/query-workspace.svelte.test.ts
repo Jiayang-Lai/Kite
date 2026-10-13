@@ -1,11 +1,29 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
+
+const runtimeMocks = vi.hoisted(() => ({ failingClusterName: undefined as string | undefined }));
+
+vi.mock('$lib/cluster/cluster-runtime', async (importOriginal) => {
+	const original = await importOriginal<typeof import('$lib/cluster/cluster-runtime')>();
+	return {
+		...original,
+		createConnectionRuntime: (cluster: Parameters<typeof original.createConnectionRuntime>[0]) => {
+			const runtime = original.createConnectionRuntime(cluster);
+			if (cluster.name !== runtimeMocks.failingClusterName) return runtime;
+			return { ...runtime, loadSchema: () => Promise.reject(new Error('Cluster unreachable.')) };
+		}
+	};
+});
 
 import QueryWorkspaceRunningWrapper from '../../../../tests/fixtures/query-workspace-running-wrapper.svelte';
 import QueryWorkspaceWrapper from '../../../../tests/fixtures/query-workspace-wrapper.svelte';
 import QueryWorkspace from './query-workspace.svelte';
 
 describe('QueryWorkspace', () => {
+	afterEach(() => {
+		runtimeMocks.failingClusterName = undefined;
+	});
+
 	it('renders its lazily loaded overview and saved-query views', async () => {
 		const screen = await render(
 			QueryWorkspace,
@@ -23,7 +41,6 @@ describe('QueryWorkspace', () => {
 	});
 
 	it('coordinates save, unload protection, tabs, and comparison from the editor', async () => {
-		vi.spyOn(window, 'confirm').mockReturnValue(true);
 		const screen = await render(
 			QueryWorkspace,
 			{ view: 'editor' },
@@ -102,6 +119,8 @@ describe('QueryWorkspace', () => {
 		(
 			screen.getByRole('button', { name: 'Close Event count' }).element() as HTMLButtonElement
 		).click();
+		await expect.element(screen.getByRole('tab', { name: /Event count/ })).toBeVisible();
+		await screen.getByRole('button', { name: 'Close tab' }).click();
 		await expect.element(screen.getByRole('tab', { name: /Event count/ })).not.toBeInTheDocument();
 	}, 30_000);
 
@@ -138,7 +157,6 @@ describe('QueryWorkspace', () => {
 	});
 
 	it('switches clusters through the shared connection lifecycle', async () => {
-		vi.spyOn(window, 'confirm').mockReturnValue(true);
 		const screen = await render(
 			QueryWorkspace,
 			{ view: 'overview' },
@@ -152,7 +170,41 @@ describe('QueryWorkspace', () => {
 		expect(clusterSelector).not.toBeNull();
 		clusterSelector?.click();
 		await screen.getByRole('menuitem', { name: /Emulated cluster/ }).click();
+		await expect
+			.element(screen.getByText('Switching connections will close all query tabs.'))
+			.toBeVisible();
+		await screen.getByRole('button', { name: 'Switch connection' }).click();
 
 		await expect.element(screen.getByText('Explore Emulated cluster')).toBeVisible();
+	});
+
+	it('offers retry or continuing with the current cluster when a switch fails', async () => {
+		runtimeMocks.failingClusterName = 'Emulated cluster';
+		const screen = await render(
+			QueryWorkspace,
+			{ view: 'overview' },
+			{ wrapper: QueryWorkspaceWrapper }
+		);
+
+		await screen.getByRole('button', { name: 'Toggle cluster explorer' }).click();
+		const clusterLabel = screen.getByTitle('Mock cluster');
+		await expect.element(clusterLabel).toBeVisible();
+		clusterLabel.element().closest('button')?.click();
+		await screen.getByRole('menuitem', { name: /Emulated cluster/ }).click();
+		await screen.getByRole('button', { name: 'Switch connection' }).click();
+		await expect.element(screen.getByText('Could not connect to Emulated cluster')).toBeVisible();
+
+		// The explorer sheet stays open over the page, so click the dialog through the DOM.
+		(screen.getByRole('button', { name: 'Retry' }).element() as HTMLButtonElement).click();
+		await expect.element(screen.getByText('Could not connect to Emulated cluster')).toBeVisible();
+		(
+			screen
+				.getByRole('button', { name: 'Continue with Mock cluster' })
+				.element() as HTMLButtonElement
+		).click();
+		await expect
+			.element(screen.getByText('Could not connect to Emulated cluster'))
+			.not.toBeInTheDocument();
+		await expect.element(screen.getByText('Explore Mock cluster')).toBeVisible();
 	});
 });

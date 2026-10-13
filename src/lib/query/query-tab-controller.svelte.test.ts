@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { ConfirmAction } from '$lib/app/confirmation-prompt.svelte';
 import { createClusterSession } from '$lib/cluster/cluster-session.svelte';
 import type { SavedQuery } from '$lib/query/saved-query-store.svelte';
 import { createQueryTabController } from './query-tab-controller.svelte';
@@ -10,6 +11,7 @@ function createController(savedQueries: SavedQuery[] = []) {
 	const clearSchemaSelection = vi.fn();
 	const onTabLoaded = vi.fn();
 	const onTabClosing = vi.fn();
+	const confirm = vi.fn<ConfirmAction>().mockResolvedValue(true);
 	session.databaseSchema = {
 		Alpha: { name: 'Alpha', tables: [], functions: [] },
 		Beta: { name: 'Beta', tables: [], functions: [] }
@@ -21,7 +23,8 @@ function createController(savedQueries: SavedQuery[] = []) {
 		setSelectedDatabase,
 		clearSchemaSelection,
 		onTabLoaded,
-		onTabClosing
+		onTabClosing,
+		confirm
 	});
 	return {
 		controller,
@@ -29,13 +32,10 @@ function createController(savedQueries: SavedQuery[] = []) {
 		setSelectedDatabase,
 		clearSchemaSelection,
 		onTabLoaded,
-		onTabClosing
+		onTabClosing,
+		confirm
 	};
 }
-
-beforeEach(() => {
-	vi.spyOn(window, 'confirm').mockReturnValue(true);
-});
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -83,19 +83,20 @@ describe('query tab controller', () => {
 		expect(controller.isDirty(session.getQueryTab(blank.id)!)).toBe(true);
 	});
 
-	it('does not close a dirty tab when confirmation is declined', () => {
-		const { controller, session, onTabClosing } = createController();
+	it('does not close a dirty tab when confirmation is declined', async () => {
+		const { controller, session, confirm, onTabClosing } = createController();
 		const tab = session.queryTabs[0];
 		session.updateQueryTab(tab.id, { database: 'Alpha', query: 'print Value = 1' });
-		vi.mocked(window.confirm).mockReturnValue(false);
+		confirm.mockResolvedValue(false);
 
-		controller.close(tab);
+		await controller.close(tab);
 
+		expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ actionLabel: 'Close tab' }));
 		expect(session.queryTabs).toContain(tab);
 		expect(onTabClosing).not.toHaveBeenCalled();
 	});
 
-	it('replaces the final tab so a closed query cannot remain in the editor', () => {
+	it('replaces the final tab so a closed query cannot remain in the editor', async () => {
 		const savedQuery: SavedQuery = {
 			id: 'saved',
 			clusterId: 'cluster',
@@ -114,7 +115,7 @@ describe('query tab controller', () => {
 			savedQueryName: savedQuery.name
 		});
 
-		controller.close(closedTab);
+		await controller.close(closedTab);
 
 		const replacement = session.queryTabs[0];
 		expect(replacement).toMatchObject({ database: '', query: '', isRunning: false });
@@ -123,14 +124,14 @@ describe('query tab controller', () => {
 		expect(onTabLoaded).toHaveBeenLastCalledWith(replacement);
 	});
 
-	it('ends comparison when either compared tab closes', () => {
+	it('ends comparison when either compared tab closes', async () => {
 		const { controller, session, onTabClosing } = createController();
 		const first = session.queryTabs[0];
 		session.updateQueryTab(first.id, { database: 'Alpha' });
 		const second = session.createQueryTab('Alpha');
 		controller.startComparison();
 
-		controller.close(first);
+		await controller.close(first);
 
 		expect(onTabClosing).toHaveBeenCalledWith(first.id);
 		expect(controller.comparison.original).toBeUndefined();

@@ -162,15 +162,15 @@
 					<dl class="divide-y rounded-lg border text-sm">
 						<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3 p-3">
 							<dt class="text-muted-foreground">Cluster</dt>
-							<dd class="break-words font-medium">{clusterName}</dd>
+							<dd class="font-medium break-words">{clusterName}</dd>
 						</div>
 						<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3 p-3">
 							<dt class="text-muted-foreground">Database</dt>
-							<dd class="break-all font-mono">{databaseName}</dd>
+							<dd class="font-mono break-all">{databaseName}</dd>
 						</div>
 						<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3 p-3">
 							<dt class="text-muted-foreground">Table</dt>
-							<dd class="break-all font-mono">{reviewPlan.prepared.plan.tableName}</dd>
+							<dd class="font-mono break-all">{reviewPlan.prepared.plan.tableName}</dd>
 						</div>
 						<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3 p-3">
 							<dt class="text-muted-foreground">Schema</dt>
@@ -190,11 +190,11 @@
 						<div class="divide-y overflow-hidden rounded-lg border">
 							{#each reviewPlan.prepared.plan.columns as column, index (column.name)}
 								<div class="flex items-start gap-3 px-3 py-2.5">
-									<span class="text-muted-foreground w-5 font-mono text-xs">{index + 1}</span>
+									<span class="w-5 font-mono text-xs text-muted-foreground">{index + 1}</span>
 									<div class="min-w-0 flex-1">
-										<p class="break-all font-mono text-xs">{column.name}</p>
+										<p class="font-mono text-xs break-all">{column.name}</p>
 										{#if column.docstring}
-											<p class="text-muted-foreground mt-0.5 text-xs">{column.docstring}</p>
+											<p class="mt-0.5 text-xs text-muted-foreground">{column.docstring}</p>
 										{/if}
 									</div>
 									<Badge variant="outline" class="font-mono text-[11px]">{column.type}</Badge>
@@ -206,18 +206,18 @@
 					<div>
 						<h3 class="mb-2 text-sm font-medium">Management command</h3>
 						<pre
-							class="bg-muted max-h-48 overflow-auto rounded-lg border p-3 font-mono text-xs whitespace-pre-wrap">{reviewPlan
+							class="max-h-48 overflow-auto rounded-lg border bg-muted p-3 font-mono text-xs whitespace-pre-wrap">{reviewPlan
 								.prepared.plan.columnDocstringsCommand
 								? `${reviewPlan.prepared.plan.command}\n${reviewPlan.prepared.plan.columnDocstringsCommand}`
 								: reviewPlan.prepared.plan.command}</pre>
 					</div>
 
-					<div class="border-primary/30 bg-primary/5 rounded-lg border p-3">
+					<div class="rounded-lg border border-primary/30 bg-primary/5 p-3">
 						<div class="flex items-start gap-2">
-							<CircleAlertIcon class="text-primary mt-0.5 size-4 shrink-0" />
+							<CircleAlertIcon class="mt-0.5 size-4 shrink-0 text-primary" />
 							<div>
 								<p class="text-sm font-medium">The table starts empty</p>
-								<p class="text-muted-foreground mt-1 text-xs leading-5">
+								<p class="mt-1 text-xs leading-5 text-muted-foreground">
 									Kite refreshes the database immediately before creation to ensure this name is
 									still available, then refreshes the schema again after the command succeeds.
 								</p>
@@ -248,18 +248,18 @@
 					<dl class="grid gap-2 rounded-lg border bg-muted/20 p-3 text-xs sm:grid-cols-2">
 						<div>
 							<dt class="text-muted-foreground">Cluster</dt>
-							<dd class="mt-0.5 break-words font-medium">{clusterName}</dd>
+							<dd class="mt-0.5 font-medium break-words">{clusterName}</dd>
 						</div>
 						<div>
 							<dt class="text-muted-foreground">Database</dt>
-							<dd class="mt-0.5 break-all font-mono">{databaseName}</dd>
+							<dd class="mt-0.5 font-mono break-all">{databaseName}</dd>
 						</div>
 					</dl>
 
 					<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
 						<div>
 							<p class="text-sm font-medium">Import Avro template</p>
-							<p class="text-muted-foreground mt-0.5 text-xs">
+							<p class="mt-0.5 text-xs text-muted-foreground">
 								Import one <code>.avsc</code> record schema to replace this draft, then edit it if needed.
 							</p>
 						</div>
@@ -269,10 +269,10 @@
 					</div>
 
 					{#if importedTemplateName}
-						<p class="text-muted-foreground text-xs">Imported {importedTemplateName}.</p>
+						<p class="text-xs text-muted-foreground">Imported {importedTemplateName}.</p>
 					{/if}
 					{#if templateImportError}
-						<p class="text-destructive text-xs" role="alert">{templateImportError}</p>
+						<p class="text-xs text-destructive" role="alert">{templateImportError}</p>
 					{/if}
 
 					<div>
@@ -289,7 +289,7 @@
 
 					<div>
 						<label class="text-sm font-medium" for="create-table-description"
-							>Description <span class="text-muted-foreground font-normal">(optional)</span></label
+							>Description <span class="font-normal text-muted-foreground">(optional)</span></label
 						>
 						<Textarea
 							id="create-table-description"
@@ -302,7 +302,7 @@
 
 					<div>
 						<label class="text-sm font-medium" for="create-table-folder">
-							Folder <span class="text-muted-foreground font-normal">(optional)</span>
+							Folder <span class="font-normal text-muted-foreground">(optional)</span>
 						</label>
 						<Input
 							id="create-table-folder"
@@ -318,7 +318,7 @@
 						<div class="mb-2 flex items-end justify-between gap-3">
 							<div>
 								<h3 id="create-table-columns-heading" class="text-sm font-medium">Columns</h3>
-								<p class="text-muted-foreground mt-0.5 text-xs">
+								<p class="mt-0.5 text-xs text-muted-foreground">
 									Column order becomes the initial table schema.
 								</p>
 							</div>
@@ -333,7 +333,7 @@
 									class="grid grid-cols-[minmax(0,1fr)_8rem_auto] items-end gap-2 rounded-lg border px-3 pt-2 pb-3"
 								>
 									<div>
-										<label class="text-muted-foreground text-xs" for={`create-column-${column.id}`}
+										<label class="text-xs text-muted-foreground" for={`create-column-${column.id}`}
 											>Column name</label
 										>
 										<Input
@@ -347,7 +347,7 @@
 									</div>
 									<div>
 										<label
-											class="text-muted-foreground text-xs"
+											class="text-xs text-muted-foreground"
 											for={`create-column-type-${column.id}`}>Type</label
 										>
 										<Select.Root type="single" bind:value={column.type} disabled={isRunning}>
@@ -368,7 +368,7 @@
 									</div>
 									<div class="col-span-full">
 										<label
-											class="text-muted-foreground text-xs"
+											class="text-xs text-muted-foreground"
 											for={`create-column-description-${column.id}`}
 										>
 											Column description <span class="font-normal">(optional)</span>
@@ -396,13 +396,13 @@
 					</section>
 
 					{#if reviewPlan.prepared.error && (tableName.trim() || columns.some( (column) => column.name.trim() ))}
-						<p class="text-destructive text-xs">{reviewPlan.prepared.error}</p>
+						<p class="text-xs text-destructive">{reviewPlan.prepared.error}</p>
 					{/if}
 				{/if}
 
 				{#if executionError}
 					<p
-						class="text-destructive bg-destructive/5 whitespace-pre-wrap rounded-lg border border-destructive/20 p-3 text-xs"
+						class="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-xs whitespace-pre-wrap text-destructive"
 						role="alert"
 					>
 						{executionError}

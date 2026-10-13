@@ -38,7 +38,6 @@ vi.mock('azure-kusto-data', () => {
 });
 
 import {
-	getKustoErrorMessage,
 	isManagementCommand,
 	isReadOnlyManagementCommand,
 	startKustoManagementCommand,
@@ -67,102 +66,7 @@ beforeEach(() => {
 	sdkMocks.executeMgmt.mockResolvedValue(response());
 });
 
-describe('getKustoErrorMessage', () => {
-	it('preserves the complete text response and HTTP status', () => {
-		const error = Object.assign(new Error('Request failed with status code 400'), {
-			response: {
-				status: 400,
-				statusText: 'BadRequest',
-				data: `General_BadRequest: Request is invalid and cannot be executed.
-Error details:
-ClientRequestId='Kite.Query;123', ActivityId='activity-123', Timestamp='2026-07-14T23:05:33Z'.`,
-				headers: { 'x-ms-activity-id': 'activity-123' }
-			}
-		});
-
-		expect(getKustoErrorMessage(error)).toBe(`HTTP 400 BadRequest
-
-General_BadRequest: Request is invalid and cannot be executed.
-Error details:
-ClientRequestId='Kite.Query;123', ActivityId='activity-123', Timestamp='2026-07-14T23:05:33Z'.`);
-	});
-
-	it('formats structured Kusto errors and activity IDs', () => {
-		const error = Object.assign(new Error('Bad request'), {
-			response: {
-				status: 400,
-				data: { error: { code: 'SemanticError', message: 'Unknown column X.' } },
-				headers: { 'x-ms-activity-id': 'activity-456' }
-			}
-		});
-
-		expect(getKustoErrorMessage(error)).toBe(`HTTP 400
-
-SemanticError: Unknown column X.
-
-Activity ID: activity-456`);
-	});
-
-	it('prefers actionable details from a nested Kusto exception', () => {
-		const error = Object.assign(new Error('Request failed with status code 400'), {
-			response: {
-				status: 400,
-				statusText: 'Bad Request',
-				data: {
-					error: {
-						code: 'General_BadRequest',
-						message: 'Request is invalid and cannot be executed.',
-						'@message':
-							'Request is invalid and cannot be processed: Syntax error: SYN0002: Missing expression [line:position=2:7]',
-						'@database': 'NetDefaultDB',
-						'@context': {
-							clientRequestId: 'Kite.Query;123',
-							activityId: 'activity-123'
-						},
-						innererror: {
-							code: 'SYN0002',
-							message: 'Missing expression',
-							'@message': 'Syntax error: SYN0002: Missing expression [line:position=2:7]',
-							'@line': '2',
-							'@pos': '7',
-							'@errorCode': 'SYN0002',
-							'@errorMessage': 'Missing expression'
-						}
-					}
-				},
-				headers: { 'x-ms-activity-id': 'activity-123' }
-			}
-		});
-
-		expect(getKustoErrorMessage(error)).toBe(`HTTP 400 Bad Request
-
-SYN0002: Missing expression
-Syntax error: SYN0002: Missing expression [line:position=2:7]
-Line 2, column 7
-Database: NetDefaultDB
-Client request ID: Kite.Query;123
-Activity ID: activity-123`);
-	});
-
-	it('parses a JSON Kusto error returned as text', () => {
-		const error = Object.assign(new Error('Bad request'), {
-			response: {
-				status: 400,
-				data: JSON.stringify({
-					error: {
-						code: 'General_BadRequest',
-						message: 'Request is invalid.',
-						innererror: { code: 'SEM0100', message: 'Unknown column X' }
-					}
-				})
-			}
-		});
-
-		expect(getKustoErrorMessage(error)).toBe(`HTTP 400
-
-SEM0100: Unknown column X`);
-	});
-});
+const CLUSTER_URL = 'https://cluster.test';
 
 describe('management command classification', () => {
 	it('accepts commands that start with a period after whitespace', () => {
@@ -177,15 +81,15 @@ describe('management command classification', () => {
 	});
 
 	it('rejects empty and non-management command batches before execution', () => {
-		expect(() => startKustoReadOnlyManagementCommandBatch('DB', [])).toThrow(
+		expect(() => startKustoReadOnlyManagementCommandBatch('DB', [], CLUSTER_URL)).toThrow(
 			'Provide at least one management command'
 		);
-		expect(() => startKustoReadOnlyManagementCommandBatch('DB', ['Table | take 1'])).toThrow(
-			'Management commands must start with a period'
-		);
-		expect(() => startKustoReadOnlyManagementCommandBatch('DB', ['.drop table T'])).toThrow(
-			'Batched management commands must be read-only'
-		);
+		expect(() =>
+			startKustoReadOnlyManagementCommandBatch('DB', ['Table | take 1'], CLUSTER_URL)
+		).toThrow('Management commands must start with a period');
+		expect(() =>
+			startKustoReadOnlyManagementCommandBatch('DB', ['.drop table T'], CLUSTER_URL)
+		).toThrow('Batched management commands must be read-only');
 	});
 });
 
@@ -220,7 +124,7 @@ describe('Kusto execution', () => {
 			primaryResults: [],
 			getWarnings: () => ['empty']
 		});
-		const result = await startKustoQuery('Analytics', 'print 1').promise;
+		const result = await startKustoQuery('Analytics', 'print 1', CLUSTER_URL).promise;
 		expect(result).toMatchObject({
 			columns: [],
 			rows: [],
@@ -233,7 +137,7 @@ describe('Kusto execution', () => {
 	it('caps rendered rows while retaining the server row count', async () => {
 		const rows = Array.from({ length: 1_002 }, (_, index) => [index, `row ${index}`]);
 		sdkMocks.executeQuery.mockResolvedValueOnce(response(rows));
-		const result = await startKustoQuery('Analytics', 'Events').promise;
+		const result = await startKustoQuery('Analytics', 'Events', CLUSTER_URL).promise;
 		expect(result.renderedRowCount).toBe(1_000);
 		expect(result.totalRowCount).toBe(1_002);
 	});
@@ -245,7 +149,7 @@ describe('Kusto execution', () => {
 				rejectQuery = reject;
 			})
 		);
-		const execution = startKustoQuery('Analytics', 'Events');
+		const execution = startKustoQuery('Analytics', 'Events', CLUSTER_URL);
 		execution.cancel();
 		rejectQuery(new Error('socket closed'));
 		await expect(execution.promise).rejects.toThrow('Query cancelled.');
@@ -253,7 +157,7 @@ describe('Kusto execution', () => {
 	});
 
 	it('executes and cancels management commands through the management endpoint', async () => {
-		const successful = startKustoManagementCommand('Analytics', '.show tables');
+		const successful = startKustoManagementCommand('Analytics', '.show tables', CLUSTER_URL);
 		await expect(successful.promise).resolves.toMatchObject({ totalRowCount: 1 });
 		expect(sdkMocks.executeMgmt).toHaveBeenCalledWith(
 			'Analytics',
@@ -268,17 +172,18 @@ describe('Kusto execution', () => {
 				rejectCommand = reject;
 			})
 		);
-		const cancelled = startKustoManagementCommand('Analytics', '.show databases');
+		const cancelled = startKustoManagementCommand('Analytics', '.show databases', CLUSTER_URL);
 		cancelled.cancel();
 		rejectCommand(new Error('socket closed'));
 		await expect(cancelled.promise).rejects.toThrow('Command cancelled.');
 	});
 
 	it('runs read-only command batches in order with distinct request ids', async () => {
-		const execution = startKustoReadOnlyManagementCommandBatch('Analytics', [
-			'.show tables',
-			'.show functions'
-		]);
+		const execution = startKustoReadOnlyManagementCommandBatch(
+			'Analytics',
+			['.show tables', '.show functions'],
+			CLUSTER_URL
+		);
 		await expect(execution.promise).resolves.toHaveLength(2);
 		expect(sdkMocks.executeMgmt).toHaveBeenNthCalledWith(
 			1,
@@ -302,18 +207,41 @@ describe('Kusto execution', () => {
 				resolveFirst = resolve;
 			})
 		);
-		const execution = startKustoReadOnlyManagementCommandBatch('Analytics', [
-			'.show tables',
-			'.show functions'
-		]);
+		const execution = startKustoReadOnlyManagementCommandBatch(
+			'Analytics',
+			['.show tables', '.show functions'],
+			CLUSTER_URL
+		);
 		execution.cancel();
 		resolveFirst(response());
 		await expect(execution.promise).rejects.toThrow('Command cancelled.');
 		expect(sdkMocks.executeMgmt).toHaveBeenCalledOnce();
 	});
 
+	it('reports failures that were not cancelled', async () => {
+		const failure = new Error('Unauthorized.');
+		sdkMocks.executeQuery.mockRejectedValueOnce(failure);
+		const query = startKustoQuery('Analytics', 'Events', CLUSTER_URL);
+		await expect(query.promise).rejects.toMatchObject({
+			name: 'QueryRequestError',
+			message: 'Unauthorized.',
+			requestId: sdkMocks.properties[0].clientRequestId,
+			response: failure
+		});
+
+		sdkMocks.executeMgmt.mockRejectedValueOnce(failure);
+		await expect(
+			startKustoManagementCommand('Analytics', '.show tables', CLUSTER_URL).promise
+		).rejects.toBe(failure);
+
+		sdkMocks.executeMgmt.mockRejectedValueOnce(failure);
+		await expect(
+			startKustoReadOnlyManagementCommandBatch('Analytics', ['.show tables'], CLUSTER_URL).promise
+		).rejects.toBe(failure);
+	});
+
 	it('rejects non-management commands before creating a client', () => {
-		expect(() => startKustoManagementCommand('Analytics', 'Events | take 1')).toThrow(
+		expect(() => startKustoManagementCommand('Analytics', 'Events | take 1', CLUSTER_URL)).toThrow(
 			'Management commands must start'
 		);
 		expect(sdkMocks.clients).toHaveLength(0);

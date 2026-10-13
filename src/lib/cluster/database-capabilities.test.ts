@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { KustoClusterConnection } from '$lib/kusto/query-client';
+import type { KustoClusterConnection } from '$lib/cluster/connections';
 import { getDatabaseCapabilities } from './database-capabilities';
 
 const remoteCluster: KustoClusterConnection = {

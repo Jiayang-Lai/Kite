@@ -145,15 +145,15 @@
 						<dl class="divide-y rounded-lg border text-sm">
 							<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3 p-3">
 								<dt class="text-muted-foreground">Cluster</dt>
-								<dd class="break-words font-medium">{clusterName}</dd>
+								<dd class="font-medium break-words">{clusterName}</dd>
 							</div>
 							<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3 p-3">
 								<dt class="text-muted-foreground">Database</dt>
-								<dd class="break-all font-mono">{databaseName}</dd>
+								<dd class="font-mono break-all">{databaseName}</dd>
 							</div>
 							<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3 p-3">
 								<dt class="text-muted-foreground">Table</dt>
-								<dd class="break-all font-mono">{table.name}</dd>
+								<dd class="font-mono break-all">{table.name}</dd>
 							</div>
 							<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3 p-3">
 								<dt class="text-muted-foreground">Changes</dt>
@@ -172,12 +172,12 @@
 									<dd class="min-w-0">
 										<p>Current schema checked</p>
 										{#if snapshot.tableId}
-											<p class="text-muted-foreground mt-1 truncate font-mono text-[11px]">
+											<p class="mt-1 truncate font-mono text-[11px] text-muted-foreground">
 												Table ID: {snapshot.tableId}
 											</p>
 										{/if}
 										{#if snapshot.totalRowCount != null}
-											<p class="text-muted-foreground mt-1 text-[11px]">
+											<p class="mt-1 text-[11px] text-muted-foreground">
 												{snapshot.totalRowCount.toLocaleString()}
 												{snapshot.totalRowCount === 1 ? 'row' : 'rows'}
 											</p>
@@ -190,12 +190,12 @@
 						<div>
 							<h3 class="mb-2 text-sm font-medium">Management command</h3>
 							<pre
-								class="bg-muted max-h-48 overflow-auto rounded-lg border p-3 font-mono text-xs whitespace-pre-wrap">{reviewPlan
+								class="max-h-48 overflow-auto rounded-lg border bg-muted p-3 font-mono text-xs whitespace-pre-wrap">{reviewPlan
 									.prepared.plan.command}</pre>
 						</div>
 
-						<div class="border-warning/40 bg-warning/10 rounded-lg border p-3">
-							<div class="text-warning flex items-start gap-2">
+						<div class="rounded-lg border border-warning/40 bg-warning/10 p-3">
+							<div class="flex items-start gap-2 text-warning">
 								<CircleAlertIcon class="mt-0.5 size-4 shrink-0" />
 								<div>
 									<p class="text-sm font-medium">This changes cluster state</p>
@@ -225,11 +225,11 @@
 						<dl class="grid gap-2 rounded-lg border bg-muted/20 p-3 text-xs sm:grid-cols-2">
 							<div>
 								<dt class="text-muted-foreground">Cluster</dt>
-								<dd class="mt-0.5 break-words font-medium">{clusterName}</dd>
+								<dd class="mt-0.5 font-medium break-words">{clusterName}</dd>
 							</div>
 							<div>
 								<dt class="text-muted-foreground">Database / table</dt>
-								<dd class="mt-0.5 break-all font-mono">{databaseName} / {table.name}</dd>
+								<dd class="mt-0.5 font-mono break-all">{databaseName} / {table.name}</dd>
 							</div>
 						</dl>
 
@@ -246,7 +246,7 @@
 									The table will be checked again immediately before the update.
 								</span>
 							{:else}
-								<CircleAlertIcon class="text-destructive size-4 shrink-0" />
+								<CircleAlertIcon class="size-4 shrink-0 text-destructive" />
 								<span class="text-destructive">Schema verification is required before review.</span>
 							{/if}
 						</div>
@@ -271,16 +271,16 @@
 							<div class="divide-y rounded-lg border">
 								{#each table.columns as column (column.name)}
 									<div class="flex min-w-0 items-center justify-between gap-3 px-3 py-2">
-										<span class="min-w-0 break-all font-mono text-xs">{column.name}</span>
+										<span class="min-w-0 font-mono text-xs break-all">{column.name}</span>
 										<Badge variant="outline" class="shrink-0 font-mono text-[11px]">
 											{column.type}
 										</Badge>
 									</div>
 								{:else}
-									<p class="text-muted-foreground p-3 text-xs">This table has no columns.</p>
+									<p class="p-3 text-xs text-muted-foreground">This table has no columns.</p>
 								{/each}
 							</div>
-							<p class="text-muted-foreground mt-2 text-xs">
+							<p class="mt-2 text-xs text-muted-foreground">
 								Existing names and types are locked because changing them can destroy stored values.
 							</p>
 						</section>
@@ -289,7 +289,7 @@
 							<div class="mb-2 flex items-center justify-between gap-3">
 								<div>
 									<h3 id="new-columns-heading" class="text-sm font-medium">New columns</h3>
-									<p class="text-muted-foreground mt-0.5 text-xs">
+									<p class="mt-0.5 text-xs text-muted-foreground">
 										New columns are appended in this order.
 									</p>
 								</div>
@@ -304,7 +304,7 @@
 										class="grid gap-2 rounded-lg border p-3 sm:grid-cols-[minmax(0,1fr)_10rem_auto]"
 									>
 										<div>
-											<label class="text-muted-foreground text-xs" for={`new-column-${column.id}`}>
+											<label class="text-xs text-muted-foreground" for={`new-column-${column.id}`}>
 												Column name
 											</label>
 											<Input
@@ -318,7 +318,7 @@
 										</div>
 										<div>
 											<label
-												class="text-muted-foreground text-xs"
+												class="text-xs text-muted-foreground"
 												for={`new-column-type-${column.id}`}>Type</label
 											>
 											<Select.Root type="single" bind:value={column.type} disabled={isBusy}>
@@ -347,7 +347,7 @@
 									</div>
 								{:else}
 									<div
-										class="text-muted-foreground rounded-lg border border-dashed p-5 text-center text-xs"
+										class="rounded-lg border border-dashed p-5 text-center text-xs text-muted-foreground"
 									>
 										No columns will be added.
 									</div>
@@ -359,7 +359,7 @@
 
 				{#if executionError}
 					<p
-						class="text-destructive bg-destructive/5 mt-4 whitespace-pre-wrap rounded-lg border border-destructive/20 p-3 text-xs"
+						class="mt-4 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-xs whitespace-pre-wrap text-destructive"
 						role="alert"
 					>
 						{executionError}

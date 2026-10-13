@@ -1,6 +1,6 @@
 import { browser } from '$app/environment';
 import type { DuckDbFileQueryOptions } from './query-client';
-import type { QueryExecution } from '$lib/types/query-result';
+import { OperationCancelledError, type QueryExecution } from '$lib/types/query-result';
 
 export type { DuckDbFileQueryOptions, DuckDbRegisteredFileSource } from './query-client';
 
@@ -58,7 +58,7 @@ export function createLazyDuckDbClient(options: LazyDuckDbClientOptions) {
 
 			const promise = (async () => {
 				const client = await loadClient();
-				if (cancelled) throw new Error('Query cancelled.');
+				if (cancelled) throw new OperationCancelledError('Query cancelled.');
 				execution = client.startDuckDbFileQuery(fileOptions);
 				if (cancelled) execution.cancel();
 				return execution.promise;

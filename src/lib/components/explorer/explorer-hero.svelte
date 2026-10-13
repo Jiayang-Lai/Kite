@@ -88,7 +88,7 @@
 <section class="min-h-0 flex-1 overflow-auto">
 	<div class="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
 		<header class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-			<div class="min-w-0 max-w-3xl">
+			<div class="max-w-3xl min-w-0">
 				<div class="flex flex-wrap items-center gap-2">
 					<Badge variant="secondary">
 						<SearchIcon />
@@ -101,7 +101,7 @@
 				<h1 class="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
 					Explore <span class="text-primary">{clusterName}</span>
 				</h1>
-				<p class="text-muted-foreground mt-2 max-w-2xl text-sm leading-6 sm:text-base">
+				<p class="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
 					Find schema objects, return to recent work, or start a query with the current cluster
 					context.
 				</p>
@@ -142,13 +142,13 @@
 								{/if}
 								<span class="min-w-0">
 									<span class="block truncate">{result.name}</span>
-									<span class="text-muted-foreground block truncate text-xs font-normal">
+									<span class="block truncate text-xs font-normal text-muted-foreground">
 										{result.kind} in {result.database}
 									</span>
 								</span>
 							</Button>
 						{:else}
-							<p class="text-muted-foreground py-4 text-sm">
+							<p class="py-4 text-sm text-muted-foreground">
 								No schema objects match “{search.trim()}”.
 							</p>
 						{/each}
@@ -181,13 +181,13 @@
 							<FileCode2Icon data-icon="inline-start" />
 							<span class="min-w-0">
 								<span class="block truncate">{query.name}</span>
-								<span class="text-muted-foreground block truncate text-xs font-normal">
+								<span class="block truncate text-xs font-normal text-muted-foreground">
 									{query.database}
 								</span>
 							</span>
 						</Button>
 					{:else}
-						<p class="text-muted-foreground text-sm">Run a query to build your recent history.</p>
+						<p class="text-sm text-muted-foreground">Run a query to build your recent history.</p>
 					{/each}
 				</Card.Content>
 				<Card.Footer>
@@ -213,13 +213,13 @@
 							<BookmarkIcon data-icon="inline-start" />
 							<span class="min-w-0">
 								<span class="block truncate">{query.name}</span>
-								<span class="text-muted-foreground block truncate text-xs font-normal">
+								<span class="block truncate text-xs font-normal text-muted-foreground">
 									{query.database}
 								</span>
 							</span>
 						</Button>
 					{:else}
-						<p class="text-muted-foreground text-sm">Save useful KQL to return to it here.</p>
+						<p class="text-sm text-muted-foreground">Save useful KQL to return to it here.</p>
 					{/each}
 				</Card.Content>
 				<Card.Footer>

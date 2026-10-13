@@ -5,11 +5,12 @@ This Terraform root manages the GitHub-side controls used by Kite's CI/CD proces
 - repository About metadata (description, website, and topics);
 - repository merge settings and the `main` default branch;
 - the `preview`, `integration-uat`, `release-candidate`, and `production` environments;
+- the `release-tagging` environment and its `RELEASE_TAG_APP_ID` variable;
 - deployment source policies for those environments;
 - non-secret Cloudflare GitHub Actions variables;
 - the environment-specific Cloudflare Pages branch aliases;
 - the protected `main` branch ruleset; and
-- the protected `v*` release-tag ruleset.
+- the protected `v*` release-tag ruleset, whose only bypass is the release-tag GitHub App.
 
 It adopts the existing `Jiayang-Lai/Kite` repository through a Terraform import block. The repository resource also has `prevent_destroy`, so Terraform cannot delete or archive it through a normal destroy operation.
 
@@ -23,6 +24,8 @@ This root does not accept or store `CLOUDFLARE_API_TOKEN`. The separate `infra/c
 - `production`
 
 The generated token necessarily exists in the protected Cloudflare Terraform state. Keeping that state separate lets routine GitHub repository changes avoid access to Cloudflare credentials. The environments prevent the token from being exposed to a job targeting a different environment.
+
+This root also does not store the release-tag GitHub App's private key. Set `RELEASE_TAG_APP_PRIVATE_KEY` on the `release-tagging` environment yourself, as described in [Release-tag GitHub App](#release-tag-github-app).
 
 `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_PAGES_PROJECT_NAME` are identifiers rather than credentials, so Terraform stores them as repository Actions variables. `CLOUDFLARE_PAGES_BRANCH` is environment-specific.
 
@@ -59,12 +62,14 @@ cp terraform.tfvars.example terraform.tfvars
 
 Set the Cloudflare account, Pages project, and the branch configured as production in Cloudflare Pages. Then initialise, format, validate, and review the plan:
 
+From the repository root (each command loads the credentials from `infra/github/.env`; see [Running Terraform](../README.md#running-terraform)):
+
 ```bash
-terraform init
-terraform fmt -check -recursive
-terraform validate
-terraform plan -out=tfplan
-terraform apply tfplan
+make tf ROOT=github CMD=init
+make tf ROOT=github CMD="fmt -check -recursive"
+make tf ROOT=github CMD=validate
+make tf ROOT=github CMD="plan -out=tfplan"
+make tf ROOT=github CMD="apply tfplan"
 ```
 
 The first plan imports the existing repository and creates the environments, variables, deployment policies, and rulesets. Inspect it carefully: the repository resource intentionally changes the allowed merge methods to squash only, enables automatic branch updates and auto-merge, and deletes short-lived branches after merge.
@@ -82,7 +87,7 @@ The defaults suit a solo-maintained repository:
 - direct pushes, force pushes, and deletion of `main` are blocked;
 - the repository owner is the required production reviewer and may self-approve;
 - the production approval gates both the Cloudflare Pages deployment and the signed GHCR image publication; and
-- the repository administrator role is the only release-tag ruleset bypass, allowing maintainers to create tags while the release policy prohibits moving or deleting published tags.
+- release tags can be created only by the **Create release tag** workflow through the release-tag GitHub App, once `release_tag_app_id` is set; until then, the repository administrator role remains the bypass.
 
 When another maintainer is available, set:
 
@@ -95,7 +100,36 @@ production_prevent_self_review  = true
 
 Do not make Terraform's own automation an unrestricted bypass actor. Infrastructure changes should use the same pull-request and review path as application changes.
 
-GitHub cannot give the administrator bypass permission for tag creation without also allowing tag updates and deletion. Those exceptional operations are visible in the repository audit history but remain a process control. If strict technical immutability becomes necessary, replace the administrator bypass with a dedicated release GitHub App and create tags only through that app.
+## Release-tag GitHub App
+
+The **Create release tag** workflow (`.github/workflows/create-release-tag.yml`) derives each release tag from `package.json` and creates it with a dedicated GitHub App. Making that App the ruleset's only bypass means a person cannot create, move, or delete a `v*` tag directly, and tags cannot disagree with the released version. The App token is also what lets the new tag start the Release workflow; tags created with `GITHUB_TOKEN` do not trigger workflows.
+
+The App's configuration is code: [`release-tag-app.json`](release-tag-app.json) is a GitHub App manifest granting a single repository permission, **Contents — Read and write**, with webhooks disabled. Terraform cannot create GitHub Apps or their private keys, so a script registers the App through GitHub's manifest flow and records its App ID for Terraform. Terraform cannot look the App up by slug instead: GitHub hides private Apps from the fine-grained token this root uses.
+
+Set it up once, with the [GitHub CLI](https://cli.github.com/) signed in as the repository owner:
+
+1. Apply this root (`make tf ROOT=github CMD="plan -out=tfplan"`, then `make tf ROOT=github CMD="apply tfplan"`) so the `release-tagging` environment exists. While `release_tag_app_id` is unset, administrators keep the tag bypass.
+2. From the repository root, run:
+
+   ```bash
+   npm run setup:release-tag-app
+   ```
+
+   Open the printed `http://localhost:47819/` link, then click **Create GitHub App** on GitHub, and then install the App on the `Kite` repository only. The script:
+   - registers the App from the manifest;
+   - stores its private key as the `RELEASE_TAG_APP_PRIVATE_KEY` secret on `release-tagging`, passing it directly to `gh` without writing it to disk;
+   - waits for the installation and confirms it can reach `Kite`, warning if it was installed on all repositories; and
+   - sets `release_tag_app_id` in `terraform.tfvars`.
+
+   The whole flow must finish within an hour. In a dev container, VS Code forwards the callback port automatically; pass `--port <number>` to use another one.
+
+3. Plan and apply this root again with the same two commands. Terraform sets `RELEASE_TAG_APP_ID` on the environment from the recorded ID and replaces the administrator bypass with the App.
+
+To change the App's permissions, edit the manifest and apply the same change on the App's settings page; GitHub does not update a registered App from its manifest. To rotate the key, generate a new one on the App's settings page, store it with `gh secret set RELEASE_TAG_APP_PRIVATE_KEY --env release-tagging --repo Jiayang-Lai/Kite < key.pem`, delete the file, and then delete the old key on GitHub.
+
+The `release-tagging` environment admits only runs from `main`, so a modified copy of the workflow on another branch cannot read the key. Anyone who can run workflows can start a release-candidate or stable tag run; production still requires the production environment approval.
+
+For an emergency that the workflow cannot handle, set `allow_admin_release_tag_bypass = true`, apply, perform the change, then set it back to `false` and apply again. Administrator bypass covers tag creation, updates, and deletion together, so leave it off otherwise. Bypass use is recorded in the repository's rule insights and audit log.
 
 ## Deployment-policy limitation
 

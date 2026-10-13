@@ -1,6 +1,6 @@
 import { browser } from '$app/environment';
 import { getContext, setContext } from 'svelte';
-import type { LogAnalyticsAccountBinding } from '$lib/kusto/query-client';
+import type { LogAnalyticsAccountBinding } from '$lib/cluster/connections';
 
 export type AzureAuthenticationProfile = {
 	id: string;

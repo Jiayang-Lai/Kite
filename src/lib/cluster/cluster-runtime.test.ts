@@ -47,7 +47,7 @@ import {
 	releaseAllClusterRuntimes,
 	releaseClusterRuntime
 } from './cluster-runtime';
-import type { KustoClusterConnection } from '$lib/kusto/query-client';
+import type { KustoClusterConnection } from '$lib/cluster/connections';
 import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 
 const schema: KustoDatabaseSchema = {

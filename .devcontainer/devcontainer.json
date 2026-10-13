@@ -1,0 +1,40 @@
+{
+	"name": "Kite",
+	"build": { "dockerfile": "Dockerfile" },
+	"features": {
+		"ghcr.io/devcontainers/features/node:1": { "version": "22" },
+		"ghcr.io/devcontainers/features/dotnet:2": { "version": "10.0" },
+		"ghcr.io/devcontainers/features/github-cli:1": {},
+		"ghcr.io/devcontainers/features/terraform:1": { "version": "1.16.4" },
+		"ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
+	},
+	"remoteUser": "vscode",
+	"mounts": [
+		"source=claude-code-config,target=/home/vscode/.claude,type=volume",
+		"source=kite-playwright-browsers,target=/home/vscode/.cache/ms-playwright,type=volume",
+		"source=kite-npm-cache,target=/home/vscode/.npm,type=volume",
+		"source=kite-nuget-packages,target=/home/vscode/.nuget/packages,type=volume"
+	],
+	"containerEnv": {
+		"CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
+	},
+	"forwardPorts": [5173, 4173, 47819],
+	"portsAttributes": {
+		"47819": {
+			"label": "Release-tag App setup callback",
+			"onAutoForward": "silent",
+			"requireLocalPort": true
+		}
+	},
+	"postCreateCommand": "bash .devcontainer/post-create.sh",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"svelte.svelte-vscode",
+				"esbenp.prettier-vscode",
+				"ms-playwright.playwright",
+				"mhutchie.git-graph"
+			]
+		}
+	}
+}

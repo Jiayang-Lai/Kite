@@ -1,5 +1,7 @@
 import tailwindcss from '@tailwindcss/vite';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
 import { playwright } from '@vitest/browser-playwright';
 import cloudflareAdapter from '@sveltejs/adapter-cloudflare';
@@ -20,6 +22,52 @@ function getBuildTarget(): BuildTarget {
 }
 
 const buildTarget = getBuildTarget();
+
+/**
+ * Mirrors the deployed CSP in `vite preview`, including end-to-end runs. The headers are generated
+ * by scripts/generate-csp-headers.mjs. Vite's `preview.headers` only reaches its static file
+ * server, not prerendered pages served by SvelteKit, so set them on every response instead.
+ */
+function previewSecurityHeaders(): Plugin {
+	return {
+		name: 'kite-preview-security-headers',
+		configurePreviewServer(server) {
+			const path = '.svelte-kit/kite-csp/headers.json';
+			if (!existsSync(path)) return;
+			const headers: Record<string, string> = JSON.parse(readFileSync(path, 'utf8'));
+			const reportPath = '/__kite/csp-reports';
+			const reports: unknown[] = [];
+			// Preview-only report collection. Browsers deliver worker violations here too, which
+			// never reach the page's console or securitypolicyviolation event.
+			for (const name of Object.keys(headers)) {
+				if (/content-security-policy/i.test(name)) headers[name] += `; report-uri ${reportPath}`;
+			}
+			server.middlewares.use(reportPath, (request, response) => {
+				if (request.method === 'POST') {
+					let body = '';
+					request.on('data', (chunk) => (body += chunk));
+					request.on('end', () => {
+						try {
+							reports.push(JSON.parse(body));
+						} catch {
+							reports.push(body);
+						}
+						response.statusCode = 204;
+						response.end();
+					});
+					return;
+				}
+				response.setHeader('content-type', 'application/json');
+				response.end(JSON.stringify(reports));
+				if (request.method === 'DELETE') reports.length = 0;
+			});
+			server.middlewares.use((_request, response, next) => {
+				for (const [name, value] of Object.entries(headers)) response.setHeader(name, value);
+				next();
+			});
+		}
+	};
+}
 const kitAdapter =
 	buildTarget === 'container'
 		? staticAdapter({
@@ -68,6 +116,7 @@ export default defineConfig({
 	plugins: [
 		monacoKustoLifecycleMode,
 		tailwindcss(),
+		previewSecurityHeaders(),
 		sveltekit({
 			compilerOptions: {
 				// Force runes mode for the project, except for libraries. Can be removed in svelte 6.
@@ -138,13 +187,26 @@ export default defineConfig({
 				test: {
 					name: 'server',
 					environment: 'node',
-					include: ['src/**/*.{test,spec}.{js,ts}', 'scripts/**/*.{test,spec}.{js,mjs,ts}'],
+					include: ['src/**/*.{test,spec}.{js,ts}'],
 					exclude: ['src/**/*.svelte.{test,spec}.{js,ts}']
+				}
+			},
+
+			// Build and release scripts run on plain Node, so their tests do not load the app's Vite
+			// config, whose browser polyfills replace modules such as `fs` and `crypto`.
+			{
+				test: {
+					name: 'scripts',
+					environment: 'node',
+					expect: { requireAssertions: true },
+					include: ['scripts/**/*.{test,spec}.{js,mjs,ts}']
 				}
 			}
 		]
 	},
 	server: {
+		// Loopback IPv4 only: reachable by the dev container's port forwarder without exposing the LAN.
+		host: '127.0.0.1',
 		watch: {
 			ignored: ['**/README.md', 'docs/**']
 		}

@@ -60,14 +60,14 @@
 				<Sidebar.MenuSubItem>
 					<button
 						type="button"
-						class={`text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring flex h-10 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left outline-none focus-visible:ring-2 ${query.id ? 'pr-8' : ''}`}
+						class={`flex h-10 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-sidebar-foreground outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring ${query.id ? 'pr-8' : ''}`}
 						onclick={() => onselect?.(query)}
 					>
-						<FileCode2Icon class="text-muted-foreground size-4 shrink-0" />
+						<FileCode2Icon class="size-4 shrink-0 text-muted-foreground" />
 						<span class="min-w-0">
 							<span class="block truncate text-xs" title={query.name}>{getQueryPreview(query)}</span
 							>
-							<span class="text-muted-foreground block truncate text-[10px]">{query.database}</span>
+							<span class="block truncate text-[10px] text-muted-foreground">{query.database}</span>
 						</span>
 					</button>
 					{#if query.id}
@@ -87,7 +87,7 @@
 					{/if}
 				</Sidebar.MenuSubItem>
 			{:else}
-				<p class="text-muted-foreground px-2 py-3 text-xs">No recent queries found.</p>
+				<p class="px-2 py-3 text-xs text-muted-foreground">No recent queries found.</p>
 			{/each}
 		</Sidebar.MenuSub>
 	</Collapsible.Content>

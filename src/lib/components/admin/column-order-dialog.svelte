@@ -171,11 +171,11 @@
 				<dl class="grid gap-2 rounded-lg border bg-muted/20 p-3 text-xs sm:grid-cols-3">
 					<div>
 						<dt class="text-muted-foreground">Cluster</dt>
-						<dd class="mt-0.5 break-words font-medium">{clusterName}</dd>
+						<dd class="mt-0.5 font-medium break-words">{clusterName}</dd>
 					</div>
 					<div>
 						<dt class="text-muted-foreground">Database / table</dt>
-						<dd class="mt-0.5 break-all font-mono">{databaseName} / {table.name}</dd>
+						<dd class="mt-0.5 font-mono break-all">{databaseName} / {table.name}</dd>
 					</div>
 					<div>
 						<dt class="text-muted-foreground">Preserved</dt>
@@ -196,14 +196,14 @@
 							The schema will be checked again immediately before reordering.
 						</span>
 					{:else}
-						<CircleAlertIcon class="text-destructive size-4 shrink-0" />
+						<CircleAlertIcon class="size-4 shrink-0 text-destructive" />
 						<span class="text-destructive">Schema verification is required before review.</span>
 					{/if}
 				</div>
 
 				{#if !snapshot}
 					<div
-						class="text-muted-foreground grid min-h-48 place-items-center rounded-lg border border-dashed p-6 text-center text-sm"
+						class="grid min-h-48 place-items-center rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground"
 					>
 						<p>The order editor will load after the current table metadata is verified.</p>
 					</div>
@@ -218,16 +218,16 @@
 					<div>
 						<h3 class="mb-2 text-sm font-medium">Complete management command</h3>
 						<pre
-							class="bg-muted max-h-48 overflow-auto rounded-lg border p-3 font-mono text-xs whitespace-pre-wrap">{reviewPlan
+							class="max-h-48 overflow-auto rounded-lg border bg-muted p-3 font-mono text-xs whitespace-pre-wrap">{reviewPlan
 								.prepared.plan.command}</pre>
-						<p class="text-muted-foreground mt-2 text-xs">
+						<p class="mt-2 text-xs text-muted-foreground">
 							Every verified column is included exactly once. The description and folder are
 							included explicitly.
 						</p>
 					</div>
 
-					<div class="border-warning/40 bg-warning/10 rounded-lg border p-3">
-						<div class="text-warning flex items-start gap-2">
+					<div class="rounded-lg border border-warning/40 bg-warning/10 p-3">
+						<div class="flex items-start gap-2 text-warning">
 							<CircleAlertIcon class="mt-0.5 size-4 shrink-0" />
 							<div>
 								<p class="text-sm font-medium">Coordinate order-dependent ingestion</p>
@@ -255,7 +255,7 @@
 					<section aria-labelledby="ordered-columns-heading">
 						<div class="mb-2">
 							<h3 id="ordered-columns-heading" class="text-sm font-medium">Target column order</h3>
-							<p class="text-muted-foreground mt-0.5 text-xs">
+							<p class="mt-0.5 text-xs text-muted-foreground">
 								Use the arrow controls to create the complete target order.
 							</p>
 						</div>
@@ -285,8 +285,8 @@
 											<ArrowDownIcon />
 										</Button>
 									</div>
-									<span class="text-muted-foreground font-mono text-xs">{index + 1}</span>
-									<span class="min-w-0 break-all font-mono text-xs">{column.name}</span>
+									<span class="font-mono text-xs text-muted-foreground">{index + 1}</span>
+									<span class="min-w-0 font-mono text-xs break-all">{column.name}</span>
 									<Badge variant="outline" class="font-mono text-[11px]">{column.type}</Badge>
 								</div>
 							{/each}
@@ -301,7 +301,7 @@
 
 				{#if executionError}
 					<p
-						class="text-destructive bg-destructive/5 whitespace-pre-wrap rounded-lg border border-destructive/20 p-3 text-xs"
+						class="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-xs whitespace-pre-wrap text-destructive"
 						role="alert"
 					>
 						{executionError}

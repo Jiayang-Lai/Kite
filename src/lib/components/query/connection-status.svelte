@@ -43,7 +43,7 @@
 </script>
 
 <footer
-	class="text-muted-foreground flex shrink-0 items-center justify-between gap-3 border-t bg-muted/30 px-2 py-1.5 text-xs sm:px-3"
+	class="flex shrink-0 items-center justify-between gap-3 border-t bg-muted/30 px-2 py-1.5 text-xs text-muted-foreground sm:px-3"
 	aria-live="polite"
 >
 	<div class="flex min-w-0 items-center gap-2">
@@ -56,7 +56,7 @@
 			aria-hidden="true"
 		></span>
 		<span class="truncate">{statusText}</span>
-		<span class="bg-border hidden h-4 w-px sm:block" aria-hidden="true"></span>
+		<span class="hidden h-4 w-px bg-border sm:block" aria-hidden="true"></span>
 		<div class="flex items-center gap-1.5">
 			{#if isQueryable}
 				<CircleCheckIcon
@@ -70,7 +70,7 @@
 			{/if}
 		</div>
 	</div>
-	<div class="text-muted-foreground ml-auto flex items-center gap-3">
+	<div class="ml-auto flex items-center gap-3 text-muted-foreground">
 		{#if database}
 			<span class="max-w-48 truncate" title={database}>Database: {database}</span>
 		{/if}
@@ -79,14 +79,14 @@
 		{/if}
 		{#if emulatedResultsWarning}
 			<span
-				class="text-warning inline-flex shrink-0"
+				class="inline-flex shrink-0 text-warning"
 				title="Emulated results may differ from Kusto because translation supports only a subset of operators and functions."
 				aria-label="Warning: emulated results may differ from Kusto"
 			>
 				<PlugZapIcon class="size-3.5" />
 			</span>
 		{/if}
-		<span class="bg-border hidden h-4 w-px sm:block" aria-hidden="true"></span>
+		<span class="hidden h-4 w-px bg-border sm:block" aria-hidden="true"></span>
 		<span
 			class="inline-flex shrink-0"
 			title={`Kusto language service: ${languageServiceStatus}`}

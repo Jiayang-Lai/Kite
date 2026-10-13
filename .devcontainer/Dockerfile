@@ -42,6 +42,10 @@ RUN apt-get update \
 		xvfb \
 	&& rm -rf /var/lib/apt/lists/*
 
+# Anchore tools used by `make sbom` (syft) and `make scan` (grype).
+RUN curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin \
+	&& curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+
 # Mount points for the download caches that devcontainer.json keeps in named volumes. Docker copies
 # a mount point's ownership into a new, empty volume, so creating them here gives vscode ownership.
 RUN install -d -o vscode -g vscode \

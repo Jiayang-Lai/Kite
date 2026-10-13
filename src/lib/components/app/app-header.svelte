@@ -32,7 +32,7 @@
 				aria-label={sidebarToggleLabel}
 			/>
 			<nav class="min-w-0" aria-label="Breadcrumb">
-				<ol class="text-muted-foreground flex min-w-0 items-center gap-1 text-xs">
+				<ol class="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
 					{#each breadcrumbs as item, index (item.label)}
 						{#if index > 0}
 							<ChevronRightIcon class="size-3 shrink-0" aria-hidden="true" />

@@ -64,9 +64,9 @@ describe('table management commands', () => {
 		).toEqual({
 			kind: 'create-table',
 			command:
-				".create table ['Today''s Events'] (Timestamp:datetime, ['Trace Id']:guid) with (docstring = 'Today''s telemetry', folder = 'Operations')",
+				".create table ['Today\\'s Events'] (Timestamp:datetime, ['Trace Id']:guid) with (docstring = 'Today\\'s telemetry', folder = 'Operations')",
 			columnDocstringsCommand:
-				".alter table ['Today''s Events'] column-docstrings (Timestamp:'', ['Trace Id']:'Correlation identifier')",
+				".alter table ['Today\\'s Events'] column-docstrings (Timestamp:'', ['Trace Id']:'Correlation identifier')",
 			tableName: "Today's Events",
 			columns: [
 				{ name: 'Timestamp', type: 'datetime' },
@@ -140,7 +140,7 @@ describe('table management commands', () => {
 		});
 
 		expect(plan.command).toBe(
-			".alter-merge table ['Today''s Metrics'] (Timestamp:datetime) with (docstring = 'Today''s telemetry')"
+			".alter-merge table ['Today\\'s Metrics'] (Timestamp:datetime) with (docstring = 'Today\\'s telemetry')"
 		);
 		expect(plan.summary).toBe('1 column added · description updated');
 	});
@@ -210,7 +210,7 @@ describe('table management commands', () => {
 			})
 		).toEqual({
 			kind: 'rename-column',
-			command: ".rename column ['Today''s Metrics'].['Trace Id'] to ['Correlation Id']",
+			command: ".rename column ['Today\\'s Metrics'].['Trace Id'] to ['Correlation Id']",
 			columnName: 'Trace Id',
 			newColumnName: 'Correlation Id',
 			risk: 'destructive',
@@ -277,7 +277,7 @@ describe('table management commands', () => {
 			})
 		).toEqual({
 			kind: 'change-column-type',
-			command: ".alter column ['Today''s Metrics'].['Trace Id'] type=guid",
+			command: ".alter column ['Today\\'s Metrics'].['Trace Id'] type=guid",
 			columnName: 'Trace Id',
 			currentColumnType: 'string',
 			newColumnType: 'guid',
@@ -391,9 +391,9 @@ describe('table management commands', () => {
 describe('table mutation preflight', () => {
 	it('builds quoted JSON-schema, CSL-schema, and details commands', () => {
 		expect(buildTablePreflightCommands("Today's Metrics")).toEqual([
-			".show table ['Today''s Metrics'] schema as json",
-			".show table ['Today''s Metrics'] cslschema",
-			".show table ['Today''s Metrics'] details"
+			".show table ['Today\\'s Metrics'] schema as json",
+			".show table ['Today\\'s Metrics'] cslschema",
+			".show table ['Today\\'s Metrics'] details"
 		]);
 	});
 

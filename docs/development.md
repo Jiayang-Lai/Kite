@@ -66,7 +66,7 @@ npm run test:e2e:install
 | `npm run preview`                 | Preview the production build locally                  |
 | `npm run check`                   | Run Svelte and TypeScript checks                      |
 | `npm run lint`                    | Check formatting with Prettier                        |
-| `npm run lint:ci`                 | Check formatting for files enforced by CI             |
+| `npm run lint:ci`                 | Check formatting for the whole repository, as CI does |
 | `npm run test:unit:run`           | Run unit tests once                                   |
 | `npm run test:coverage`           | Run unit tests and write text and LCOV coverage       |
 | `npm run test:e2e:install`        | Install Playwright Chromium and system dependencies   |

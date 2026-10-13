@@ -3,7 +3,7 @@ import type { AccountInfo } from '@azure/msal-browser';
 import type {
 	LogAnalyticsAccountBinding,
 	LogAnalyticsConnectionConfiguration
-} from '$lib/kusto/query-client';
+} from '$lib/cluster/connections';
 import {
 	AZURE_AUTHENTICATION_PROFILE_ACCOUNT_EVENT,
 	AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY

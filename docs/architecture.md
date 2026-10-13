@@ -63,7 +63,7 @@ State is separated by lifetime and storage mechanism:
 
 Persisted stores validate records during hydration and ignore malformed entries rather than trusting browser storage. The connection store always restores built-in connections, deduplicates custom IDs, migrates legacy Log Analytics session/profile links, and preserves revision numbers for optimistic mock-schema updates.
 
-Svelte 5 runes (`$state`, `$derived`, and `$effect`) back these stores and controllers. Store instances are passed through Svelte context rather than held as module-global mutable application state. This keeps construction request-safe and makes browser hydration and teardown explicit even though the current route set is prerendered.
+Svelte 5 runes (`$state`, `$derived`, and `$effect`) back these stores and controllers. Store instances are passed through Svelte context rather than held as module-global mutable application state. This keeps construction request-safe and makes browser hydration and teardown explicit even though the current route set is prerendered. The exceptions are browser-resource coordinators that must be shared by every workspace in a tab: the DuckDB session registry and the runtime transition queue and latest-schema-load handle in `cluster-runtime.ts`.
 
 ## Connections and capability dispatch
 
@@ -93,7 +93,7 @@ Removing an emulated connection is a recoverable two-phase operation: Kite first
 
 `query-workspace.svelte` composes the query experience. It delegates focused responsibilities to controllers:
 
-1. `ConnectionLifecycleController` is the sole owner of connection transition state. It loads a selected connection’s schema, cancels superseded requests, suppresses stale responses, restores valid Explorer selection, and handles failed connection retries. Explorer and Admin derive loading, error, and active-connection state directly from the controller and dispose it when their workspace unmounts.
+1. `ConnectionLifecycleController` owns connection transition state: the connection chosen in the selector, loading and error status, and failed-connection retries. It restores the last confirmed connection once stores hydrate, loads a selected connection’s schema, cancels superseded requests, suppresses stale responses, and commits the result to `ClusterSession`, which is the single owner of the active connection, its schema, and the Explorer selection. Explorer and Admin bind directly to the session, call the controller for every connection action, and dispose it when their workspace unmounts.
 2. `QueryTabController` owns tab creation, selection, close confirmation, dirty-state detection, and two-tab comparisons.
 3. `QueryExecutionController` records a recent query, starts a `ConnectionRuntime` execution, writes results or formatted diagnostics back to the owning tab, and supports cancellation. It owns a separate cancellable operation for each running tab, so queries may complete independently when the user switches tabs or starts another query.
 4. `SavedQueryWorkspaceController` coordinates save/update dialogs, dirty saved-query state, loading saved queries into tabs, and navigation from non-editor views.
@@ -111,7 +111,7 @@ Emulation is local-first:
 2. The DuckDB-WASM client executes SQL in a managed browser worker session.
 3. `emulation/cluster.ts` maps DuckDB metadata to Kite’s Kusto-shaped schema and exposes cancellable query execution.
 4. `emulation/schema-management.ts` translates reviewed table changes into transactional DuckDB DDL and comments.
-5. `admin/ingestion-adapter.ts` gives the workspace one execution contract, while `emulation/data-ingestion.ts` and the Kustainer adapter perform provider-specific ingestion. The emulated implementation builds guarded CSV/Parquet statements and validates remote-file URLs.
+5. `admin/data-ingestion-controller.svelte.ts` owns the ingestion workflow (source inputs, CSV scanning and guardrails, confirmation, chunked progress, and cancellation) for the presentational `data-ingestion-workspace.svelte`. `admin/ingestion-adapter.ts` gives it one execution contract, while `emulation/data-ingestion.ts` and the Kustainer adapter perform provider-specific ingestion. The emulated implementation builds guarded CSV/Parquet statements and validates remote-file URLs.
 
 DuckDB is imported lazily and maintains at most one session promise per connection ID. Persistent sessions keep a manifest of Kite's logical databases, checkpoint after durable changes, and acquire an exclusive browser Web Lock so the same OPFS database cannot be opened by another tab. Worker, connection, database, and lock resources are released together on disposal.
 
@@ -149,6 +149,14 @@ Vite selects one of two build targets through `KITE_BUILD_TARGET`:
 | `container` | SvelteKit static adapter; files under `build` served by unprivileged nginx | DuckDB workers and runtime WASM are bundled on the same origin |
 
 Both targets serve the KQL-to-SQL .NET WASM framework and generated Kusto documentation from Kite's static assets. `wrangler.toml` describes the Cloudflare Pages direct-upload output and enables Node.js compatibility for the generated adapter worker. The container image is a multi-stage build: the .NET/Node stage generates the translator and static site, and the runtime stage contains only nginx and the built assets.
+
+### Security headers and Content Security Policy
+
+Both targets send `X-Content-Type-Options`, `Referrer-Policy`, and `X-Frame-Options`: Cloudflare from the root `_headers` file, and nginx from `docker/security-headers.conf`, which every `location` includes because nginx drops inherited `add_header` directives in a location that declares its own.
+
+The Content Security Policy is defined in `scripts/lib/content-security-policy.mjs` and currently ships as `Content-Security-Policy-Report-Only`. SvelteKit's per-page startup scripts change with every build, so the `postbuild` step (`scripts/generate-csp-headers.mjs`) hashes the inline scripts in the prerendered HTML and writes the header into the Cloudflare `_headers` output or an nginx snippet copied by the Dockerfile. `connect-src` is deliberately open because cluster, Log Analytics, and remote-ingestion endpoints are user-selected.
+
+`vite preview` serves the same generated policy and collects `report-uri` reports, and the end-to-end fixture in `tests/fixtures/content-security-policy.ts` fails any test that triggers a page or web-worker violation. A test that knowingly triggers one must declare it with a `csp-known-violation` annotation explaining the source, and every such annotation must be resolved before the policy is enforced. None exist today: Avro table templates are validated by `src/lib/kusto/avro-schema.ts` rather than avsc, whose generated code required `'unsafe-eval'`.
 
 The Cloudflare, GitHub, and optional Azure resources are managed in separate Terraform roots. CI builds artifacts once per revision, deploys pull-request previews with trusted workflow code, deploys `main` to UAT, and promotes retained artifacts to release-candidate and production environments. See [CI/CD strategy](ci-cd.md) for the trust and promotion model.
 

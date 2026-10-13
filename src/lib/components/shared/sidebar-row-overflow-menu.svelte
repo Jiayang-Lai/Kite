@@ -29,7 +29,7 @@
 				<button
 					type="button"
 					{...props}
-					class="text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring absolute top-1/2 right-1 grid size-6 -translate-y-1/2 place-items-center rounded-md opacity-0 outline-none transition-opacity focus-visible:opacity-100 focus-visible:ring-2 group-hover/menu-sub-item:pointer-events-auto group-hover/menu-sub-item:opacity-100 group-focus-within/menu-sub-item:pointer-events-auto group-focus-within/menu-sub-item:opacity-100 pointer-events-none"
+					class="pointer-events-none absolute top-1/2 right-1 grid size-6 -translate-y-1/2 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity outline-none group-focus-within/menu-sub-item:pointer-events-auto group-focus-within/menu-sub-item:opacity-100 group-hover/menu-sub-item:pointer-events-auto group-hover/menu-sub-item:opacity-100 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-sidebar-ring"
 					aria-label={`More actions for ${label}`}
 					title={`More actions for ${label}`}
 				>

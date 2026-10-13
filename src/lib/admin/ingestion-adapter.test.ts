@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { OperationCancelledError } from '$lib/types/query-result';
+
 const mocks = vi.hoisted(() => ({
 	startEmulatedIngestion: vi.fn(),
 	startKustoManagementCommand: vi.fn()
@@ -9,8 +11,6 @@ vi.mock('$lib/emulation/data-ingestion', () => ({
 	startEmulatedIngestion: mocks.startEmulatedIngestion
 }));
 vi.mock('$lib/kusto/query-client', () => ({
-	getKustoErrorMessage: (error: unknown) =>
-		error instanceof Error ? error.message : String(error),
 	startKustoManagementCommand: mocks.startKustoManagementCommand
 }));
 
@@ -52,11 +52,18 @@ describe('ingestion adapter', () => {
 		expect(formatIngestionError(new Error('Cluster unavailable.'), 'emulated')).toBe(
 			'Cluster unavailable.'
 		);
-		expect(formatIngestionError(new Error('Command cancelled.'), 'emulated')).toContain(
-			'DuckDB rolled back'
-		);
-		expect(formatIngestionError(new Error('Command cancelled.'), 'kustainer')).toContain(
-			'may still complete'
+		// Each provider reports its own cancellation text; classification must not depend on it.
+		expect(
+			formatIngestionError(new OperationCancelledError('Query cancelled.'), 'emulated')
+		).toContain('DuckDB rolled back');
+		expect(
+			formatIngestionError(new DOMException('Query cancelled.', 'AbortError'), 'emulated')
+		).toContain('DuckDB rolled back');
+		expect(
+			formatIngestionError(new OperationCancelledError('Command cancelled.'), 'kustainer')
+		).toContain('may still complete');
+		expect(formatIngestionError(new Error('Command cancelled.'), 'kustainer')).toBe(
+			'Command cancelled.'
 		);
 	});
 });

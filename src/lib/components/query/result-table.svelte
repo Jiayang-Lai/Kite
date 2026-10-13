@@ -107,8 +107,8 @@
 	class={cn('h-full min-h-0 overflow-auto overscroll-contain', className)}
 	data-testid="result-table-scroll-viewport"
 >
-	<table class="grid min-w-full w-max border-collapse text-left text-xs">
-		<thead class="bg-muted/95 sticky top-0 z-10 grid border-b shadow-xs backdrop-blur-sm">
+	<table class="grid w-max min-w-full border-collapse text-left text-xs">
+		<thead class="sticky top-0 z-10 grid border-b bg-muted/95 shadow-xs backdrop-blur-sm">
 			{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
 				<tr class="grid" style:grid-template-columns={columnTemplate}>
 					<th class="border-r px-1" scope="col"><span class="sr-only">Inspect row</span></th>
@@ -119,7 +119,7 @@
 							<span class="block truncate whitespace-nowrap"
 								>{column?.name ?? header.column.id}</span
 							>
-							<span class="text-muted-foreground block truncate font-mono text-[9px] font-normal">
+							<span class="block truncate font-mono text-[9px] font-normal text-muted-foreground">
 								{column?.type ?? 'unknown'}
 							</span>
 						</th>
@@ -134,14 +134,14 @@
 					<tr
 						use:measureRow
 						data-index={virtualRow.index}
-						class="hover:bg-muted/40 absolute left-0 grid w-max min-w-full"
+						class="absolute left-0 grid w-max min-w-full hover:bg-muted/40"
 						style:grid-template-columns={columnTemplate}
 						style:transform={`translateY(${virtualRow.start}px)`}
 					>
 						<td class="flex items-center justify-center border-r border-b px-1 py-1">
 							<button
 								type="button"
-								class="text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring inline-flex size-6 items-center justify-center rounded-sm focus-visible:ring-[3px] focus-visible:outline-1"
+								class="inline-flex size-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-1"
 								onclick={() => toggleRow(row.id)}
 								aria-label={expandedRowId === row.id
 									? 'Collapse row details'
@@ -169,16 +169,16 @@
 							</td>
 						{/each}
 						{#if expandedRowId === row.id}
-							<td class="bg-muted/30 col-span-full border-b px-3 py-3">
+							<td class="col-span-full border-b bg-muted/30 px-3 py-3">
 								<dl class="grid gap-x-4 gap-y-3 sm:grid-cols-[minmax(10rem,16rem)_minmax(0,1fr)]">
 									{#each result.columns as column, index (`${column.name}:${index}`)}
-										<dt class="text-muted-foreground min-w-0 text-xs">
+										<dt class="min-w-0 text-xs text-muted-foreground">
 											<span class="block truncate font-medium text-foreground">{column.name}</span>
 											<span class="font-mono text-[10px]">{column.type}</span>
 										</dt>
 										<dd class="min-w-0">
 											<pre
-												class="bg-background/60 min-h-9 max-h-64 overflow-auto rounded-sm border p-2 font-mono text-xs whitespace-pre-wrap wrap-break-word">{formatDetailCell(
+												class="max-h-64 min-h-9 overflow-auto rounded-sm border bg-background/60 p-2 font-mono text-xs wrap-break-word whitespace-pre-wrap">{formatDetailCell(
 													row.original[index]
 												)}</pre>
 										</dd>

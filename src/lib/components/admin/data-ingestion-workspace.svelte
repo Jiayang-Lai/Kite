@@ -28,37 +28,14 @@
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import {
-		detectLocalFileFormat,
-		getInlineFileStatusLabel,
-		getTargetColumnShapeWarnings,
-		prepareIngestionCommand,
-		resolveIngestionSourceLocations,
-		type IngestionSourceMode,
-		type InlineFileState
-	} from '$lib/admin/data-ingestion-workspace';
-	import {
-		createInlineFileIngestionExecutor,
-		EMULATION_MAX_FILE_BYTES,
-		scanInlineCsvText,
-		scanInlineIngestionFile
-	} from '$lib/admin/inline-file-ingestion';
-	import {
-		formatIngestionError,
-		startIngestion,
-		type IngestionRequest
-	} from '$lib/admin/ingestion-adapter';
-	import { createCancellableOperation } from '$lib/query/cancellable-operation.svelte';
-	import type {
-		EmulatedIngestionFormat,
-		EmulatedIngestionRequest
-	} from '$lib/emulation/data-ingestion';
+		createDataIngestionController,
+		INLINE_DATA_MAX_LENGTH
+	} from '$lib/admin/data-ingestion-controller.svelte';
+	import { EMULATION_MAX_FILE_BYTES } from '$lib/admin/inline-file-ingestion';
+	import { formatBytes } from '$lib/kusto/inline-file';
 	import type { EmulatedStorage } from '$lib/emulation/storage';
-	import type { MountedFileFormat } from '$lib/kusto/ingestion';
-	import { formatBytes, type InlineCsvPlan } from '$lib/kusto/inline-file';
-	import { compareCsvShape } from '$lib/kusto/ingestion-guardrails';
-	import { getKustoErrorMessage, type KustoIngestionConfiguration } from '$lib/kusto/query-client';
+	import { type KustoIngestionConfiguration } from '$lib/cluster/connections';
 	import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
-	import type { QueryResult } from '$lib/types/query-result';
 	import type { PaneAPI } from 'paneforge';
 
 	type DataIngestionWorkspaceProps = {
@@ -93,287 +70,28 @@
 	const isPersistentEmulatedCluster = $derived(
 		isEmulatedCluster && emulatedStorage?.mode === 'opfs'
 	);
-
-	const INLINE_DATA_MAX_LENGTH = 100_000;
-	const INLINE_DATA_SCAN_DEBOUNCE_MS = 300;
-	let sourceMode = $state<IngestionSourceMode>('inline');
-	let inlineData = $state('');
-	let inlineDataHasHeader = $state(false);
-	let inlineDataPlan = $state.raw<InlineCsvPlan>();
-	let inlineDataPayload = $state('');
-	let inlineDataScanError = $state('');
-	let inlineDataScanning = $state(false);
-	let selectedFiles = $state.raw<FileList>();
-	let inlineFile = $state.raw<File>();
-	let inlineFileVersion = $state(0);
-	let inlineFileHasHeader = $state(true);
-	let inlineFilePlan = $state.raw<InlineCsvPlan>();
-	let inlineFileState = $state<InlineFileState>('idle');
-	let inlineFileError = $state('');
-	let inlineFileScanProgress = $state(0);
-	let completedFileChunks = $state(0);
-	let completedFileRecords = $state(0);
-	let activeFileChunk = $state<number>();
-	let extentIds = $state<string[]>([]);
-	let plannedInlineFileKey = '';
-	let scanRequestId = 0;
-	let inlineDataScanRequestId = 0;
-	let scanController: AbortController | undefined;
-	let relativePath = $state('');
-	let fileFormat = $state<MountedFileFormat>('parquet');
-	let remoteFileUrl = $state('');
-	let remoteFileFormat = $state<MountedFileFormat>('csv');
-	let remoteFileSkipFirstLine = $state(false);
-	let result = $state<QueryResult>();
-	let ingestionError = $state('');
-	const ingestionOperation = createCancellableOperation();
-	const inlineFileIngestion = createInlineFileIngestionExecutor();
-	const isRunning = $derived(ingestionOperation.isRunning);
+	const flow = createDataIngestionController(() => ({
+		databases,
+		selectedDatabase,
+		selectedTable,
+		clusterId,
+		clusterUrl,
+		ingestion,
+		isEmulatedCluster
+	}));
 	let resultsCollapsed = $state(false);
 	let resultsPane = $state<PaneAPI>();
-	let showConfirmation = $state(false);
-	let confirmationText = $state('');
-	let pendingCommand = $state('');
 
-	const databaseEntries = $derived(Object.values(databases ?? {}));
-	const databaseNames = $derived(databaseEntries.map((database) => database.name));
-	const activeDatabase = $derived(selectedDatabase ? databases?.[selectedDatabase] : undefined);
-	const tableEntries = $derived(activeDatabase?.tables ?? []);
-	const activeTable = $derived(
-		selectedTable ? tableEntries.find((table) => table.name === selectedTable) : undefined
+	const databaseNames = $derived(Object.values(databases ?? {}).map((database) => database.name));
+	const tableEntries = $derived(
+		(selectedDatabase ? databases?.[selectedDatabase] : undefined)?.tables ?? []
 	);
-	const localFileFormat = $derived<EmulatedIngestionFormat | undefined>(
-		detectLocalFileFormat(inlineFile)
-	);
-	const sourceLocations = $derived(
-		resolveIngestionSourceLocations({
-			ingestion,
-			relativePath,
-			remoteFileUrl,
-			isEmulatedCluster
-		})
-	);
-	const resolvedFilePath = $derived(sourceLocations.mountedFilePath);
-	const resolvedRemoteFileUrl = $derived(sourceLocations.remoteFileUrl);
-	const preparedCommand = $derived(
-		prepareIngestionCommand({
-			sourceMode,
-			isEmulatedCluster,
-			ingestion,
-			selectedTable,
-			inlineData,
-			inlineDataPayload,
-			inlineFile,
-			localFileFormat,
-			remoteFileUrl,
-			remoteFileFormat,
-			remoteFileSkipFirstLine,
-			relativePath,
-			fileFormat
-		})
-	);
-	const inlineDataGuardrails = $derived(
-		inlineDataPlan && activeTable ? compareCsvShape(inlineDataPlan, activeTable.columns) : []
-	);
-	const inlineFileGuardrails = $derived(
-		inlineFilePlan && activeTable ? compareCsvShape(inlineFilePlan, activeTable.columns) : []
-	);
-	const activeGuardrails = $derived(
-		sourceMode === 'inline'
-			? inlineDataGuardrails
-			: sourceMode === 'inline-file'
-				? inlineFileGuardrails
-				: []
-	);
-	const activeCsvPlan = $derived(
-		sourceMode === 'inline'
-			? inlineDataPlan
-			: sourceMode === 'inline-file'
-				? inlineFilePlan
-				: undefined
-	);
-	const targetColumnShapeWarnings = $derived(
-		getTargetColumnShapeWarnings(activeCsvPlan, activeTable?.columns)
-	);
-	const extraSourceColumnCount = $derived(
-		activeCsvPlan && activeTable
-			? Math.max(0, activeCsvPlan.columnCount - activeTable.columns.length)
-			: 0
-	);
-	const sourceShapeCheckUnavailable = $derived(
-		!isEmulatedCluster && (sourceMode === 'file' || sourceMode === 'remote-file')
-	);
-	const canIngest = $derived(
-		Boolean(
-			(ingestion || isEmulatedCluster) &&
-			selectedDatabase &&
-			selectedTable &&
-			!isRunning &&
-			(sourceMode === 'inline'
-				? inlineDataPlan && !inlineDataScanError
-				: sourceMode === 'inline-file'
-					? isEmulatedCluster
-						? inlineFile &&
-							localFileFormat &&
-							(localFileFormat === 'parquet' || inlineFilePlan) &&
-							['ready', 'cancelled', 'failed'].includes(inlineFileState)
-						: inlineFilePlan &&
-							['ready', 'partial', 'cancelled', 'failed'].includes(inlineFileState)
-					: preparedCommand.command)
-		)
-	);
-	const hasSourceInput = $derived(
-		sourceMode === 'inline'
-			? Boolean(inlineData)
-			: sourceMode === 'inline-file'
-				? Boolean(inlineFile)
-				: sourceMode === 'remote-file'
-					? Boolean(remoteFileUrl)
-					: Boolean(relativePath)
-	);
-	const fileExecutionProgress = $derived(
-		inlineFilePlan?.chunks.length
-			? Math.round((completedFileChunks / inlineFilePlan.chunks.length) * 100)
-			: 0
-	);
-	const inlineFileSourceSummary = $derived(
-		inlineFile
-			? inlineFilePlan
-				? `${inlineFile.name} · ${inlineFilePlan.totalRecords.toLocaleString()} rows${isEmulatedCluster ? '' : ` · ${inlineFilePlan.chunks.length} chunks`}`
-				: `${inlineFile.name} · ${formatBytes(inlineFile.size)}`
-			: isEmulatedCluster
-				? 'Local file'
-				: 'Inline CSV file'
-	);
-	const confirmationSource = $derived(
-		sourceMode === 'inline'
-			? 'Inline CSV'
-			: sourceMode === 'inline-file'
-				? inlineFileSourceSummary
-				: sourceMode === 'remote-file'
-					? resolvedRemoteFileUrl
-					: resolvedFilePath
-	);
-	const inlineFileStatusLabel = $derived(getInlineFileStatusLabel(inlineFileState));
 
+	// Keep the bound selection valid for the loaded schema.
 	$effect(() => {
 		if (!databaseNames.length) return;
 		if (!databaseNames.includes(selectedDatabase)) selectedDatabase = databaseNames[0];
 	});
-
-	$effect(() => {
-		const data = inlineData;
-		const hasHeader = inlineDataHasHeader;
-		const nextScanRequestId = ++inlineDataScanRequestId;
-		inlineDataPlan = undefined;
-		inlineDataPayload = '';
-		inlineDataScanError = '';
-		inlineDataScanning = Boolean(data.trim());
-		if (!data.trim()) return;
-
-		const timer = setTimeout(() => {
-			void (async () => {
-				try {
-					const { plan, payload } = await scanInlineCsvText(
-						data,
-						hasHeader,
-						INLINE_DATA_MAX_LENGTH
-					);
-					if (nextScanRequestId !== inlineDataScanRequestId) return;
-					inlineDataPlan = plan;
-					inlineDataPayload = payload;
-				} catch (error) {
-					if (nextScanRequestId !== inlineDataScanRequestId) return;
-					inlineDataScanError = error instanceof Error ? error.message : String(error);
-				} finally {
-					if (nextScanRequestId === inlineDataScanRequestId) inlineDataScanning = false;
-				}
-			})();
-		}, INLINE_DATA_SCAN_DEBOUNCE_MS);
-
-		return () => clearTimeout(timer);
-	});
-
-	$effect(() => {
-		if (isEmulatedCluster && sourceMode === 'file') sourceMode = 'inline';
-	});
-
-	$effect(() => {
-		const file = inlineFile;
-		const table = selectedTable;
-		const planKey = `${inlineFileVersion}\0${table ?? ''}\0${inlineFileHasHeader}`;
-		if (
-			!file ||
-			!table ||
-			(!ingestion && !isEmulatedCluster) ||
-			planKey === plannedInlineFileKey ||
-			isRunning
-		) {
-			return;
-		}
-		plannedInlineFileKey = planKey;
-		void scanInlineFile(file, table);
-	});
-
-	function selectInlineFile() {
-		inlineFile = selectedFiles?.[0];
-		inlineFileVersion += 1;
-		plannedInlineFileKey = '';
-		inlineFilePlan = undefined;
-		inlineFileState = inlineFile ? 'scanning' : 'idle';
-		inlineFileError = '';
-		completedFileChunks = 0;
-		completedFileRecords = 0;
-		extentIds = [];
-	}
-
-	function rescanInlineFile() {
-		if (!inlineFile) return;
-		plannedInlineFileKey = '';
-		inlineFileVersion += 1;
-	}
-
-	async function scanInlineFile(file: File, table: string) {
-		const nextScanRequestId = ++scanRequestId;
-		scanController?.abort();
-		scanController = new AbortController();
-		inlineFilePlan = undefined;
-		inlineFileState = 'scanning';
-		inlineFileError = '';
-		inlineFileScanProgress = 0;
-		completedFileChunks = 0;
-		completedFileRecords = 0;
-		extentIds = [];
-		try {
-			const scan = await scanInlineIngestionFile({
-				file,
-				table,
-				isEmulatedCluster,
-				ingestion,
-				hasHeader: inlineFileHasHeader,
-				signal: scanController.signal,
-				onProgress(progress) {
-					if (nextScanRequestId === scanRequestId) {
-						inlineFileScanProgress = progress;
-					}
-				}
-			});
-			if (nextScanRequestId !== scanRequestId) return;
-			inlineFilePlan = scan.plan;
-			inlineFileState = 'ready';
-		} catch (error) {
-			if (nextScanRequestId !== scanRequestId) return;
-			if (error instanceof DOMException && error.name === 'AbortError') {
-				inlineFileState = 'cancelled';
-				inlineFileError = 'CSV scan cancelled.';
-			} else {
-				inlineFileState = 'failed';
-				inlineFileError = error instanceof Error ? error.message : String(error);
-			}
-		} finally {
-			if (nextScanRequestId === scanRequestId) scanController = undefined;
-		}
-	}
 
 	$effect(() => {
 		const firstTable = tableEntries[0];
@@ -384,158 +102,6 @@
 		}
 	});
 
-	function currentEmulatedIngestion(): EmulatedIngestionRequest {
-		const table = selectedTable;
-		if (!table) throw new Error('Select a target table.');
-
-		if (sourceMode === 'inline') {
-			return {
-				clusterId,
-				database: selectedDatabase,
-				table,
-				format: 'csv',
-				source: { kind: 'inline', data: inlineDataPayload }
-			};
-		}
-		if (sourceMode === 'inline-file') {
-			if (!inlineFile || !localFileFormat) throw new Error('Select a local CSV or Parquet file.');
-			return {
-				clusterId,
-				database: selectedDatabase,
-				table,
-				format: localFileFormat,
-				hasHeader: localFileFormat === 'csv' && inlineFileHasHeader,
-				source: { kind: 'file', file: inlineFile }
-			};
-		}
-		if (sourceMode === 'remote-file') {
-			return {
-				clusterId,
-				database: selectedDatabase,
-				table,
-				format: remoteFileFormat,
-				hasHeader: remoteFileFormat === 'csv' && remoteFileSkipFirstLine,
-				source: { kind: 'remote', url: remoteFileUrl }
-			};
-		}
-		throw new Error('Mounted-container files are not available to browser DuckDB.');
-	}
-
-	function requestIngestion() {
-		if (!canIngest) {
-			ingestionError = preparedCommand.error;
-			return;
-		}
-		pendingCommand =
-			sourceMode === 'inline-file' && !isEmulatedCluster
-				? `${inlineFilePlan?.chunks.length ?? 0} sequential .ingest inline commands with per-chunk ingest-by tags`
-				: preparedCommand.command;
-		confirmationText = '';
-		showConfirmation = true;
-	}
-
-	function confirmIngestion() {
-		if (confirmationText !== 'RUN' || !pendingCommand) return;
-		showConfirmation = false;
-		if (sourceMode === 'inline-file' && !isEmulatedCluster) void runInlineFileIngestion();
-		else void runIngestion(pendingCommand);
-	}
-
-	async function runIngestion(command: string) {
-		ingestionError = '';
-		result = undefined;
-		if (isEmulatedCluster && sourceMode === 'inline-file') inlineFileState = 'running';
-		await ingestionOperation.run(
-			async (operation) => {
-				const request: IngestionRequest = isEmulatedCluster
-					? { kind: 'emulated', request: currentEmulatedIngestion() }
-					: { kind: 'kustainer', database: selectedDatabase, command, clusterUrl };
-				const execution = startIngestion(request);
-				operation.setExecution(execution);
-				return execution.promise;
-			},
-			{
-				onSuccess: (completedResult) => {
-					result = completedResult;
-					if (isEmulatedCluster && sourceMode === 'inline-file') inlineFileState = 'succeeded';
-				},
-				onError: (error) => {
-					const message = getKustoErrorMessage(error);
-					ingestionError = formatIngestionError(
-						error,
-						isEmulatedCluster ? 'emulated' : 'kustainer'
-					);
-					if (isEmulatedCluster && sourceMode === 'inline-file') {
-						inlineFileError = ingestionError;
-						inlineFileState = message === 'Command cancelled.' ? 'cancelled' : 'failed';
-					}
-				}
-			}
-		);
-	}
-
-	async function runInlineFileIngestion() {
-		const file = inlineFile;
-		const plan = inlineFilePlan;
-		const table = selectedTable;
-		const database = selectedDatabase;
-		if (!file || !plan || !table || !ingestion) return;
-
-		ingestionError = '';
-		result = undefined;
-		inlineFileState = 'running';
-		await ingestionOperation.run(
-			async (operation) => {
-				return inlineFileIngestion.run({
-					file,
-					plan,
-					database,
-					table,
-					clusterUrl,
-					maxInlineCommandBytes: ingestion.maxInlineCommandBytes,
-					startChunk: completedFileChunks,
-					completedRecords: completedFileRecords,
-					extentIds,
-					operation,
-					onProgress: (progress) => {
-						if (!operation.isCurrent()) return;
-						activeFileChunk = progress.activeChunk;
-						completedFileChunks = progress.completedChunks;
-						completedFileRecords = progress.completedRecords;
-						extentIds = progress.extentIds;
-						if (progress.result) result = progress.result;
-					}
-				});
-			},
-			{
-				onSuccess: (outcome) => {
-					if (!outcome) return;
-					inlineFileState = outcome.state;
-					ingestionError = outcome.error ?? '';
-				},
-				onError: (error) => {
-					const message = getKustoErrorMessage(error);
-					ingestionError =
-						message === 'Command cancelled.'
-							? 'Stopped inline-file ingestion. Completed chunks remain ingested; the active chunk may also complete.'
-							: message;
-					inlineFileError = ingestionError;
-					inlineFileState = completedFileChunks
-						? 'partial'
-						: inlineFileIngestion.cancelRequested
-							? 'cancelled'
-							: 'failed';
-				}
-			}
-		);
-	}
-
-	function cancelIngestion() {
-		inlineFileIngestion.cancel();
-		scanController?.abort();
-		ingestionOperation.cancel();
-	}
-
 	function setResultsCollapsed(collapsed: boolean) {
 		resultsCollapsed = collapsed;
 		if (collapsed) {
@@ -545,12 +111,7 @@
 		}
 	}
 
-	onDestroy(() => {
-		scanRequestId += 1;
-		inlineDataScanRequestId += 1;
-		scanController?.abort();
-		ingestionOperation.dispose();
-	});
+	onDestroy(() => flow.dispose());
 </script>
 
 <section class="relative flex min-h-0 flex-1 flex-col">
@@ -569,7 +130,7 @@
 	{:else if !databaseNames.length}
 		<Card.Root class="min-h-0 flex-1 bg-background shadow-xs">
 			<Card.Content
-				class="text-muted-foreground grid h-full place-items-center p-6 text-center text-sm"
+				class="grid h-full place-items-center p-6 text-center text-sm text-muted-foreground"
 			>
 				{isLoading
 					? 'Loading databases and tables…'
@@ -588,7 +149,7 @@
 						<div class="flex flex-wrap items-start justify-between gap-3">
 							<div>
 								<h2 class="font-semibold">Ingest into an existing table</h2>
-								<p class="text-muted-foreground mt-1 text-sm">
+								<p class="mt-1 text-sm text-muted-foreground">
 									Direct ingestion appends data to the selected
 									{isEmulatedCluster ? 'browser DuckDB' : 'Kustainer'} table.
 									{#if isEmulatedCluster}
@@ -626,7 +187,11 @@
 									<div class="grid gap-3 sm:grid-cols-2">
 										<div>
 											<label class="text-sm font-medium" for="ingestion-database">Database</label>
-											<Select.Root type="single" bind:value={selectedDatabase} disabled={isRunning}>
+											<Select.Root
+												type="single"
+												bind:value={selectedDatabase}
+												disabled={flow.isRunning}
+											>
 												<Select.Trigger id="ingestion-database" class="mt-1 w-full">
 													<Select.Value placeholder="Select database" />
 												</Select.Trigger>
@@ -644,7 +209,7 @@
 											<Select.Root
 												type="single"
 												bind:value={selectedTable}
-												disabled={isRunning || !tableEntries.length}
+												disabled={flow.isRunning || !tableEntries.length}
 											>
 												<Select.Trigger id="ingestion-table" class="mt-1 w-full">
 													<Select.Value placeholder="Select table" />
@@ -660,21 +225,21 @@
 										</div>
 									</div>
 
-									<Tabs.Root bind:value={sourceMode}>
+									<Tabs.Root bind:value={flow.form.sourceMode}>
 										<Tabs.List>
-											<Tabs.Trigger value="inline" disabled={isRunning}
+											<Tabs.Trigger value="inline" disabled={flow.isRunning}
 												><FileTextIcon /> Inline CSV</Tabs.Trigger
 											>
-											<Tabs.Trigger value="inline-file" disabled={isRunning}
+											<Tabs.Trigger value="inline-file" disabled={flow.isRunning}
 												><FileUpIcon />
 												{isEmulatedCluster ? 'Local file' : 'Inline file'}</Tabs.Trigger
 											>
 											{#if !isEmulatedCluster}
-												<Tabs.Trigger value="file" disabled={isRunning}
+												<Tabs.Trigger value="file" disabled={flow.isRunning}
 													><FolderOpenIcon /> Mounted file</Tabs.Trigger
 												>
 											{/if}
-											<Tabs.Trigger value="remote-file" disabled={isRunning}
+											<Tabs.Trigger value="remote-file" disabled={flow.isRunning}
 												><CloudDownloadIcon /> Remote file</Tabs.Trigger
 											>
 										</Tabs.List>
@@ -684,15 +249,15 @@
 												<label class="text-sm font-medium" for="inline-ingestion-data"
 													>CSV rows</label
 												>
-												<span class="text-muted-foreground text-xs tabular-nums">
-													{inlineData.length.toLocaleString()} / {INLINE_DATA_MAX_LENGTH.toLocaleString()}
+												<span class="text-xs text-muted-foreground tabular-nums">
+													{flow.form.inlineData.length.toLocaleString()} / {INLINE_DATA_MAX_LENGTH.toLocaleString()}
 												</span>
 											</div>
 											<Textarea
 												id="inline-ingestion-data"
-												bind:value={inlineData}
+												bind:value={flow.form.inlineData}
 												maxlength={INLINE_DATA_MAX_LENGTH}
-												disabled={isRunning}
+												disabled={flow.isRunning}
 												class="min-h-40 resize-y font-mono text-xs"
 												placeholder={'2026-07-22T12:00:00Z,sensor-1,temperature,21.5\n2026-07-22T12:01:00Z,sensor-2,humidity,45.2'}
 											/>
@@ -700,24 +265,24 @@
 												<input
 													id="inline-data-has-header"
 													type="checkbox"
-													bind:checked={inlineDataHasHeader}
-													disabled={isRunning}
-													class="border-input accent-primary size-4 rounded border"
+													bind:checked={flow.form.inlineDataHasHeader}
+													disabled={flow.isRunning}
+													class="size-4 rounded border border-input accent-primary"
 												/>
 												First row contains column names
 											</label>
-											<p class="text-muted-foreground text-xs">
+											<p class="text-xs text-muted-foreground">
 												Values are parsed as CSV in the table column order. When enabled, the first
 												row is used for comparison and excluded from ingestion.
 											</p>
-											{#if inlineDataScanning}
-												<p class="text-muted-foreground text-xs" aria-live="polite">
+											{#if flow.inlineDataScanning}
+												<p class="text-xs text-muted-foreground" aria-live="polite">
 													Checking CSV shape…
 												</p>
-											{:else if inlineDataScanError}
-												<p class="text-destructive flex items-center gap-2 text-xs" role="alert">
+											{:else if flow.inlineDataScanError}
+												<p class="flex items-center gap-2 text-xs text-destructive" role="alert">
 													<CircleAlertIcon class="size-4 shrink-0" />
-													{inlineDataScanError}
+													{flow.inlineDataScanError}
 												</p>
 											{/if}
 										</Tabs.Content>
@@ -733,141 +298,142 @@
 													accept={isEmulatedCluster
 														? '.csv,.parquet,text/csv,application/vnd.apache.parquet'
 														: '.csv,text/csv'}
-													bind:files={selectedFiles}
-													onchange={selectInlineFile}
-													disabled={isRunning}
+													bind:files={flow.form.selectedFiles}
+													onchange={flow.selectInlineFile}
+													disabled={flow.isRunning}
 													class="mt-1"
 												/>
 											</div>
 
-											{#if !isEmulatedCluster || localFileFormat !== 'parquet'}
+											{#if !isEmulatedCluster || flow.localFileFormat !== 'parquet'}
 												<label class="flex w-fit items-center gap-2 text-sm">
 													<input
 														type="checkbox"
-														bind:checked={inlineFileHasHeader}
-														disabled={isRunning}
-														class="border-input accent-primary size-4 rounded border"
+														bind:checked={flow.form.inlineFileHasHeader}
+														disabled={flow.isRunning}
+														class="size-4 rounded border border-input accent-primary"
 													/>
 													First row contains column names
 												</label>
 											{/if}
 
-											{#if inlineFileState === 'scanning'}
+											{#if flow.inlineFileState === 'scanning'}
 												<div class="space-y-2 rounded-md border p-3" aria-live="polite">
 													<div class="flex items-center justify-between gap-3 text-xs">
-														<span>Scanning {inlineFile?.name}</span>
+														<span>Scanning {flow.inlineFile?.name}</span>
 														<span class="text-muted-foreground tabular-nums"
-															>{inlineFileScanProgress}%</span
+															>{flow.inlineFileScanProgress}%</span
 														>
 													</div>
-													<div class="bg-muted h-1.5 overflow-hidden rounded-full">
+													<div class="h-1.5 overflow-hidden rounded-full bg-muted">
 														<div
-															class="bg-primary h-full transition-[width]"
-															style:width={`${inlineFileScanProgress}%`}
+															class="h-full bg-primary transition-[width]"
+															style:width={`${flow.inlineFileScanProgress}%`}
 														></div>
 													</div>
 												</div>
-											{:else if inlineFile && (inlineFilePlan || (isEmulatedCluster && localFileFormat === 'parquet'))}
+											{:else if flow.inlineFile && (flow.inlineFilePlan || (isEmulatedCluster && flow.localFileFormat === 'parquet'))}
 												<div class="space-y-3 rounded-md border p-3">
 													<div class="flex flex-wrap items-center justify-between gap-2">
 														<div class="min-w-0">
-															<p class="truncate text-sm font-medium">{inlineFile.name}</p>
-															<p class="text-muted-foreground text-xs">
-																{formatBytes(inlineFile.size)} ·
-																{localFileFormat === 'parquet' ? 'Parquet' : 'UTF-8 CSV'}
+															<p class="truncate text-sm font-medium">{flow.inlineFile.name}</p>
+															<p class="text-xs text-muted-foreground">
+																{formatBytes(flow.inlineFile.size)} ·
+																{flow.localFileFormat === 'parquet' ? 'Parquet' : 'UTF-8 CSV'}
 															</p>
 														</div>
 														<Badge
-															variant={inlineFileState === 'succeeded'
+															variant={flow.inlineFileState === 'succeeded'
 																? 'secondary'
-																: inlineFileState === 'failed'
+																: flow.inlineFileState === 'failed'
 																	? 'destructive'
 																	: 'outline'}
 														>
-															{inlineFileStatusLabel}
+															{flow.inlineFileStatusLabel}
 														</Badge>
 													</div>
-													{#if inlineFilePlan}
+													{#if flow.inlineFilePlan}
 														<dl class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-															<div class="bg-muted rounded-md p-2">
+															<div class="rounded-md bg-muted p-2">
 																<dt class="text-muted-foreground">Rows</dt>
 																<dd class="mt-1 font-medium tabular-nums">
-																	{inlineFilePlan.totalRecords.toLocaleString()}
+																	{flow.inlineFilePlan.totalRecords.toLocaleString()}
 																</dd>
 															</div>
-															<div class="bg-muted rounded-md p-2">
+															<div class="rounded-md bg-muted p-2">
 																<dt class="text-muted-foreground">Columns</dt>
 																<dd class="mt-1 font-medium tabular-nums">
-																	{inlineFilePlan.columnCount}
+																	{flow.inlineFilePlan.columnCount}
 																</dd>
 															</div>
-															<div class="bg-muted rounded-md p-2">
+															<div class="rounded-md bg-muted p-2">
 																<dt class="text-muted-foreground">
 																	{isEmulatedCluster ? 'Format' : 'Chunks'}
 																</dt>
 																<dd class="mt-1 font-medium tabular-nums">
-																	{isEmulatedCluster ? 'CSV' : inlineFilePlan.chunks.length}
+																	{isEmulatedCluster ? 'CSV' : flow.inlineFilePlan.chunks.length}
 																</dd>
 															</div>
-															<div class="bg-muted rounded-md p-2">
+															<div class="rounded-md bg-muted p-2">
 																<dt class="text-muted-foreground">Data</dt>
 																<dd class="mt-1 font-medium tabular-nums">
-																	{formatBytes(inlineFilePlan.dataBytes)}
+																	{formatBytes(flow.inlineFilePlan.dataBytes)}
 																</dd>
 															</div>
 														</dl>
 													{/if}
-													{#if inlineFilePlan?.header}
+													{#if flow.inlineFilePlan?.header}
 														<p
-															class="text-muted-foreground truncate text-xs"
-															title={inlineFilePlan.header}
+															class="truncate text-xs text-muted-foreground"
+															title={flow.inlineFilePlan.header}
 														>
-															Header: <code>{inlineFilePlan.header}</code>
+															Header: <code>{flow.inlineFilePlan.header}</code>
 														</p>
 													{/if}
-													{#if !isEmulatedCluster && inlineFilePlan && (inlineFileState === 'running' || completedFileChunks > 0)}
+													{#if !isEmulatedCluster && flow.inlineFilePlan && (flow.inlineFileState === 'running' || flow.completedFileChunks > 0)}
 														<div class="space-y-2 border-t pt-3" aria-live="polite">
 															<div class="flex items-center justify-between gap-3 text-xs">
 																<span>
-																	{inlineFileState === 'running' && activeFileChunk !== undefined
-																		? `Ingesting chunk ${activeFileChunk + 1} of ${inlineFilePlan.chunks.length}`
-																		: `${completedFileChunks} of ${inlineFilePlan.chunks.length} chunks completed`}
+																	{flow.inlineFileState === 'running' &&
+																	flow.activeFileChunk !== undefined
+																		? `Ingesting chunk ${flow.activeFileChunk + 1} of ${flow.inlineFilePlan.chunks.length}`
+																		: `${flow.completedFileChunks} of ${flow.inlineFilePlan.chunks.length} chunks completed`}
 																</span>
 																<span class="text-muted-foreground tabular-nums"
-																	>{fileExecutionProgress}%</span
+																	>{flow.fileExecutionProgress}%</span
 																>
 															</div>
-															<div class="bg-muted h-1.5 overflow-hidden rounded-full">
+															<div class="h-1.5 overflow-hidden rounded-full bg-muted">
 																<div
-																	class="bg-primary h-full transition-[width]"
-																	style:width={`${fileExecutionProgress}%`}
+																	class="h-full bg-primary transition-[width]"
+																	style:width={`${flow.fileExecutionProgress}%`}
 																></div>
 															</div>
-															<p class="text-muted-foreground text-xs">
-																{completedFileRecords.toLocaleString()} rows confirmed
-																{#if extentIds.length}
-																	· {extentIds.length} extents returned{/if}
+															<p class="text-xs text-muted-foreground">
+																{flow.completedFileRecords.toLocaleString()} rows confirmed
+																{#if flow.extentIds.length}
+																	· {flow.extentIds.length} extents returned{/if}
 															</p>
 														</div>
 													{/if}
 												</div>
-											{:else if inlineFileError}
+											{:else if flow.inlineFileError}
 												<div class="space-y-2">
 													<p
-														class="text-destructive flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs"
+														class="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
 														role="alert"
 													>
 														<CircleAlertIcon class="size-4 shrink-0" />
-														{inlineFileError}
+														{flow.inlineFileError}
 													</p>
-													{#if inlineFile}
-														<Button variant="outline" size="sm" onclick={rescanInlineFile}
+													{#if flow.inlineFile}
+														<Button variant="outline" size="sm" onclick={flow.rescanInlineFile}
 															>Scan again</Button
 														>
 													{/if}
 												</div>
 											{:else}
-												<p class="text-muted-foreground text-xs">
+												<p class="text-xs text-muted-foreground">
 													{#if isEmulatedCluster}
 														DuckDB reads the selected file directly in this browser tab. Limit:
 														{formatBytes(EMULATION_MAX_FILE_BYTES)}.
@@ -888,8 +454,8 @@
 														>
 														<Input
 															id="mounted-file-path"
-															bind:value={relativePath}
-															disabled={isRunning}
+															bind:value={flow.form.relativePath}
+															disabled={flow.isRunning}
 															class="mt-1 font-mono"
 															placeholder="import.parquet"
 														/>
@@ -898,7 +464,11 @@
 														<label class="text-sm font-medium" for="mounted-file-format"
 															>Format</label
 														>
-														<Select.Root type="single" bind:value={fileFormat} disabled={isRunning}>
+														<Select.Root
+															type="single"
+															bind:value={flow.form.fileFormat}
+															disabled={flow.isRunning}
+														>
 															<Select.Trigger id="mounted-file-format" class="mt-1 w-full">
 																<Select.Value />
 															</Select.Trigger>
@@ -909,13 +479,13 @@
 														</Select.Root>
 													</div>
 												</div>
-												<div class="bg-muted rounded-md p-3 text-xs">
+												<div class="rounded-md bg-muted p-3 text-xs">
 													<p class="text-muted-foreground">Kustainer source path</p>
 													<code class="mt-1 block break-all"
-														>{resolvedFilePath || `${ingestion.containerRoot}/…`}</code
+														>{flow.resolvedFilePath || `${ingestion.containerRoot}/…`}</code
 													>
 												</div>
-												<p class="text-muted-foreground text-xs">
+												<p class="text-xs text-muted-foreground">
 													The file must already exist below <code>{ingestion.containerRoot}</code> inside
 													the container.
 												</p>
@@ -929,8 +499,8 @@
 													<Input
 														id="remote-file-url"
 														type="url"
-														bind:value={remoteFileUrl}
-														disabled={isRunning}
+														bind:value={flow.form.remoteFileUrl}
+														disabled={flow.isRunning}
 														class="mt-1 font-mono"
 														placeholder="https://example.com/import.csv"
 														autocomplete="url"
@@ -940,8 +510,8 @@
 													<label class="text-sm font-medium" for="remote-file-format">Format</label>
 													<Select.Root
 														type="single"
-														bind:value={remoteFileFormat}
-														disabled={isRunning}
+														bind:value={flow.form.remoteFileFormat}
+														disabled={flow.isRunning}
 													>
 														<Select.Trigger id="remote-file-format" class="mt-1 w-full">
 															<Select.Value />
@@ -953,24 +523,24 @@
 													</Select.Root>
 												</div>
 											</div>
-											{#if remoteFileFormat === 'csv'}
+											{#if flow.form.remoteFileFormat === 'csv'}
 												<label class="flex w-fit items-center gap-2 text-sm">
 													<input
 														type="checkbox"
-														bind:checked={remoteFileSkipFirstLine}
-														disabled={isRunning}
-														class="border-input accent-primary size-4 rounded border"
+														bind:checked={flow.form.remoteFileSkipFirstLine}
+														disabled={flow.isRunning}
+														class="size-4 rounded border border-input accent-primary"
 													/>
 													Skip first line
 												</label>
 											{/if}
-											<div class="bg-muted rounded-md p-3 text-xs">
+											<div class="rounded-md bg-muted p-3 text-xs">
 												<p class="text-muted-foreground">Remote source</p>
 												<code class="mt-1 block break-all"
-													>{resolvedRemoteFileUrl || 'https://…'}</code
+													>{flow.resolvedRemoteFileUrl || 'https://…'}</code
 												>
 											</div>
-											<p class="text-muted-foreground text-xs">
+											<p class="text-xs text-muted-foreground">
 												Import a CSV or Parquet file from a public HTTP(S) URL, or use a signed URL
 												when the source requires temporary read access.
 												{#if isEmulatedCluster}
@@ -980,23 +550,23 @@
 										</Tabs.Content>
 									</Tabs.Root>
 
-									{#if preparedCommand.error && hasSourceInput}
-										<p class="text-destructive flex items-center gap-2 text-xs" role="alert">
+									{#if flow.preparedCommand.error && flow.hasSourceInput}
+										<p class="flex items-center gap-2 text-xs text-destructive" role="alert">
 											<CircleAlertIcon class="size-4 shrink-0" />
-											{preparedCommand.error}
+											{flow.preparedCommand.error}
 										</p>
 									{/if}
-									{#if activeGuardrails.length}
+									{#if flow.activeGuardrails.length}
 										<Alert.Root class="!rounded-none !border-0 bg-transparent !shadow-none">
 											<CircleAlertIcon class="text-warning" />
 											<Alert.Title>Source shape differs from the target</Alert.Title>
 											<Alert.Description>
-												{activeCsvPlan?.columnCount ?? 0} source columns; the target table has
-												{activeTable?.columns.length ?? 0}.
+												{flow.activeCsvPlan?.columnCount ?? 0} source columns; the target table has
+												{flow.activeTable?.columns.length ?? 0}.
 											</Alert.Description>
 										</Alert.Root>
-									{:else if sourceShapeCheckUnavailable && hasSourceInput}
-										<p class="text-muted-foreground text-xs">
+									{:else if flow.sourceShapeCheckUnavailable && flow.hasSourceInput}
+										<p class="text-xs text-muted-foreground">
 											Source shape cannot be checked before ingestion because this file is read by
 											Kustainer, not the browser.
 										</p>
@@ -1006,22 +576,22 @@
 								<div
 									class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t bg-background px-2 py-3 sm:px-3"
 								>
-									<p class="text-muted-foreground text-xs">
-										Runs against <span class="text-foreground font-medium">{clusterName}</span>.
+									<p class="text-xs text-muted-foreground">
+										Runs against <span class="font-medium text-foreground">{clusterName}</span>.
 										Data is appended.
 									</p>
-									{#if isRunning}
-										<Button variant="outline" size="sm" onclick={cancelIngestion}>
+									{#if flow.isRunning}
+										<Button variant="outline" size="sm" onclick={flow.cancelIngestion}>
 											<CircleStopIcon /> Stop waiting
 										</Button>
-									{:else if sourceMode === 'inline-file' && inlineFileState === 'scanning'}
-										<Button variant="outline" size="sm" onclick={cancelIngestion}>
+									{:else if flow.form.sourceMode === 'inline-file' && flow.inlineFileState === 'scanning'}
+										<Button variant="outline" size="sm" onclick={flow.cancelIngestion}>
 											<CircleStopIcon /> Cancel scan
 										</Button>
 									{:else}
-										<Button size="sm" disabled={!canIngest} onclick={requestIngestion}>
+										<Button size="sm" disabled={!flow.canIngest} onclick={flow.requestIngestion}>
 											<PlayIcon />
-											{sourceMode === 'inline-file' && completedFileChunks
+											{flow.form.sourceMode === 'inline-file' && flow.completedFileChunks
 												? 'Review retry'
 												: 'Review ingestion'}
 										</Button>
@@ -1035,39 +605,39 @@
 						<Resizable.Pane defaultSize={25} minSize={15}>
 							<aside class="flex h-full min-h-0 flex-col border">
 								<div class="flex items-center gap-2 border-b p-3">
-									<TablePropertiesIcon class="text-muted-foreground size-4" />
+									<TablePropertiesIcon class="size-4 text-muted-foreground" />
 									<div class="min-w-0">
 										<p class="truncate text-sm font-medium">
-											{activeTable?.name ?? 'Select a table'}
+											{flow.activeTable?.name ?? 'Select a table'}
 										</p>
-										<p class="text-muted-foreground text-xs">Target column order</p>
+										<p class="text-xs text-muted-foreground">Target column order</p>
 									</div>
 								</div>
 								<ScrollArea class="min-h-0 flex-1" orientation="vertical" type="auto">
-									{#if activeTable?.columns.length}
+									{#if flow.activeTable?.columns.length}
 										<ol class="divide-y">
-											{#each activeTable.columns as column, index (`${column.name}:${index}`)}
+											{#each flow.activeTable.columns as column, index (`${column.name}:${index}`)}
 												<li
-													class={`grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2 px-3 py-2 text-xs ${targetColumnShapeWarnings[index] ? 'bg-amber-500/10' : ''}`}
+													class={`grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2 px-3 py-2 text-xs ${flow.targetColumnShapeWarnings[index] ? 'bg-amber-500/10' : ''}`}
 												>
-													<span class="text-muted-foreground text-right tabular-nums"
+													<span class="text-right text-muted-foreground tabular-nums"
 														>{index + 1}</span
 													>
 													<span class="min-w-0">
 														<span class="block truncate font-medium">{column.name}</span>
-														<span class="text-muted-foreground font-mono">{column.type}</span>
-														{#if targetColumnShapeWarnings[index]}
+														<span class="font-mono text-muted-foreground">{column.type}</span>
+														{#if flow.targetColumnShapeWarnings[index]}
 															<span
 																class="mt-1 flex items-start gap-1 text-amber-800 dark:text-amber-200"
-																title={targetColumnShapeWarnings[index].message}
+																title={flow.targetColumnShapeWarnings[index].message}
 															>
-																{#if targetColumnShapeWarnings[index].kind === 'header-order'}
+																{#if flow.targetColumnShapeWarnings[index].kind === 'header-order'}
 																	<ArrowLeftRightIcon class="mt-0.5 size-3 shrink-0" />
 																{:else}
 																	<CircleXIcon class="mt-0.5 size-3 shrink-0" />
 																{/if}
 																<span class="line-clamp-2"
-																	>{targetColumnShapeWarnings[index].message}</span
+																	>{flow.targetColumnShapeWarnings[index].message}</span
 																>
 															</span>
 														{/if}
@@ -1075,14 +645,14 @@
 												</li>
 											{/each}
 										</ol>
-										{#if extraSourceColumnCount}
+										{#if flow.extraSourceColumnCount}
 											<p
 												class="border-t border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"
 												role="alert"
 											>
 												<span class="flex items-center gap-1">
 													<ListPlusIcon class="size-3 shrink-0" />
-													+ {extraSourceColumnCount} extra source column{extraSourceColumnCount ===
+													+ {flow.extraSourceColumnCount} extra source column{flow.extraSourceColumnCount ===
 													1
 														? ''
 														: 's'}
@@ -1090,7 +660,7 @@
 											</p>
 										{/if}
 									{:else}
-										<p class="text-muted-foreground p-4 text-center text-xs">
+										<p class="p-4 text-center text-xs text-muted-foreground">
 											No table columns available.
 										</p>
 									{/if}
@@ -1114,9 +684,9 @@
 			>
 				<QueryResults
 					class="h-full min-h-0 rounded-none border-0 bg-background"
-					{result}
-					error={ingestionError}
-					{isRunning}
+					result={flow.result}
+					error={flow.ingestionError}
+					isRunning={flow.isRunning}
 					collapsed={resultsCollapsed}
 					oncollapsedchange={setResultsCollapsed}
 					operationLabel="Data load"
@@ -1125,7 +695,7 @@
 		</Resizable.PaneGroup>
 	{/if}
 
-	{#if showConfirmation}
+	{#if flow.form.showConfirmation}
 		<div
 			class="absolute inset-0 z-30 grid place-items-center bg-background/80 p-4 backdrop-blur-sm"
 			role="presentation"
@@ -1148,7 +718,7 @@
 						<Button
 							variant="ghost"
 							size="icon-xs"
-							onclick={() => (showConfirmation = false)}
+							onclick={() => (flow.form.showConfirmation = false)}
 							aria-label="Close confirmation"
 						>
 							<XIcon />
@@ -1164,29 +734,29 @@
 						<dt class="text-muted-foreground">Table</dt>
 						<dd>{selectedTable}</dd>
 						<dt class="text-muted-foreground">Source</dt>
-						<dd>{confirmationSource}</dd>
+						<dd>{flow.confirmationSource}</dd>
 						<dt class="text-muted-foreground">Mode</dt>
 						<dd>Append</dd>
 					</dl>
-					{#if activeGuardrails.length}
+					{#if flow.activeGuardrails.length}
 						<Alert.Root class="!rounded-none !border-0 bg-transparent !shadow-none">
 							<CircleAlertIcon class="text-warning" />
 							<Alert.Title>Review source-shape warnings before continuing</Alert.Title>
 							<Alert.Description>
 								<ul class="list-disc pl-5">
-									{#each activeGuardrails as guardrail (guardrail.id)}
+									{#each flow.activeGuardrails as guardrail (guardrail.id)}
 										<li>{guardrail.message}</li>
 									{/each}
 								</ul>
 							</Alert.Description>
 						</Alert.Root>
-					{:else if sourceShapeCheckUnavailable}
-						<p class="text-muted-foreground text-xs">
+					{:else if flow.sourceShapeCheckUnavailable}
+						<p class="text-xs text-muted-foreground">
 							Source shape was not checked; Kustainer reads this source directly.
 						</p>
 					{/if}
 					<pre
-						class="bg-muted max-h-36 overflow-auto rounded-md p-3 font-mono text-xs whitespace-pre-wrap">{pendingCommand}</pre>
+						class="max-h-36 overflow-auto rounded-md bg-muted p-3 font-mono text-xs whitespace-pre-wrap">{flow.pendingCommand}</pre>
 					<div>
 						<label class="text-sm font-medium" for="confirm-ingestion"
 							>Type RUN to enable ingestion</label
@@ -1194,17 +764,19 @@
 						<Input
 							id="confirm-ingestion"
 							class="mt-2"
-							bind:value={confirmationText}
+							bind:value={flow.form.confirmationText}
 							autocomplete="off"
 						/>
 					</div>
 				</Card.Content>
 				<Card.Footer class="justify-end gap-2">
-					<Button variant="outline" onclick={() => (showConfirmation = false)}>Cancel</Button>
+					<Button variant="outline" onclick={() => (flow.form.showConfirmation = false)}
+						>Cancel</Button
+					>
 					<Button
 						variant="destructive"
-						disabled={confirmationText !== 'RUN'}
-						onclick={confirmIngestion}
+						disabled={flow.form.confirmationText !== 'RUN'}
+						onclick={flow.confirmIngestion}
 					>
 						<DatabaseIcon /> Ingest data
 					</Button>

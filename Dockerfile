@@ -35,7 +35,9 @@ LABEL org.opencontainers.image.title="Kite" \
 	org.opencontainers.image.created="$BUILD_DATE"
 
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+COPY docker/security-headers.conf /etc/nginx/snippets/kite-security-headers.conf
 COPY --from=build /src/build/ /usr/share/nginx/html/
+COPY --from=build /src/.svelte-kit/kite-csp/nginx.conf /etc/nginx/snippets/kite-csp.conf
 
 USER 101
 EXPOSE 8080

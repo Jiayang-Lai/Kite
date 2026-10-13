@@ -1,3 +1,4 @@
+import type { ConfirmAction } from '$lib/app/confirmation-prompt.svelte';
 import type { ClusterSession, QueryTab } from '$lib/cluster/cluster-session.svelte';
 import type { SavedQueryStore } from '$lib/query/saved-query-store.svelte';
 
@@ -18,6 +19,8 @@ type QueryTabControllerOptions = {
 	clearSchemaSelection: () => void;
 	onTabLoaded: (tab: QueryTab) => void;
 	onTabClosing: (tabId: string) => void;
+	/** Asks before closing a running or unsaved tab. */
+	confirm: ConfirmAction;
 };
 
 function titleFor(tab: QueryTab) {
@@ -126,15 +129,29 @@ export function createQueryTabController(options: QueryTabControllerOptions) {
 		return !saved || tab.database !== saved.database || tab.query.trim() !== saved.query;
 	}
 
-	function close(tab: QueryTab) {
+	async function close(tab: QueryTab) {
+		const title = titleFor(tab);
 		if (
 			tab.isRunning &&
-			!window.confirm(`Cancel the running query in “${titleFor(tab)}” and close its tab?`)
+			!(await options.confirm({
+				title: 'Cancel running query?',
+				description: `Cancel the running query in “${title}” and close its tab?`,
+				actionLabel: 'Cancel query and close'
+			}))
 		) {
 			return;
 		}
-		if (isDirty(tab) && !window.confirm(`Close “${titleFor(tab)}”? Its query text will be lost.`))
+		if (
+			isDirty(tab) &&
+			!(await options.confirm({
+				title: `Close “${title}”?`,
+				description: 'Its query text will be lost.',
+				actionLabel: 'Close tab'
+			}))
+		)
 			return;
+		// The tab may have been closed elsewhere while a confirmation was open.
+		if (!session.getQueryTab(tab.id)) return;
 		options.onTabClosing(tab.id);
 		session.closeQueryTab(tab.id);
 		if (state.comparisonOriginalTabId === tab.id || state.comparisonModifiedTabId === tab.id)

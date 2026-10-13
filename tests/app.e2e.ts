@@ -1,4 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+
+import { expect, test } from './fixtures/content-security-policy';
 
 const AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY = 'kite:azure-authentication-profiles:v1';
 const CLUSTER_CONNECTIONS_STORAGE_KEY = 'kite:cluster-connections:v1';

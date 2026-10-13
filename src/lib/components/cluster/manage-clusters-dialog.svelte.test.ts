@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 
-import type { KustoClusterConnection } from '$lib/kusto/query-client';
+import type { KustoClusterConnection } from '$lib/cluster/connections';
 import AppContextWrapper from '../../../../tests/fixtures/app-context-wrapper.svelte';
 import ManageClustersDialog from './manage-clusters-dialog.svelte';
 import RemoveClusterDialog from './remove-cluster-dialog.svelte';

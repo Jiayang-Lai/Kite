@@ -1,5 +1,5 @@
 import { MOCK_DATABASES } from '$lib/data/mock-databases';
-import type { KustoClusterConnection } from '$lib/kusto/query-client';
+import type { KustoClusterConnection } from '$lib/cluster/connections';
 import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 
 function isRecord(value: unknown): value is Record<string, unknown> {

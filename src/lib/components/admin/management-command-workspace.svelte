@@ -19,11 +19,11 @@
 	import { createCancellableOperation } from '$lib/query/cancellable-operation.svelte';
 	import * as Select from '$lib/components/ui/select';
 	import {
-		getKustoErrorMessage,
 		isManagementCommand,
 		isReadOnlyManagementCommand,
 		startKustoManagementCommand
 	} from '$lib/kusto/query-client';
+	import { getErrorMessage } from '$lib/query/error-message';
 	import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 	import type { QueryResult } from '$lib/types/query-result';
 	import type { PaneAPI } from 'paneforge';
@@ -142,7 +142,7 @@
 					if (!operation.isCurrent()) return;
 				},
 				onError: (error) => {
-					commandError = getKustoErrorMessage(error);
+					commandError = getErrorMessage(error);
 				}
 			}
 		);
@@ -215,8 +215,8 @@
 					<div class="grid auto-rows-min items-start gap-3 border-b px-2 pb-2 sm:px-3 sm:pb-3">
 						<div class="flex flex-wrap items-center justify-between gap-2">
 							<div class="flex min-w-0 items-center gap-2">
-								<ServerIcon class="text-muted-foreground size-4 shrink-0" />
-								<label class="text-muted-foreground text-xs" for="command-database">Database</label>
+								<ServerIcon class="size-4 shrink-0 text-muted-foreground" />
+								<label class="text-xs text-muted-foreground" for="command-database">Database</label>
 								<Select.Root type="single" bind:value={selectedDatabase}>
 									<Select.Trigger id="command-database" size="sm" class="max-w-52">
 										<Select.Value placeholder="Select database" />
@@ -259,8 +259,8 @@
 								</Button>
 							</div>
 						</div>
-						<p class="text-muted-foreground text-xs">
-							Commands run against <span class="text-foreground font-medium">{clusterName}</span>.
+						<p class="text-xs text-muted-foreground">
+							Commands run against <span class="font-medium text-foreground">{clusterName}</span>.
 							Kusto enforces your permissions.
 						</p>
 					</div>
@@ -276,7 +276,7 @@
 							onexecute={requestRun}
 						/>
 						<div class="flex flex-wrap items-center justify-between gap-2">
-							<p class="text-muted-foreground text-xs">Management commands must start with “.”</p>
+							<p class="text-xs text-muted-foreground">Management commands must start with “.”</p>
 							<div class="flex items-center gap-2">
 								{#if changesClusterState}
 									<Badge variant="outline" class="border-warning/40 bg-warning/10 text-warning">
@@ -370,7 +370,7 @@
 						</div>
 					</dl>
 					<pre
-						class="bg-muted max-h-40 overflow-auto rounded-md p-3 font-mono text-xs whitespace-pre-wrap">{commandText.trim()}</pre>
+						class="max-h-40 overflow-auto rounded-md bg-muted p-3 font-mono text-xs whitespace-pre-wrap">{commandText.trim()}</pre>
 					<div>
 						<label class="text-sm font-medium" for="confirm-run">Type RUN to enable execution</label
 						>

@@ -2,7 +2,11 @@ import * as duckdb from '@duckdb/duckdb-wasm';
 import DUCKDB_BUNDLES from '#kite-duckdb-bundles';
 
 import { getEmulatedStorage, type EmulatedStorage } from '$lib/emulation/storage';
-import type { QueryExecution, QueryResult } from '$lib/types/query-result';
+import {
+	OperationCancelledError,
+	type QueryExecution,
+	type QueryResult
+} from '$lib/types/query-result';
 import {
 	quoteDuckDbIdentifier,
 	quoteDuckDbString,
@@ -384,7 +388,7 @@ export function startDuckDbFileQuery(options: DuckDbFileQueryOptions): QueryExec
 
 	const promise = (async (): Promise<QueryResult> => {
 		const { database } = await getSession(options.sessionId);
-		if (cancelled) throw new Error('Query cancelled.');
+		if (cancelled) throw new OperationCancelledError('Query cancelled.');
 
 		connection = await database.connect();
 		let registered = false;
@@ -409,7 +413,7 @@ export function startDuckDbFileQuery(options: DuckDbFileQueryOptions): QueryExec
 				);
 			}
 			registered = true;
-			if (cancelled) throw new Error('Query cancelled.');
+			if (cancelled) throw new OperationCancelledError('Query cancelled.');
 
 			await connection.query('BEGIN TRANSACTION');
 			transactionOpen = true;
@@ -418,7 +422,7 @@ export function startDuckDbFileQuery(options: DuckDbFileQueryOptions): QueryExec
 				rewritePersistentSql(await getSession(options.sessionId), options.buildSql(virtualPath))
 			);
 			const elapsedMs = performance.now() - startedAt;
-			if (cancelled) throw new Error('Query cancelled.');
+			if (cancelled) throw new OperationCancelledError('Query cancelled.');
 			await connection.query('COMMIT');
 			transactionOpen = false;
 			committed = true;
@@ -439,7 +443,7 @@ export function startDuckDbFileQuery(options: DuckDbFileQueryOptions): QueryExec
 					// Preserve the original ingestion or cancellation error.
 				}
 			}
-			if (cancelled) throw new Error('Query cancelled.');
+			if (cancelled) throw new OperationCancelledError('Query cancelled.');
 			throw cause;
 		} finally {
 			if (registered) {

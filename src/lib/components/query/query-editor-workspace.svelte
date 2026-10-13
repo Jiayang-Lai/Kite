@@ -231,7 +231,7 @@
 									class="absolute inset-0 z-20 grid place-items-center bg-background/70 backdrop-blur-[1px]"
 								>
 									<div
-										class="text-muted-foreground flex flex-col items-center gap-2 rounded-md border bg-background px-3 py-2 text-xs shadow-sm"
+										class="flex flex-col items-center gap-2 rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground shadow-sm"
 									>
 										<Spinner class="size-4" />
 										<span>Switching to {selectedClusterName}…</span>
@@ -279,7 +279,7 @@
 		</Resizable.Pane>
 
 		<Resizable.Handle
-			class={databaseSchemaCollapsed ? 'invisible pointer-events-none' : undefined}
+			class={databaseSchemaCollapsed ? 'pointer-events-none invisible' : undefined}
 			tabindex={databaseSchemaCollapsed ? -1 : 0}
 		/>
 

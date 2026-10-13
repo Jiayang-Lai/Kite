@@ -11,7 +11,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import type { NewClusterConnection } from '$lib/cluster/cluster-connection-store.svelte';
-	import type { KustoClusterConnection } from '$lib/kusto/query-client';
+	import type { KustoClusterConnection } from '$lib/cluster/connections';
 
 	type ManageClustersDialogProps = {
 		open?: boolean;
@@ -49,7 +49,9 @@
 		aria-describedby="manage-clusters-description"
 	>
 		<Dialog.Header class="border-b p-5 pr-14">
-			<Dialog.Title>{editingCluster ? `Edit ${editingCluster.name}` : 'Manage clusters'}</Dialog.Title>
+			<Dialog.Title
+				>{editingCluster ? `Edit ${editingCluster.name}` : 'Manage clusters'}</Dialog.Title
+			>
 			<Dialog.Description id="manage-clusters-description">
 				{editingCluster
 					? 'Update this browser-local Kusto connection and its schema.'
@@ -65,17 +67,17 @@
 				oncancel={() => (editingCluster = undefined)}
 			/>
 		{:else}
-		<div class="max-h-[min(65dvh,32rem)] space-y-2 overflow-y-auto p-4">
+			<div class="max-h-[min(65dvh,32rem)] space-y-2 overflow-y-auto p-4">
 				{#each clusters as cluster (cluster.id)}
 					<div class="flex items-center gap-3 rounded-lg border p-3">
 						{#if cluster.kind === 'mock'}
-							<FlaskConicalIcon class="text-muted-foreground size-4 shrink-0" aria-hidden="true" />
+							<FlaskConicalIcon class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
 						{:else if cluster.kind === 'emulated'}
-							<CpuIcon class="text-muted-foreground size-4 shrink-0" aria-hidden="true" />
+							<CpuIcon class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
 						{:else if cluster.kind === 'log-analytics'}
-							<CloudCogIcon class="text-muted-foreground size-4 shrink-0" aria-hidden="true" />
+							<CloudCogIcon class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
 						{:else}
-							<ServerIcon class="text-muted-foreground size-4 shrink-0" aria-hidden="true" />
+							<ServerIcon class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
 						{/if}
 						<div class="min-w-0 flex-1">
 							<div class="flex min-w-0 items-center gap-2">
@@ -87,16 +89,16 @@
 									/>
 								{/if}
 								{#if cluster.id === selectedClusterId}
-									<span class="text-muted-foreground shrink-0 text-xs">Current</span>
+									<span class="shrink-0 text-xs text-muted-foreground">Current</span>
 								{/if}
 							</div>
 							{#if cluster.kind !== 'mock' && cluster.kind !== 'emulated'}
-								<p class="text-muted-foreground truncate text-xs" title={cluster.url}>
+								<p class="truncate text-xs text-muted-foreground" title={cluster.url}>
 									{cluster.url}
 								</p>
 							{/if}
 							{#if cluster.description}
-								<p class="text-muted-foreground mt-1 line-clamp-2 text-xs">
+								<p class="mt-1 line-clamp-2 text-xs text-muted-foreground">
 									{cluster.description}
 								</p>
 							{/if}
@@ -125,11 +127,11 @@
 						</div>
 					</div>
 				{:else}
-					<p class="text-muted-foreground py-8 text-center text-sm">
+					<p class="py-8 text-center text-sm text-muted-foreground">
 						No browser-local clusters have been added.
 					</p>
 				{/each}
-		</div>
+			</div>
 		{/if}
 
 		{#if !editingCluster}

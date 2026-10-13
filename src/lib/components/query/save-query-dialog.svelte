@@ -46,7 +46,7 @@
 					autocomplete="off"
 				/>
 				{#if nameError}
-					<p id="saved-query-name-error" class="text-destructive mt-2 text-sm" role="alert">
+					<p id="saved-query-name-error" class="mt-2 text-sm text-destructive" role="alert">
 						{nameError}
 					</p>
 				{/if}

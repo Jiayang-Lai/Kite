@@ -166,11 +166,11 @@
 				<dl class="divide-y rounded-lg border text-sm">
 					<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3 p-3">
 						<dt class="text-muted-foreground">Cluster</dt>
-						<dd class="break-words font-medium">{clusterName}</dd>
+						<dd class="font-medium break-words">{clusterName}</dd>
 					</div>
 					<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3 p-3">
 						<dt class="text-muted-foreground">Target</dt>
-						<dd class="break-all font-mono">{databaseName} / {table.name}.{column.name}</dd>
+						<dd class="font-mono break-all">{databaseName} / {table.name}.{column.name}</dd>
 					</div>
 					<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3 p-3">
 						<dt class="text-muted-foreground">Type</dt>
@@ -190,12 +190,12 @@
 							<dd class="min-w-0">
 								<p>Current schema checked</p>
 								{#if snapshot.tableId}
-									<p class="text-muted-foreground mt-1 truncate font-mono text-[11px]">
+									<p class="mt-1 truncate font-mono text-[11px] text-muted-foreground">
 										Table ID: {snapshot.tableId}
 									</p>
 								{/if}
 								{#if snapshot.totalRowCount != null}
-									<p class="text-muted-foreground mt-1 text-[11px]">
+									<p class="mt-1 text-[11px] text-muted-foreground">
 										{snapshot.totalRowCount.toLocaleString()}
 										{snapshot.totalRowCount === 1 ? 'row' : 'rows'}
 									</p>
@@ -218,7 +218,7 @@
 							The table will be checked again immediately before this command.
 						</span>
 					{:else}
-						<CircleAlertIcon class="text-destructive size-4 shrink-0" />
+						<CircleAlertIcon class="size-4 shrink-0 text-destructive" />
 						<span class="text-destructive">Schema verification is required before execution.</span>
 					{/if}
 				</div>
@@ -235,7 +235,7 @@
 							placeholder="NewColumnName"
 						/>
 						{#if reviewPlan.prepared.error && newColumnName.trim()}
-							<p class="text-destructive mt-1.5 text-xs">{reviewPlan.prepared.error}</p>
+							<p class="mt-1.5 text-xs text-destructive">{reviewPlan.prepared.error}</p>
 						{/if}
 					</div>
 				{:else if action === 'change-type'}
@@ -253,11 +253,11 @@
 								</Select.Group>
 							</Select.Content>
 						</Select.Root>
-						<p class="text-muted-foreground mt-1.5 text-xs">
+						<p class="mt-1.5 text-xs text-muted-foreground">
 							Current type: <span class="font-mono">{column.type}</span>
 						</p>
 						{#if reviewPlan.prepared.error && newColumnType}
-							<p class="text-destructive mt-1.5 text-xs">{reviewPlan.prepared.error}</p>
+							<p class="mt-1.5 text-xs text-destructive">{reviewPlan.prepared.error}</p>
 						{/if}
 					</div>
 				{/if}
@@ -266,13 +266,13 @@
 					<div>
 						<h3 class="mb-2 text-sm font-medium">Management command</h3>
 						<pre
-							class="bg-muted max-h-36 overflow-auto rounded-lg border p-3 font-mono text-xs whitespace-pre-wrap">{reviewPlan
+							class="max-h-36 overflow-auto rounded-lg border bg-muted p-3 font-mono text-xs whitespace-pre-wrap">{reviewPlan
 								.prepared.plan.command}</pre>
 					</div>
 				{/if}
 
-				<div class="border-warning/40 bg-warning/10 rounded-lg border p-3">
-					<div class="text-warning flex items-start gap-2">
+				<div class="rounded-lg border border-warning/40 bg-warning/10 p-3">
+					<div class="flex items-start gap-2 text-warning">
 						<CircleAlertIcon class="mt-0.5 size-4 shrink-0" />
 						<div>
 							<p class="text-sm font-medium">
@@ -308,7 +308,7 @@
 
 				{#if executionError}
 					<p
-						class="text-destructive bg-destructive/5 whitespace-pre-wrap rounded-lg border border-destructive/20 p-3 text-xs"
+						class="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-xs whitespace-pre-wrap text-destructive"
 						role="alert"
 					>
 						{executionError}

@@ -338,3 +338,6 @@ id_ed25519*
 
 # Ignore the WASM build of KQL-to-SQL
 static/kql-wasm/
+
+# Software bill of materials generated locally by `make sbom`
+sbom.json

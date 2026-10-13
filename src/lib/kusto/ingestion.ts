@@ -1,4 +1,4 @@
-import { quoteKustoEntity, quoteKustoString } from './command-format';
+import { escapeKustoStringBody, quoteKustoEntity, quoteKustoString } from './command-format';
 
 export { quoteKustoEntity } from './command-format';
 
@@ -52,7 +52,7 @@ function quoteVerbatimString(value: string) {
 }
 
 function quoteObfuscatedString(value: string) {
-	return `h'${value.replaceAll("'", "''")}'`;
+	return `h'${escapeKustoStringBody(value)}'`;
 }
 
 function validateFileFormat(format: MountedFileFormat) {

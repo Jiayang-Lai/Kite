@@ -401,17 +401,11 @@
 {:else}
 	<div
 		bind:this={container}
-		class={cn(
-			'relative min-w-0 max-w-full overflow-visible border bg-background',
-			className
-		)}
+		class={cn('relative max-w-full min-w-0 overflow-visible border bg-background', className)}
 		style={`height: ${height};`}
 	>
 		{#if isLoading}
-			<div
-				class="absolute inset-0 z-10 grid place-items-center bg-background/80"
-				aria-busy="true"
-			>
+			<div class="absolute inset-0 z-10 grid place-items-center bg-background/80" aria-busy="true">
 				<Spinner class="size-7 text-muted-foreground" />
 				<span class="sr-only">Loading Kusto editor</span>
 			</div>

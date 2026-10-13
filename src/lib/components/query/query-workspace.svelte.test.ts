@@ -23,7 +23,6 @@ describe('QueryWorkspace', () => {
 	});
 
 	it('coordinates save, unload protection, tabs, and comparison from the editor', async () => {
-		vi.spyOn(window, 'confirm').mockReturnValue(true);
 		const screen = await render(
 			QueryWorkspace,
 			{ view: 'editor' },
@@ -102,6 +101,8 @@ describe('QueryWorkspace', () => {
 		(
 			screen.getByRole('button', { name: 'Close Event count' }).element() as HTMLButtonElement
 		).click();
+		await expect.element(screen.getByRole('tab', { name: /Event count/ })).toBeVisible();
+		await screen.getByRole('button', { name: 'Close tab' }).click();
 		await expect.element(screen.getByRole('tab', { name: /Event count/ })).not.toBeInTheDocument();
 	}, 30_000);
 
@@ -138,7 +139,6 @@ describe('QueryWorkspace', () => {
 	});
 
 	it('switches clusters through the shared connection lifecycle', async () => {
-		vi.spyOn(window, 'confirm').mockReturnValue(true);
 		const screen = await render(
 			QueryWorkspace,
 			{ view: 'overview' },
@@ -152,6 +152,10 @@ describe('QueryWorkspace', () => {
 		expect(clusterSelector).not.toBeNull();
 		clusterSelector?.click();
 		await screen.getByRole('menuitem', { name: /Emulated cluster/ }).click();
+		await expect
+			.element(screen.getByText('Switching connections will close all query tabs.'))
+			.toBeVisible();
+		await screen.getByRole('button', { name: 'Switch connection' }).click();
 
 		await expect.element(screen.getByText('Explore Emulated cluster')).toBeVisible();
 	});

@@ -12,6 +12,22 @@ export class QueryRequestError extends Error {
 	}
 }
 
+/** Raised when the user or Kite cancels an in-flight operation; never a provider failure. */
+export class OperationCancelledError extends Error {
+	constructor(message = 'Operation cancelled.') {
+		super(message);
+		this.name = 'OperationCancelledError';
+	}
+}
+
+/** Recognizes Kite cancellations and aborted fetch/signal operations. */
+export function isOperationCancelled(error: unknown) {
+	return (
+		error instanceof OperationCancelledError ||
+		(error instanceof DOMException && error.name === 'AbortError')
+	);
+}
+
 /** Column metadata returned by a Kusto primary result table. */
 export type QueryResultColumn = {
 	name: string;

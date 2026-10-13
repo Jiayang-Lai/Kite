@@ -323,7 +323,7 @@ The container publisher pushes the canonical `v...` tag, captures its registry m
 | --- | --- |
 | `npm run test:unit:run` | Run unit tests once |
 | `npm run test:coverage` | Run browser and server unit tests and write `coverage/lcov.info` |
-| `npm run lint:ci` | Check formatting for files currently enforced by CI |
+| `npm run lint:ci` | Check formatting for the whole repository |
 | `npm run test:e2e:install` | Install Chromium and its operating-system dependencies |
 | `npm run test:e2e` | Build the app and run Playwright tests |
 | `npm run test:e2e:run` | Run Playwright tests against an existing production build |
@@ -345,7 +345,7 @@ Dependabot checks npm packages, GitHub Actions, and Docker base images weekly. C
 
 A successful RC run retains its downloaded artifact under the immutable RC tag. The stable release selects that RC artifact by ID from the successful RC workflow rather than selecting another build by name. Rebuilding the same commit therefore cannot silently substitute a different artifact after UAT approval.
 
-`npm run lint:ci` is temporarily scoped to the CI/CD-owned files because the existing repository-wide `npm run lint` has a formatting backlog. After that baseline is normalized, `test:ci` should use the repository-wide check.
+`npm run lint:ci` checks the whole repository. Generated files and the vendored translator are excluded in `.prettierignore`.
 
 ## Required GitHub configuration
 

@@ -26,13 +26,13 @@
 	);
 </script>
 
-<section class="min-h-0 flex flex-1 flex-col overflow-hidden border-t">
+<section class="flex min-h-0 flex-1 flex-col overflow-hidden border-t">
 	<div
 		class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b bg-muted/20 px-4 py-3 sm:px-5"
 	>
 		<div class="min-w-0">
 			<p class="text-sm font-medium text-foreground">Saved for this cluster</p>
-			<p class="text-muted-foreground text-xs">
+			<p class="text-xs text-muted-foreground">
 				{queries.length}
 				{queries.length === 1 ? 'query' : 'queries'} available
 			</p>
@@ -63,7 +63,7 @@
 						</div>
 
 						<pre
-							class="line-clamp-2 min-w-0 rounded-sm bg-muted/50 px-3 py-2 font-mono text-xs leading-5 text-muted-foreground whitespace-pre-wrap">{query.query}</pre>
+							class="line-clamp-2 min-w-0 rounded-sm bg-muted/50 px-3 py-2 font-mono text-xs leading-5 whitespace-pre-wrap text-muted-foreground">{query.query}</pre>
 
 						<div
 							class="flex items-center justify-end gap-2 lg:opacity-70 lg:group-hover:opacity-100"

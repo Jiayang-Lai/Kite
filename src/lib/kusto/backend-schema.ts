@@ -1,4 +1,3 @@
-import { getKustoClusterUrl } from '$lib/kusto/query-client';
 import type { KustoDatabase, KustoDatabaseSchema } from '$lib/types/kusto-schema';
 import { Client as KustoClient, type KustoResultRow } from 'azure-kusto-data';
 
@@ -77,9 +76,7 @@ export function parseBackendSchema(serializedSchema: string): KustoDatabaseSchem
  * Discovers every database from the local cluster and converts its show-schema
  * payload into the same compact metadata consumed by Monaco-Kusto and the UI.
  */
-export async function loadBackendSchema(
-	clusterUrl = getKustoClusterUrl()
-): Promise<KustoDatabaseSchema> {
+export async function loadBackendSchema(clusterUrl: string): Promise<KustoDatabaseSchema> {
 	const client = new KustoClient(clusterUrl);
 	try {
 		const databaseResponse = await client.executeMgmt('NetDefaultDB', '.show databases details');

@@ -149,8 +149,3 @@ export function getKustoClusters(): KustoClusterConnection[] {
 			: { ...cluster }
 	);
 }
-
-/** Returns the default browser-visible Kusto cluster URL. */
-export function getKustoClusterUrl() {
-	return getKustoClusters()[0].url;
-}

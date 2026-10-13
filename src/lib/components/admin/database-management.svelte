@@ -283,14 +283,14 @@
 					</Tooltip.Root>
 				{/if}
 			</div>
-			<p class="text-muted-foreground mt-1 text-xs">
+			<p class="mt-1 text-xs text-muted-foreground">
 				{databaseEntries.length} on the selected cluster
 			</p>
 		</header>
-		<div class="min-h-0 flex flex-1 flex-col p-3">
+		<div class="flex min-h-0 flex-1 flex-col p-3">
 			<div class="relative shrink-0">
 				<SearchIcon
-					class="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+					class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
 				/>
 				<Input
 					bind:value={databaseFilter}
@@ -304,21 +304,21 @@
 						<div class="group/database-row relative">
 							<button
 								type="button"
-								class="hover:bg-accent focus-visible:ring-ring flex w-full min-w-0 items-center gap-2 rounded-md py-1.5 pr-9 pl-2 text-left outline-none focus-visible:ring-2"
+								class="flex w-full min-w-0 items-center gap-2 rounded-md py-1.5 pr-9 pl-2 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
 								class:bg-accent={database.name === activeDatabase?.name}
 								onclick={() => selectDatabase(database.name)}
 							>
-								<DatabaseIcon class="text-muted-foreground size-4 shrink-0" />
+								<DatabaseIcon class="size-4 shrink-0 text-muted-foreground" />
 								<span class="min-w-0 flex-1">
 									<span class="block truncate text-sm font-medium">
 										{database.prettyName ?? database.name}
 									</span>
 									{#if database.prettyName && database.prettyName !== database.name}
-										<span class="text-muted-foreground block truncate font-mono text-[10px]">
+										<span class="block truncate font-mono text-[10px] text-muted-foreground">
 											{database.name}
 										</span>
 									{/if}
-									<span class="text-muted-foreground block text-xs">
+									<span class="block text-xs text-muted-foreground">
 										{database.tables.length}
 										{database.tables.length === 1 ? 'table' : 'tables'}
 									</span>
@@ -338,7 +338,7 @@
 							/>
 						</div>
 					{:else}
-						<p class="text-muted-foreground px-2 py-3 text-xs">No databases found.</p>
+						<p class="px-2 py-3 text-xs text-muted-foreground">No databases found.</p>
 					{/each}
 				</div>
 			</ScrollArea>
@@ -348,7 +348,7 @@
 	<div class="flex min-h-0 min-w-0 flex-1 flex-col">
 		{#if activeDatabase}
 			{#if isMockCluster || isEmulatedCluster || isLogAnalyticsCluster}
-				<p class="text-muted-foreground shrink-0 border-b bg-muted/20 px-4 py-2 text-xs">
+				<p class="shrink-0 border-b bg-muted/20 px-4 py-2 text-xs text-muted-foreground">
 					{isLogAnalyticsCluster
 						? 'Log Analytics workspace schema is read-only. Use Query Explorer to run KQL.'
 						: isEmulatedCluster
@@ -358,7 +358,7 @@
 			{/if}
 			{#if mutationState.mutationSuccess}
 				<p
-					class="border-primary/20 bg-primary/5 text-foreground shrink-0 border-b px-4 py-2 text-xs"
+					class="shrink-0 border-b border-primary/20 bg-primary/5 px-4 py-2 text-xs text-foreground"
 					role="status"
 				>
 					{mutationState.mutationSuccess}
@@ -383,7 +383,7 @@
 			</section>
 		{:else}
 			<section
-				class="text-muted-foreground grid min-h-0 flex-1 place-items-center p-6 text-center text-sm"
+				class="grid min-h-0 flex-1 place-items-center p-6 text-center text-sm text-muted-foreground"
 			>
 				<div>
 					<TablePropertiesIcon class="mx-auto mb-3 size-6" />

@@ -1,12 +1,15 @@
+import type { ConfirmAction } from '$lib/app/confirmation-prompt.svelte';
 import type { ClusterSession } from '$lib/cluster/cluster-session.svelte';
-import { createConnectionRuntime, type ConnectionRuntime } from '$lib/cluster/cluster-runtime';
-import { persistActiveClusterId } from '$lib/cluster/active-cluster-preference';
+import { createConnectionRuntime } from '$lib/cluster/cluster-runtime';
+import {
+	getPersistedActiveClusterId,
+	persistActiveClusterId
+} from '$lib/cluster/active-cluster-preference';
 import type {
 	ClusterConnectionStore,
 	NewClusterConnection
 } from '$lib/cluster/cluster-connection-store.svelte';
-import { getKustoErrorMessage, type KustoClusterConnection } from '$lib/kusto/query-client';
-import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
+import { getErrorMessage } from '$lib/query/error-message';
 import {
 	discardRemovedClusterCleanup,
 	retryRemovedClusterCleanups,
@@ -16,65 +19,58 @@ import {
 
 export type ConnectionState = 'loading' | 'ready' | 'error';
 
+/**
+ * Connection transition state only. The confirmed connection, its schema, and the Explorer
+ * selection belong to `ClusterSession` so every workspace reads one copy.
+ */
 export type ConnectionLifecycleState = {
-	databaseSchema?: KustoDatabaseSchema;
 	connectionStatus: ConnectionState;
 	isClusterSwitching: boolean;
 	showLogAnalyticsSignInTip: boolean;
 	connectionError: string;
 	failedClusterId?: string;
-	selectedDatabase: string;
-	selectedTable?: string;
-	selectedFunction?: string;
-	activeClusterId: string;
-	activeClusterUrl: string;
+	/** Connection chosen in the selector; it becomes active once its schema loads. */
 	selectedClusterId: string;
 };
 
 type ConnectionLifecycleOptions = {
 	store: ClusterConnectionStore;
 	session: ClusterSession;
-	initialCluster: KustoClusterConnection;
-	onQueryExecutionReset: () => void;
-	onSchemaReady: (database: string, query: string | undefined) => void;
-	onstatechange?: () => void;
+	/** Asks before a switch discards open query tabs. */
+	confirm: ConfirmAction;
+	onQueryExecutionReset?: () => void;
+	onSchemaReady?: (database: string, query: string | undefined) => void;
 };
 
 const SIGN_IN_TIP_DELAY_MS = 10_000;
 const SCHEMA_LOAD_TIMEOUT_MS = 90_000;
+/** Log Analytics tables change outside Kite; other schemas refresh only on request. */
+const LOG_ANALYTICS_SCHEMA_TTL_MS = 5 * 60_000;
 
 /** Owns cluster selection, schema loading, and stale connection-response handling. */
 export function createConnectionLifecycleController(options: ConnectionLifecycleOptions) {
-	const { store, session, initialCluster } = options;
+	const { store, session } = options;
 	const state = $state<ConnectionLifecycleState>({
-		databaseSchema: session.databaseSchema,
 		connectionStatus: session.databaseSchema ? 'ready' : 'loading',
 		isClusterSwitching: false,
 		showLogAnalyticsSignInTip: false,
 		connectionError: '',
-		selectedDatabase: session.selectedDatabase,
-		selectedTable: session.selectedTable,
-		selectedFunction: session.selectedFunction,
-		activeClusterId: initialCluster.id,
-		activeClusterUrl: initialCluster.url,
-		selectedClusterId: initialCluster.id
+		selectedClusterId: (
+			store.clusters.find((cluster) => cluster.id === session.activeClusterId) ?? store.clusters[0]
+		).id
 	});
 	let requestId = 0;
 	let resetTabsAfterConnection = false;
+	let initialized = false;
 	let signInTipTimeout: number | undefined;
 	let schemaAbortController: AbortController | undefined;
 
 	function activeCluster() {
-		return store.clusters.find((cluster) => cluster.id === state.activeClusterId);
+		return store.clusters.find((cluster) => cluster.id === session.activeClusterId);
 	}
 
 	function selectedCluster() {
 		return store.clusters.find((cluster) => cluster.id === state.selectedClusterId);
-	}
-
-	function runtime(): ConnectionRuntime | undefined {
-		const cluster = activeCluster();
-		return cluster ? createConnectionRuntime(cluster) : undefined;
 	}
 
 	function clearSignInTip() {
@@ -100,20 +96,17 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 	async function refresh() {
 		const currentRequestId = ++requestId;
 		schemaAbortController?.abort(new DOMException('Schema load superseded.', 'AbortError'));
+		const cluster = selectedCluster();
+		if (!cluster) return;
 		const controller = new AbortController();
 		schemaAbortController = controller;
 		const timeout = window.setTimeout(
 			() => controller.abort(new Error('Schema loading timed out.')),
 			SCHEMA_LOAD_TIMEOUT_MS
 		);
-		const cluster = selectedCluster();
-		if (!cluster) {
-			window.clearTimeout(timeout);
-			return;
-		}
-		const switching = cluster.id !== state.activeClusterId;
+		const switching = cluster.id !== session.activeClusterId;
 		state.connectionStatus = 'loading';
-		state.isClusterSwitching = switching && Boolean(state.databaseSchema);
+		state.isClusterSwitching = switching && Boolean(session.databaseSchema);
 		state.connectionError = '';
 		if (cluster.kind === 'log-analytics') scheduleSignInTip(currentRequestId, cluster.id);
 		else clearSignInTip();
@@ -124,78 +117,111 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 			const firstDatabase = Object.values(schema)[0];
 			if (!firstDatabase) throw new Error('The connection returned no databases.');
 			const restore = cluster.id === session.activeClusterId;
-			const database = (restore ? schema[state.selectedDatabase] : undefined) ?? firstDatabase;
-			const table = database.tables.some((item) => item.name === state.selectedTable)
-				? state.selectedTable
+			const database = (restore ? schema[session.selectedDatabase] : undefined) ?? firstDatabase;
+			const table = database.tables.some((item) => item.name === session.selectedTable)
+				? session.selectedTable
 				: undefined;
-			const fn = database.functions?.some((item) => item.name === state.selectedFunction)
-				? state.selectedFunction
+			const fn = database.functions?.some((item) => item.name === session.selectedFunction)
+				? session.selectedFunction
 				: undefined;
 			const pendingQuery = restore ? session.pendingQuery : undefined;
 			session.getExplorerExpansion(cluster.id);
-			state.activeClusterId = cluster.id;
-			state.activeClusterUrl = cluster.url;
+			// The schema records the active cluster it belongs to, so commit the cluster first.
 			session.activeClusterId = cluster.id;
 			persistActiveClusterId(cluster.id);
-			state.databaseSchema = schema;
 			session.databaseSchema = schema;
-			state.selectedDatabase = database.name;
-			state.selectedTable = table;
-			state.selectedFunction = fn;
+			session.selectedDatabase = database.name;
+			session.selectedTable = table;
+			session.selectedFunction = fn;
 			if (resetTabsAfterConnection) {
 				session.resetQueryTabs(database.name);
 				resetTabsAfterConnection = false;
 			}
-			options.onSchemaReady(database.name, pendingQuery);
+			options.onSchemaReady?.(database.name, pendingQuery);
 			session.pendingQuery = undefined;
 			clearSignInTip();
 			state.connectionStatus = 'ready';
 			state.isClusterSwitching = false;
 			state.failedClusterId = undefined;
-			options.onstatechange?.();
 		} catch (error) {
 			if (currentRequestId !== requestId) return;
 			resetTabsAfterConnection = false;
 			clearSignInTip();
-			state.connectionError = getKustoErrorMessage(error);
+			state.connectionError = getErrorMessage(error);
 			state.failedClusterId = cluster.id;
 			state.isClusterSwitching = false;
-			if (state.databaseSchema) state.selectedClusterId = state.activeClusterId;
+			if (session.databaseSchema) state.selectedClusterId = session.activeClusterId;
 			state.connectionStatus = 'error';
-			options.onstatechange?.();
 		} finally {
 			window.clearTimeout(timeout);
 			if (schemaAbortController === controller) schemaAbortController = undefined;
 		}
 	}
 
-	function switchCluster(clusterId: string) {
-		if (clusterId === state.selectedClusterId) return;
+	/** Loads `clusterId` (the selected connection by default) and reports whether it is ready. */
+	async function connect(clusterId = state.selectedClusterId) {
+		state.selectedClusterId = clusterId;
+		await refresh();
+		return state.connectionStatus === 'ready';
+	}
+
+	/**
+	 * Restores the last confirmed connection once custom connections have hydrated, resumes any
+	 * interrupted cleanup, and loads the schema unless the session already holds a fresh one.
+	 */
+	function initialize() {
+		if (initialized || !store.hydrated) return;
+		initialized = true;
+		void retryRemovedClusterCleanups(new Set(store.clusters.map((cluster) => cluster.id)));
+		const persistedClusterId = getPersistedActiveClusterId();
+		if (
+			!session.databaseSchema &&
+			persistedClusterId &&
+			store.clusters.some((cluster) => cluster.id === persistedClusterId)
+		) {
+			state.selectedClusterId = persistedClusterId;
+		}
+		const maxSchemaAgeMs =
+			selectedCluster()?.kind === 'log-analytics'
+				? LOG_ANALYTICS_SCHEMA_TTL_MS
+				: Number.POSITIVE_INFINITY;
+		if (!session.isSchemaFresh(state.selectedClusterId, maxSchemaAgeMs)) void refresh();
+	}
+
+	async function switchCluster(clusterId: string) {
+		const isRedundant = () => clusterId === state.selectedClusterId || state.isClusterSwitching;
+		if (isRedundant()) return;
 		if (
 			session.queryTabs.some((tab) => tab.query.trim()) &&
-			!window.confirm('Switching connections will close all query tabs. Continue?')
+			!(await options.confirm({
+				title: 'Switch connection?',
+				description: 'Switching connections will close all query tabs.',
+				actionLabel: 'Switch connection'
+			}))
 		)
 			return;
-		options.onQueryExecutionReset();
+		// Another switch may have started while the confirmation was open.
+		if (isRedundant()) return;
+		options.onQueryExecutionReset?.();
 		resetTabsAfterConnection = true;
 		state.selectedClusterId = clusterId;
 		void refresh();
 	}
 
 	function addCluster(draft: NewClusterConnection) {
-		switchCluster(store.add(draft).id);
+		return switchCluster(store.add(draft).id);
 	}
 
 	function editCluster(clusterId: string, draft: NewClusterConnection) {
 		store.update(clusterId, draft);
 		if (clusterId !== state.selectedClusterId) return;
-		options.onQueryExecutionReset();
+		options.onQueryExecutionReset?.();
 		void refresh();
 	}
 
 	async function removeCluster(clusterId: string) {
 		const wasSelected =
-			clusterId === state.selectedClusterId || clusterId === state.activeClusterId;
+			clusterId === state.selectedClusterId || clusterId === session.activeClusterId;
 		const cluster = store.clusters.find((item) => item.id === clusterId);
 		const fallbackCluster = wasSelected
 			? store.clusters.find((item) => item.id !== clusterId)
@@ -227,7 +253,7 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 		if (state.failedClusterId === clusterId) {
 			state.failedClusterId = undefined;
 			state.connectionError = '';
-			if (state.connectionStatus === 'error' && state.databaseSchema) {
+			if (state.connectionStatus === 'error' && session.databaseSchema) {
 				state.connectionStatus = 'ready';
 			}
 		}
@@ -235,16 +261,13 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 		if (fallbackCluster) {
 			// Removal was already confirmed by the destructive dialog. Transition directly instead of
 			// offering a second, cancellable switch that could leave the deleted connection active.
-			options.onQueryExecutionReset();
+			options.onQueryExecutionReset?.();
 			session.resetQueryTabs();
 			session.pendingQuery = undefined;
-			state.databaseSchema = undefined;
 			session.databaseSchema = undefined;
-			state.selectedDatabase = '';
-			state.selectedTable = undefined;
-			state.selectedFunction = undefined;
-			state.activeClusterId = fallbackCluster.id;
-			state.activeClusterUrl = fallbackCluster.url;
+			session.selectedDatabase = '';
+			session.selectedTable = undefined;
+			session.selectedFunction = undefined;
 			session.activeClusterId = fallbackCluster.id;
 			state.selectedClusterId = fallbackCluster.id;
 			persistActiveClusterId(fallbackCluster.id);
@@ -284,22 +307,15 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 		get selectedCluster() {
 			return selectedCluster();
 		},
-		runtime,
+		initialize,
 		refresh,
+		connect,
 		switchCluster,
 		addCluster,
 		editCluster,
 		removeCluster,
-		retryPendingCleanups() {
-			return retryRemovedClusterCleanups(new Set(store.clusters.map((cluster) => cluster.id)));
-		},
 		retry,
 		dismissFailure,
-		syncSessionSelection() {
-			session.selectedDatabase = state.selectedDatabase;
-			session.selectedTable = state.selectedTable;
-			session.selectedFunction = state.selectedFunction;
-		},
 		dispose() {
 			requestId += 1;
 			schemaAbortController?.abort(new DOMException('Workspace disposed.', 'AbortError'));

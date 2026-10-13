@@ -8,7 +8,7 @@ import {
 import type {
 	LogAnalyticsAccountBinding,
 	LogAnalyticsConnectionConfiguration
-} from '$lib/kusto/query-client';
+} from '$lib/cluster/connections';
 
 export const LOG_ANALYTICS_SCOPE = 'https://api.loganalytics.io/.default';
 

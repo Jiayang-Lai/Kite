@@ -20,9 +20,9 @@
 	} from '$lib/query/recent-query-store.svelte';
 	import { createSavedQueryStore, setSavedQueryStore } from '$lib/query/saved-query-store.svelte';
 
-	let { data, children } = $props();
+	let { children } = $props();
 
-	const appShellState = createAppShellState(() => data.sidebarOpen);
+	const appShellState = createAppShellState();
 	setAppShellState(appShellState);
 	const clusters = getKustoClusters();
 	const persistedClusterId = getPersistedActiveClusterId();

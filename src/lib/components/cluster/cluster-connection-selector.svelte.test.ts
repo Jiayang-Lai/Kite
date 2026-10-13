@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 
 import { AZURE_AUTHENTICATION_PROFILES_STORAGE_KEY } from '$lib/azure-auth/profile-store.svelte';
-import type { KustoClusterConnection } from '$lib/kusto/query-client';
+import type { KustoClusterConnection } from '$lib/cluster/connections';
 import AppContextWrapper from '../../../../tests/fixtures/app-context-wrapper.svelte';
 import ClusterConnectionSelector from './cluster-connection-selector.svelte';
 

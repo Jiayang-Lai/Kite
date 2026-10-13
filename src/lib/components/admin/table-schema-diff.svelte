@@ -48,7 +48,7 @@
 
 	<div class="overflow-hidden rounded-lg border">
 		<div
-			class="bg-muted/40 text-muted-foreground grid grid-cols-[minmax(0,1fr)_1.5rem_minmax(0,1fr)] gap-2 border-b px-3 py-2 text-[10px] font-semibold tracking-wider uppercase"
+			class="grid grid-cols-[minmax(0,1fr)_1.5rem_minmax(0,1fr)] gap-2 border-b bg-muted/40 px-3 py-2 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
 		>
 			<span>Before</span>
 			<span></span>
@@ -59,33 +59,33 @@
 				<div class="grid grid-cols-[minmax(0,1fr)_1.5rem_minmax(0,1fr)] gap-2 p-2.5">
 					{#if row.before}
 						<div class={columnClasses(row.changes, 'before')}>
-							<p class="text-muted-foreground text-[10px]">Position {row.before.index + 1}</p>
-							<p class="mt-0.5 break-all font-mono text-xs">
+							<p class="text-[10px] text-muted-foreground">Position {row.before.index + 1}</p>
+							<p class="mt-0.5 font-mono text-xs break-all">
 								{row.before.name}:<span class="text-muted-foreground">{row.before.type}</span>
 							</p>
 						</div>
 					{:else}
 						<div
-							class="text-muted-foreground grid min-h-12 place-items-center rounded-md border border-dashed text-xs"
+							class="grid min-h-12 place-items-center rounded-md border border-dashed text-xs text-muted-foreground"
 						>
 							—
 						</div>
 					{/if}
 
-					<div class="text-muted-foreground grid place-items-center">
+					<div class="grid place-items-center text-muted-foreground">
 						<ArrowRightIcon class="size-3.5" />
 					</div>
 
 					{#if row.after}
 						<div class={columnClasses(row.changes, 'after')}>
-							<p class="text-muted-foreground text-[10px]">Position {row.after.index + 1}</p>
-							<p class="mt-0.5 break-all font-mono text-xs">
+							<p class="text-[10px] text-muted-foreground">Position {row.after.index + 1}</p>
+							<p class="mt-0.5 font-mono text-xs break-all">
 								{row.after.name}:<span class="text-muted-foreground">{row.after.type}</span>
 							</p>
 						</div>
 					{:else}
 						<div
-							class="text-muted-foreground grid min-h-12 place-items-center rounded-md border border-dashed text-xs"
+							class="grid min-h-12 place-items-center rounded-md border border-dashed text-xs text-muted-foreground"
 						>
 							—
 						</div>

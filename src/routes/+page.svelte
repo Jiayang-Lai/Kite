@@ -29,7 +29,7 @@
 				<h1 class="mt-4 text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl">
 					Explore data and operate Kusto from one focused workspace.
 				</h1>
-				<p class="text-muted-foreground mt-5 max-w-2xl text-base leading-7 sm:text-lg">
+				<p class="mt-5 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
 					Write KQL, discover schemas, and manage supported clusters without leaving the browser.
 				</p>
 				<div class="mt-7 flex flex-wrap gap-2">
@@ -46,7 +46,7 @@
 					<FileCode2Icon class="mt-0.5 size-5 shrink-0 text-primary" />
 					<div>
 						<h2 class="text-sm font-medium">Query</h2>
-						<p class="text-muted-foreground mt-1 text-sm leading-6">
+						<p class="mt-1 text-sm leading-6 text-muted-foreground">
 							Compose KQL with schema-aware editing and inspect results in place.
 						</p>
 					</div>
@@ -56,7 +56,7 @@
 					<DatabaseIcon class="mt-0.5 size-5 shrink-0 text-primary" />
 					<div>
 						<h2 class="text-sm font-medium">Discover</h2>
-						<p class="text-muted-foreground mt-1 text-sm leading-6">
+						<p class="mt-1 text-sm leading-6 text-muted-foreground">
 							Search databases, tables, functions, and locally saved queries.
 						</p>
 					</div>
@@ -66,7 +66,7 @@
 					<ShieldCheckIcon class="mt-0.5 size-5 shrink-0 text-primary" />
 					<div>
 						<h2 class="text-sm font-medium">Operate</h2>
-						<p class="text-muted-foreground mt-1 text-sm leading-6">
+						<p class="mt-1 text-sm leading-6 text-muted-foreground">
 							Review capabilities before managing schemas, commands, and ingestion.
 						</p>
 					</div>
@@ -74,7 +74,7 @@
 			</div>
 		</section>
 
-		<footer class="text-muted-foreground flex items-center gap-1 py-2 text-xs">
+		<footer class="flex items-center gap-1 py-2 text-xs text-muted-foreground">
 			<span>Made with</span>
 			<HeartIcon class="size-3.5 fill-primary text-primary" aria-label="love" />
 			<span>by</span>
@@ -82,7 +82,7 @@
 				href="https://github.com/Jiayang-Lai"
 				target="_blank"
 				rel="noreferrer"
-				class="hover:text-foreground underline-offset-4 hover:underline">Jiayang</a
+				class="underline-offset-4 hover:text-foreground hover:underline">Jiayang</a
 			>
 		</footer>
 	</div>

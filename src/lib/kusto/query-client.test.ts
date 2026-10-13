@@ -218,6 +218,28 @@ describe('Kusto execution', () => {
 		expect(sdkMocks.executeMgmt).toHaveBeenCalledOnce();
 	});
 
+	it('reports failures that were not cancelled', async () => {
+		const failure = new Error('Unauthorized.');
+		sdkMocks.executeQuery.mockRejectedValueOnce(failure);
+		const query = startKustoQuery('Analytics', 'Events', CLUSTER_URL);
+		await expect(query.promise).rejects.toMatchObject({
+			name: 'QueryRequestError',
+			message: 'Unauthorized.',
+			requestId: sdkMocks.properties[0].clientRequestId,
+			response: failure
+		});
+
+		sdkMocks.executeMgmt.mockRejectedValueOnce(failure);
+		await expect(
+			startKustoManagementCommand('Analytics', '.show tables', CLUSTER_URL).promise
+		).rejects.toBe(failure);
+
+		sdkMocks.executeMgmt.mockRejectedValueOnce(failure);
+		await expect(
+			startKustoReadOnlyManagementCommandBatch('Analytics', ['.show tables'], CLUSTER_URL).promise
+		).rejects.toBe(failure);
+	});
+
 	it('rejects non-management commands before creating a client', () => {
 		expect(() => startKustoManagementCommand('Analytics', 'Events | take 1', CLUSTER_URL)).toThrow(
 			'Management commands must start'

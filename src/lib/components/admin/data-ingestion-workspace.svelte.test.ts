@@ -180,4 +180,59 @@ describe('DataIngestionWorkspace', () => {
 			.element(screen.getByText('Review source-shape warnings before continuing'))
 			.toBeVisible();
 	});
+
+	it('reports an inline CSV that cannot be scanned', async () => {
+		const screen = await render(DataIngestionWorkspace, kustainerProps);
+
+		await screen.getByLabelText('CSV rows').fill('"unterminated');
+		await expect.element(screen.getByText(/ends inside a quoted field/)).toBeVisible();
+		expect(screen.getByRole('button', { name: 'Review ingestion' }).element()).toBeDisabled();
+	});
+
+	it('marks target columns whose source header differs or is missing', async () => {
+		const screen = await render(DataIngestionWorkspace, {
+			...kustainerProps,
+			databases: {
+				Analytics: {
+					name: 'Analytics',
+					tables: [
+						{
+							name: 'Events',
+							columns: [
+								{ name: 'Message', type: 'string' },
+								{ name: 'Level', type: 'string' }
+							]
+						}
+					]
+				}
+			}
+		});
+
+		(screen.container.querySelector('#inline-data-has-header') as HTMLInputElement).click();
+		await screen.getByLabelText('CSV rows').fill('Text\nhello');
+		await expect.element(screen.getByText('Source header: Text')).toBeVisible();
+		await expect
+			.element(screen.getByText('1 source columns; the target table has 2.'))
+			.toBeVisible();
+	});
+
+	it('shows an empty target panel for a database without tables', async () => {
+		const screen = await render(DataIngestionWorkspace, {
+			...kustainerProps,
+			databases: { Analytics: { name: 'Analytics', tables: [] } },
+			selectedTable: undefined
+		});
+
+		await expect.element(screen.getByText('Select a table')).toBeVisible();
+		await expect.element(screen.getByText('No table columns available.')).toBeVisible();
+	});
+
+	it('explains why a remote file URL cannot be used', async () => {
+		const screen = await render(DataIngestionWorkspace, kustainerProps);
+
+		clickTab(screen, 'Remote file');
+		await screen.getByLabelText('File URL').fill('not a url');
+		await expect.element(screen.getByRole('alert')).toBeVisible();
+		expect(screen.getByRole('button', { name: 'Review ingestion' }).element()).toBeDisabled();
+	});
 });

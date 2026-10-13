@@ -28,7 +28,9 @@ help: ## Show help message
 
 sbom: ## Generate Software Bill of Materials (SBOM) using Syft
 	@echo "Generating SBOM using Syft..."
-	syft scan . -o cyclonedx-json=sbom.json
+	syft scan . -o cyclonedx-json=sbom.json \
+		--exclude './infra/**/.terraform/**' \
+		--exclude './vendor/**'
 
 scan: ## Run grype security scan on the SBOM file (requires sbom.json to be present)
 	@echo "Running grype security scan on the SBOM file..."

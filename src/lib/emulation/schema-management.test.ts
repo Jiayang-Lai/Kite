@@ -18,8 +18,18 @@ vi.mock('$lib/emulation/cluster', () => ({
 	loadEmulatedSchema: schemaMocks.loadEmulatedSchema
 }));
 
-import type { CreateTablePlan, TableSchemaSnapshot } from '$lib/kusto/table-management';
-import { createEmulatedTable, dropEmulatedTable } from './schema-management';
+import type {
+	CreateTablePlan,
+	TableMutationPlan,
+	TableSchemaSnapshot
+} from '$lib/kusto/table-management';
+import {
+	createEmulatedDatabase,
+	createEmulatedTable,
+	dropEmulatedDatabase,
+	dropEmulatedTable,
+	mutateEmulatedTable
+} from './schema-management';
 
 const snapshot: TableSchemaSnapshot = {
 	databaseName: 'Analytics',
@@ -113,5 +123,86 @@ describe('emulated schema transactions', () => {
 		);
 		expect(schemaMocks.executeDuckDbSql).not.toHaveBeenCalled();
 		expect(schemaMocks.checkpointDuckDb).not.toHaveBeenCalled();
+	});
+});
+
+describe('emulated databases', () => {
+	it('creates a database under its trimmed name', async () => {
+		await createEmulatedDatabase('cluster', '  Sales  ');
+
+		expect(schemaMocks.createDuckDbDatabase).toHaveBeenCalledWith('cluster', 'Sales');
+	});
+
+	it('refuses an empty name or one that differs from an existing database only by case', async () => {
+		await expect(createEmulatedDatabase('cluster', '   ')).rejects.toThrow(
+			'Enter a database name.'
+		);
+		await expect(createEmulatedDatabase('cluster', 'analytics')).rejects.toThrow(
+			'Database “analytics” already exists.'
+		);
+		expect(schemaMocks.createDuckDbDatabase).not.toHaveBeenCalled();
+	});
+
+	it('drops a database and switches to one that remains', async () => {
+		schemaMocks.loadEmulatedSchema.mockResolvedValue({ Analytics: {}, Archive: {} });
+
+		await dropEmulatedDatabase('cluster', 'Analytics');
+
+		expect(schemaMocks.dropDuckDbDatabase).toHaveBeenCalledWith('cluster', 'Analytics', 'Archive');
+	});
+
+	it('refuses to drop the default memory database or the last database', async () => {
+		await expect(dropEmulatedDatabase('cluster', 'memory')).rejects.toThrow(
+			'default memory database cannot be removed'
+		);
+		await expect(dropEmulatedDatabase('cluster', 'Analytics')).rejects.toThrow(
+			'must contain at least one database'
+		);
+		expect(schemaMocks.dropDuckDbDatabase).not.toHaveBeenCalled();
+	});
+});
+
+describe('emulated table mutations', () => {
+	const base = { command: '', risk: 'safe', summary: '' } as const;
+
+	async function mutate(plan: TableMutationPlan) {
+		await mutateEmulatedTable('cluster', 'Analytics', 'Events', snapshot, plan);
+		return schemaMocks.executeDuckDbSql.mock.calls.map(([sql]) => sql);
+	}
+
+	it('adds columns and clears the table comment in one checkpointed transaction', async () => {
+		const statements = await mutate({
+			...base,
+			kind: 'update-table',
+			addedColumns: [{ name: 'Recorded At', type: 'datetime' }],
+			updatesDocstring: true,
+			nextDocstring: ''
+		});
+
+		expect(statements).toEqual([
+			'BEGIN TRANSACTION',
+			'ALTER TABLE "Analytics".main."Events" ADD COLUMN "Recorded At" TIMESTAMP',
+			'COMMENT ON TABLE "Analytics".main."Events" IS NULL',
+			'COMMIT'
+		]);
+		expect(schemaMocks.checkpointDuckDb).toHaveBeenCalledWith('cluster');
+	});
+
+	it('refuses a plan for a table that no longer exists or has changed', async () => {
+		const plan: TableMutationPlan = { ...base, kind: 'drop-column', columnName: 'State' };
+		schemaMocks.loadEmulatedSchema.mockResolvedValueOnce({
+			Analytics: { name: 'Analytics', tables: [], functions: [] }
+		});
+		await expect(mutate(plan)).rejects.toThrow('Table “Events” no longer exists.');
+
+		schemaMocks.loadEmulatedSchema.mockResolvedValueOnce({
+			Analytics: {
+				name: 'Analytics',
+				tables: [{ name: 'Events', docstring: 'Event rows', columns: [] }],
+				functions: []
+			}
+		});
+		await expect(mutate(plan)).rejects.toThrow('DuckDB table changed while this editor was open');
+		expect(schemaMocks.executeDuckDbSql).not.toHaveBeenCalled();
 	});
 });

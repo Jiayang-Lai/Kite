@@ -10,7 +10,8 @@ const emulationMocks = vi.hoisted(() => ({
 
 vi.mock('$lib/emulation/schema-management', () => emulationMocks);
 
-import { createSchemaMutationAdapter } from './schema-mutation-adapter';
+import { createSchemaMutationAdapter, PartialSchemaMutationError } from './schema-mutation-adapter';
+import { buildEditColumnPlan, buildTableMutationPlan } from '$lib/kusto/table-management';
 import type { KustoClusterConnection } from '$lib/cluster/connections';
 import type { KustoDatabaseSchema } from '$lib/types/kusto-schema';
 import type { QueryResult } from '$lib/types/query-result';
@@ -419,5 +420,106 @@ describe('schema mutation adapter', () => {
 		expect(startManagementCommand).not.toHaveBeenCalled();
 		expect(onexecution).toHaveBeenCalledOnce();
 		expect(onexecution.mock.calls[0][0].cancel).toBe(cancel);
+	});
+});
+
+describe('remote changes that need a second command', () => {
+	function remoteAdapter(startManagementCommand: ReturnType<typeof vi.fn>) {
+		const startReadOnlyBatch = vi.fn(() => ({
+			cancel: vi.fn(),
+			promise: Promise.resolve([
+				result(
+					['TableName', 'DatabaseName', 'Schema', 'DocString'],
+					[
+						[
+							'Events',
+							'Analytics',
+							JSON.stringify({ Name: 'Events', OrderedColumns: [{ Name: 'Id', Type: 'long' }] }),
+							''
+						]
+					]
+				),
+				result(['Schema'], [['Events(Id:long)']]),
+				result(['TableId', 'TotalRowCount'], [['1', 0]])
+			])
+		}));
+		return createSchemaMutationAdapter({
+			cluster: {
+				id: 'remote',
+				name: 'Remote',
+				url: 'https://example.test',
+				kind: 'remote'
+			} satisfies KustoClusterConnection,
+			mockSchemaStore: { updateMockSchema: vi.fn() },
+			mockSchemaRevision: 0,
+			executions: {
+				startManagementCommand: startManagementCommand as never,
+				startReadOnlyBatch: startReadOnlyBatch as never
+			}
+		});
+	}
+
+	const editPlan = buildEditColumnPlan({
+		tableName: 'Events',
+		columnName: 'Id',
+		newColumnName: 'EventId',
+		nextDocstring: 'Event identifier',
+		existingColumnNames: ['Id']
+	});
+
+	it('renames a column, then sets its description under the new name', async () => {
+		const startManagementCommand = vi.fn((_database: string, _command: string) => ({
+			cancel: vi.fn(),
+			promise: Promise.resolve()
+		}));
+
+		await remoteAdapter(startManagementCommand).mutateTable(
+			'Analytics',
+			'Events',
+			snapshot,
+			editPlan
+		);
+
+		expect(startManagementCommand.mock.calls.map(([, command]) => command)).toEqual([
+			'.rename column Events.Id to EventId',
+			".alter-merge table Events column-docstrings (EventId:'Event identifier')"
+		]);
+	});
+
+	it('says what was applied when the description command fails after the rename', async () => {
+		const startManagementCommand = vi
+			.fn()
+			.mockReturnValueOnce({ cancel: vi.fn(), promise: Promise.resolve() })
+			.mockReturnValueOnce({ cancel: vi.fn(), promise: Promise.reject(new Error('Forbidden')) });
+
+		const failure = remoteAdapter(startManagementCommand).mutateTable(
+			'Analytics',
+			'Events',
+			snapshot,
+			editPlan
+		);
+
+		await expect(failure).rejects.toBeInstanceOf(PartialSchemaMutationError);
+		await expect(failure).rejects.toThrow(
+			"Id was renamed to EventId, but the column descriptions weren't set"
+		);
+		await expect(failure).rejects.toThrow('Forbidden');
+	});
+
+	it('names the added columns when their descriptions fail', async () => {
+		const startManagementCommand = vi
+			.fn()
+			.mockReturnValueOnce({ cancel: vi.fn(), promise: Promise.resolve() })
+			.mockReturnValueOnce({ cancel: vi.fn(), promise: Promise.reject(new Error('Forbidden')) });
+		const plan = buildTableMutationPlan({
+			tableName: 'Events',
+			nextDocstring: '',
+			existingColumnNames: ['Id'],
+			newColumns: [{ name: 'Region', type: 'string', docstring: 'Where it happened' }]
+		});
+
+		await expect(
+			remoteAdapter(startManagementCommand).mutateTable('Analytics', 'Events', snapshot, plan)
+		).rejects.toThrow("The columns were added, but the column descriptions weren't set");
 	});
 });

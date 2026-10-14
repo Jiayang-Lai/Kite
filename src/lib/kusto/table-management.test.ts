@@ -6,12 +6,10 @@ import {
 	buildCreateTablePlan,
 	buildDropColumnPlan,
 	buildDropTableCommand,
-	buildRenameColumnPlan,
-	buildReorderTableColumnsPlan,
+	buildEditColumnPlan,
 	buildTableMutationPlan,
 	buildTablePreflightCommands,
 	compareTableSnapshots,
-	diffTableSchema,
 	parseTablePreflightResults,
 	snapshotLoadedTable,
 	type TableSchemaSnapshot
@@ -200,36 +198,116 @@ describe('table management commands', () => {
 		).toThrow('not a supported Kusto scalar type');
 	});
 
-	it('builds a quoted single-column rename', () => {
-		expect(
-			buildRenameColumnPlan({
-				tableName: "Today's Metrics",
-				columnName: 'Trace Id',
-				newColumnName: 'Correlation Id',
-				existingColumnNames: ['Timestamp', 'Trace Id']
-			})
-		).toEqual({
-			kind: 'rename-column',
-			command: ".rename column ['Today\\'s Metrics'].['Trace Id'] to ['Correlation Id']",
-			columnName: 'Trace Id',
-			newColumnName: 'Correlation Id',
-			risk: 'destructive',
-			summary: 'Trace Id renamed to Correlation Id'
+	it('sets new columns’ descriptions in a second command that keeps the other descriptions', () => {
+		const plan = buildTableMutationPlan({
+			tableName: "Today's Metrics",
+			nextDocstring: '',
+			existingColumnNames: ['Timestamp'],
+			newColumns: [
+				{ name: 'Region', type: 'string', docstring: ` Where it's "from" ` },
+				{ name: 'Count', type: 'long', docstring: '  ' }
+			]
+		});
+
+		expect(plan).toMatchObject({
+			command: ".alter-merge table ['Today\\'s Metrics'] (Region:string, Count:long)",
+			columnDocstringsCommand: `.alter-merge table ['Today\\'s Metrics'] column-docstrings (Region:'Where it\\'s "from"')`,
+			addedColumns: [
+				{ name: 'Region', type: 'string', docstring: `Where it's "from"` },
+				{ name: 'Count', type: 'long' }
+			]
 		});
 	});
 
-	it('rejects missing, duplicate, and no-op rename targets', () => {
-		const rename = (columnName: string, newColumnName: string) =>
-			buildRenameColumnPlan({
-				tableName: 'Metrics',
-				columnName,
-				newColumnName,
-				existingColumnNames: ['Timestamp', 'Value']
+	it('adds columns without a descriptions command when none has a description', () => {
+		const plan = buildTableMutationPlan({
+			tableName: 'Metrics',
+			nextDocstring: '',
+			existingColumnNames: ['Timestamp'],
+			newColumns: [{ name: 'Region', type: 'string' }]
+		});
+
+		expect(plan).not.toHaveProperty('columnDocstringsCommand');
+	});
+
+	describe('editing a column', () => {
+		const edit = (input: {
+			columnName?: string;
+			currentDocstring?: string;
+			newColumnName?: string;
+			nextDocstring?: string;
+		}) =>
+			buildEditColumnPlan({
+				tableName: "Today's Metrics",
+				columnName: input.columnName ?? 'Trace Id',
+				currentDocstring: input.currentDocstring,
+				newColumnName: input.newColumnName ?? input.columnName ?? 'Trace Id',
+				nextDocstring: input.nextDocstring ?? input.currentDocstring ?? '',
+				existingColumnNames: ['Timestamp', 'Trace Id']
 			});
 
-		expect(() => rename('Missing', 'Reading')).toThrow('no longer in the table');
-		expect(() => rename('Value', 'timestamp')).toThrow('already exists');
-		expect(() => rename('Value', ' value ')).toThrow('different column name');
+		it('renames a column as a breaking change', () => {
+			expect(edit({ newColumnName: 'Correlation Id' })).toEqual({
+				kind: 'edit-column',
+				command: ".rename column ['Today\\'s Metrics'].['Trace Id'] to ['Correlation Id']",
+				columnName: 'Trace Id',
+				newColumnName: 'Correlation Id',
+				renames: true,
+				updatesDocstring: false,
+				nextDocstring: '',
+				risk: 'destructive',
+				summary: 'Trace Id renamed to Correlation Id'
+			});
+		});
+
+		it('changes only the description as a safe change that keeps other descriptions', () => {
+			expect(edit({ currentDocstring: 'Old', nextDocstring: ` Request's id ` })).toEqual({
+				kind: 'edit-column',
+				command:
+					".alter-merge table ['Today\\'s Metrics'] column-docstrings (['Trace Id']:'Request\\'s id')",
+				columnName: 'Trace Id',
+				newColumnName: 'Trace Id',
+				renames: false,
+				updatesDocstring: true,
+				nextDocstring: "Request's id",
+				risk: 'safe',
+				summary: 'Trace Id description updated'
+			});
+		});
+
+		it('clears a description with an empty docstring', () => {
+			expect(edit({ currentDocstring: 'Old', nextDocstring: '  ' }).command).toBe(
+				".alter-merge table ['Today\\'s Metrics'] column-docstrings (['Trace Id']:'')"
+			);
+		});
+
+		it('renames first, then sets the description under the new name', () => {
+			const plan = edit({
+				currentDocstring: 'Old',
+				newColumnName: 'Correlation Id',
+				nextDocstring: 'New'
+			});
+
+			expect(plan).toMatchObject({
+				command: ".rename column ['Today\\'s Metrics'].['Trace Id'] to ['Correlation Id']",
+				columnDocstringsCommand:
+					".alter-merge table ['Today\\'s Metrics'] column-docstrings (['Correlation Id']:'New')",
+				risk: 'destructive',
+				summary: 'Trace Id renamed to Correlation Id · Correlation Id description updated'
+			});
+		});
+
+		it('rejects a missing column, a taken or blank name, a case-only rename, and no change', () => {
+			expect(() => edit({ columnName: 'Missing', newColumnName: 'Reading' })).toThrow(
+				'no longer in the table'
+			);
+			expect(() => edit({ newColumnName: 'timestamp' })).toThrow('already exists');
+			expect(() => edit({ newColumnName: '  ' })).toThrow('Enter a column name');
+			expect(() => edit({ newColumnName: ' trace id ' })).toThrow('case-insensitive');
+			expect(() => edit({ currentDocstring: 'Same', nextDocstring: ' Same ' })).toThrow(
+				'Change the name or description'
+			);
+		});
 	});
 
 	it('builds an irreversible drop without masking a stale target', () => {
@@ -301,90 +379,6 @@ describe('table management commands', () => {
 		expect(() => changeType('Value', 'string); .drop table Metrics')).toThrow(
 			'supported new column type'
 		);
-	});
-
-	it('computes added, removed, reordered, renamed, and type-changed schema rows', () => {
-		const diff = diffTableSchema(currentPreflight.columns, [
-			{ sourceIndex: 1, name: 'Reading', type: 'long' },
-			{ name: 'Source', type: 'string' }
-		]);
-
-		expect(diff.counts).toEqual({
-			added: 1,
-			removed: 1,
-			reordered: 0,
-			renamed: 1,
-			'type-changed': 1
-		});
-		expect(diff.rows).toEqual([
-			{
-				sourceIndex: 0,
-				before: { name: 'Timestamp', type: 'datetime', index: 0 },
-				changes: ['removed']
-			},
-			{
-				sourceIndex: 1,
-				before: { name: 'Value', type: 'real', index: 1 },
-				after: { name: 'Reading', type: 'long', index: 0 },
-				changes: ['renamed', 'type-changed']
-			},
-			{
-				after: { name: 'Source', type: 'string', index: 1 },
-				changes: ['added']
-			}
-		]);
-	});
-
-	it('detects relative reordering without treating shifts from removal as reorders', () => {
-		expect(
-			diffTableSchema(currentPreflight.columns, [{ sourceIndex: 1, name: 'Value', type: 'real' }])
-				.counts.reordered
-		).toBe(0);
-
-		expect(
-			diffTableSchema(currentPreflight.columns, [
-				{ sourceIndex: 1, name: 'Value', type: 'real' },
-				{ sourceIndex: 0, name: 'Timestamp', type: 'datetime' }
-			]).counts.reordered
-		).toBe(2);
-	});
-
-	it('builds one complete reorder command while preserving metadata', () => {
-		const plan = buildReorderTableColumnsPlan({
-			snapshot: currentPreflight,
-			orderedSourceIndexes: [1, 0]
-		});
-
-		expect(plan).toMatchObject({
-			kind: 'reorder-table-columns',
-			command:
-				".alter table Metrics (Value:real, Timestamp:datetime) with (docstring = 'Telemetry.', folder = 'Operations')",
-			columns: [
-				{ name: 'Value', type: 'real' },
-				{ name: 'Timestamp', type: 'datetime' }
-			],
-			preservedDocstring: 'Telemetry.',
-			preservedFolder: 'Operations',
-			risk: 'destructive',
-			summary: '2 columns reordered'
-		});
-		expect(plan.diff.counts).toEqual({
-			added: 0,
-			removed: 0,
-			reordered: 2,
-			renamed: 0,
-			'type-changed': 0
-		});
-	});
-
-	it('rejects incomplete, duplicate, unknown, and unchanged reorder permutations', () => {
-		const build = (orderedSourceIndexes: readonly number[]) =>
-			buildReorderTableColumnsPlan({ snapshot: currentPreflight, orderedSourceIndexes });
-
-		expect(() => build([0])).toThrow('every verified column exactly once');
-		expect(() => build([0, 0])).toThrow('every verified column exactly once');
-		expect(() => build([0, 2])).toThrow('every verified column exactly once');
-		expect(() => build([0, 1])).toThrow('Change the column order');
 	});
 });
 

@@ -84,14 +84,18 @@ test('serves the production build and opens the query explorer', async ({ page }
 	await expectDuckDbWorkerCount(page, 0);
 });
 
-test('serves every application route after a direct browser reload', async ({ page }) => {
-	for (const route of APPLICATION_ROUTES) {
-		const navigation = await page.goto(route);
-		expect(navigation?.ok(), `Direct navigation to ${route} must succeed`).toBe(true);
-		const reload = await page.reload();
-		expect(reload?.ok(), `Reloading ${route} must succeed`).toBe(true);
+test(
+	'serves every application route after a direct browser reload',
+	{ tag: '@container' },
+	async ({ page }) => {
+		for (const route of APPLICATION_ROUTES) {
+			const navigation = await page.goto(route);
+			expect(navigation?.ok(), `Direct navigation to ${route} must succeed`).toBe(true);
+			const reload = await page.reload();
+			expect(reload?.ok(), `Reloading ${route} must succeed`).toBe(true);
+		}
 	}
-});
+);
 
 test('creates and persists an Azure authentication profile', async ({ page }) => {
 	await page.goto('/explorer/query');
@@ -365,47 +369,55 @@ test('shows cluster switch failures from the Explorer overview', async ({ page }
 	await expect(page.getByRole('alert')).toContainText('continue working with Mock cluster');
 });
 
-test('runs KQL through the emulated cluster and disables Kusto commands', async ({ page }) => {
-	const wasmLoader = await page.request.get('/kql-wasm/_framework/dotnet.js');
-	expect(wasmLoader.ok()).toBe(true);
-	await page.goto('/explorer/query');
-	await expect(
-		page.getByRole('alert').filter({ hasText: 'Results from the emulated cluster may differ' })
-	).toHaveCount(0);
+test(
+	'runs KQL through the emulated cluster and disables Kusto commands',
+	{ tag: '@container' },
+	async ({ page }) => {
+		const duckDbAssets = recordDuckDbAssetRequests(page);
+		const wasmLoader = await page.request.get('/kql-wasm/_framework/dotnet.js');
+		expect(wasmLoader.ok()).toBe(true);
+		await page.goto('/explorer/query');
+		await expect(
+			page.getByRole('alert').filter({ hasText: 'Results from the emulated cluster may differ' })
+		).toHaveCount(0);
 
-	await page.getByRole('button', { name: /Mock cluster/ }).click();
-	const emulatedClusterItem = page.getByRole('menuitem').filter({ hasText: 'Emulated cluster' });
-	await emulatedClusterItem.hover();
-	await expect(emulatedClusterItem).toHaveAttribute('data-state', 'instant-open');
-	const clusterTooltip = page.getByRole('tooltip');
-	await expect(clusterTooltip).toContainText('Emulated cluster');
-	await expect(clusterTooltip).toContainText('KQL translated and executed in this browser tab');
-	await emulatedClusterItem.click();
-	const emulatedClusterWarning = page.getByLabel('Warning: emulated results may differ from Kusto');
-	await expect(emulatedClusterWarning).toBeVisible({ timeout: 30_000 });
-	await expect(emulatedClusterWarning).toHaveAttribute(
-		'title',
-		'Emulated results may differ from Kusto because translation supports only a subset of operators and functions.'
-	);
-	await expect(page.getByText('memory', { exact: true }).first()).toBeVisible({
-		timeout: 30_000
-	});
-	await page.locator('.monaco-editor').click();
-	await page.keyboard.insertText('print Message = "Connected"');
-	await page.getByRole('button', { name: 'Run' }).click();
-	await expect(page.getByRole('cell', { name: 'Connected' })).toBeVisible({
-		timeout: 30_000
-	});
-	await expectKqlTranslatorWorkerCount(page, 1);
+		await page.getByRole('button', { name: /Mock cluster/ }).click();
+		const emulatedClusterItem = page.getByRole('menuitem').filter({ hasText: 'Emulated cluster' });
+		await emulatedClusterItem.hover();
+		await expect(emulatedClusterItem).toHaveAttribute('data-state', 'instant-open');
+		const clusterTooltip = page.getByRole('tooltip');
+		await expect(clusterTooltip).toContainText('Emulated cluster');
+		await expect(clusterTooltip).toContainText('KQL translated and executed in this browser tab');
+		await emulatedClusterItem.click();
+		const emulatedClusterWarning = page.getByLabel(
+			'Warning: emulated results may differ from Kusto'
+		);
+		await expect(emulatedClusterWarning).toBeVisible({ timeout: 30_000 });
+		await expect(emulatedClusterWarning).toHaveAttribute(
+			'title',
+			'Emulated results may differ from Kusto because translation supports only a subset of operators and functions.'
+		);
+		await expect(page.getByText('memory', { exact: true }).first()).toBeVisible({
+			timeout: 30_000
+		});
+		await page.locator('.monaco-editor').click();
+		await page.keyboard.insertText('print Message = "Connected"');
+		await page.getByRole('button', { name: 'Run' }).click();
+		await expect(page.getByRole('cell', { name: 'Connected' })).toBeVisible({
+			timeout: 30_000
+		});
+		await expectKqlTranslatorWorkerCount(page, 1);
+		duckDbAssets.expectAllowedOrigins(new URL(page.url()).origin);
 
-	await page.goto('/admin/commands');
-	await expect(
-		page
-			.getByRole('alert')
-			.filter({ hasText: 'Management commands are not supported for emulated clusters' })
-	).toBeVisible({ timeout: 30_000 });
-	await expectKqlTranslatorWorkerCount(page, 0);
-});
+		await page.goto('/admin/commands');
+		await expect(
+			page
+				.getByRole('alert')
+				.filter({ hasText: 'Management commands are not supported for emulated clusters' })
+		).toBeVisible({ timeout: 30_000 });
+		await expectKqlTranslatorWorkerCount(page, 0);
+	}
+);
 
 test('compares, edits, and runs either side of two query tabs', async ({ page }) => {
 	test.setTimeout(60_000);
@@ -613,6 +625,36 @@ test('releases the Kusto worker after leaving Query and recreates it for the nex
 	await expectKustoWorkerCount(page, 1);
 });
 
+test('keeps table cards from overlapping after another table is expanded and folded', async ({
+	page
+}) => {
+	await page.goto('/admin/databases');
+	const card = (name: string) =>
+		page
+			.getByRole('button', { name: new RegExp(`^${name}`) })
+			.first()
+			.evaluate((button) => {
+				const rect = button.closest('article')!.getBoundingClientRect();
+				return { top: rect.top, bottom: rect.bottom };
+			});
+	const expectNoOverlap = () =>
+		expect
+			.poll(async () => (await card('PopulationData')).top - (await card('StormEvents')).bottom)
+			.toBeGreaterThanOrEqual(0);
+
+	// The virtualized list measures card heights. Expanding or folding one card used to discard
+	// the others' heights, so the next card was drawn over StormEvents' columns.
+	await page.getByRole('button', { name: /^StormEvents/ }).click();
+	await expect(page.getByText('DamageProperty', { exact: true })).toBeVisible();
+	await expectNoOverlap();
+	await page.getByRole('button', { name: /^PopulationData/ }).click();
+	await expect(page.getByText('Population', { exact: true })).toBeVisible();
+	await expectNoOverlap();
+	await page.getByRole('button', { name: /^PopulationData/ }).click();
+	await expect(page.getByText('Population', { exact: true })).toBeHidden();
+	await expectNoOverlap();
+});
+
 test('creates DuckDB databases and tables from emulated cluster administration', async ({
 	page
 }) => {
@@ -802,3 +844,48 @@ test('reopens a persistent custom emulated cluster after a full reload', async (
 		timeout: 30_000
 	});
 });
+
+/**
+ * Records the DuckDB worker and runtime WASM requests a page makes. The container CI job sets
+ * KITE_E2E_REQUIRE_LOCAL_DUCKDB_ASSETS, because the container bundles DuckDB on Kite's origin,
+ * and KITE_E2E_FORBID_REQUEST_HOST to the CDN the Cloudflare build loads it from instead.
+ */
+function recordDuckDbAssetRequests(page: Page) {
+	const forbiddenRequestHost = process.env.KITE_E2E_FORBID_REQUEST_HOST;
+	const requireLocalAssets = process.env.KITE_E2E_REQUIRE_LOCAL_DUCKDB_ASSETS === 'true';
+	const forbiddenRequestUrls: string[] = [];
+	const workerUrls = new Set<string>();
+	const wasmUrls = new Set<string>();
+	page.context().on('request', (request) => {
+		const requestUrl = new URL(request.url());
+		if (forbiddenRequestHost && requestUrl.hostname === forbiddenRequestHost) {
+			forbiddenRequestUrls.push(request.url());
+		}
+		if (/\/duckdb-browser-(?:eh|mvp)\.worker\.[^/]+\.js$/.test(requestUrl.pathname)) {
+			workerUrls.add(request.url());
+		}
+		if (/\/duckdb-(?:eh|mvp)\.[^/]+\.wasm$/.test(requestUrl.pathname)) {
+			wasmUrls.add(request.url());
+		}
+	});
+
+	return {
+		expectAllowedOrigins(applicationOrigin: string) {
+			expect(
+				forbiddenRequestUrls,
+				`Requests to ${forbiddenRequestHost ?? 'the forbidden host'} are not allowed`
+			).toEqual([]);
+			if (!requireLocalAssets) return;
+			expect(workerUrls.size, 'The browser must request a DuckDB worker').toBeGreaterThan(0);
+			expect(wasmUrls.size, 'The browser must request a DuckDB runtime WASM file').toBeGreaterThan(
+				0
+			);
+			expect(
+				[...workerUrls, ...wasmUrls].every(
+					(assetUrl) => new URL(assetUrl).origin === applicationOrigin
+				),
+				'DuckDB worker and runtime WASM requests must use the Kite origin'
+			).toBe(true);
+		}
+	};
+}

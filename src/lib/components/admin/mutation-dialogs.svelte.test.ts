@@ -4,7 +4,6 @@ import { render } from 'vitest-browser-svelte';
 import AppContextWrapper from '../../../../tests/fixtures/app-context-wrapper.svelte';
 import DatabaseMutationDialog from './database-mutation-dialog.svelte';
 import TableDropDialog from './table-drop-dialog.svelte';
-import TableSchemaDiff from './table-schema-diff.svelte';
 
 describe('database and table mutation dialogs', () => {
 	beforeEach(() => localStorage.clear());
@@ -79,41 +78,5 @@ describe('database and table mutation dialogs', () => {
 		await screen.getByLabelText('Type REMOVE Events to confirm').fill('REMOVE Events');
 		await screen.getByRole('button', { name: 'Remove table' }).click();
 		await expect.element(screen.getByRole('alert')).toHaveTextContent('Delete failed');
-	});
-
-	it('renders every schema-diff change and the unchanged state', async () => {
-		const screen = await render(TableSchemaDiff, {
-			diff: {
-				hasChanges: true,
-				counts: { added: 1, removed: 1, reordered: 1, renamed: 1, 'type-changed': 1 },
-				rows: [
-					{
-						sourceIndex: 0,
-						before: { name: 'Old', type: 'string', index: 0 },
-						after: { name: 'New', type: 'long', index: 1 },
-						changes: ['renamed', 'type-changed', 'reordered']
-					},
-					{
-						before: { name: 'Removed', type: 'string', index: 1 },
-						changes: ['removed']
-					},
-					{
-						after: { name: 'Added', type: 'bool', index: 2 },
-						changes: ['added']
-					}
-				]
-			}
-		});
-		for (const label of ['Added', 'Removed', 'Reordered', 'Renamed', 'Type changed']) {
-			await expect.element(screen.getByText(label, { exact: true })).toBeVisible();
-		}
-		await screen.rerender({
-			diff: {
-				hasChanges: false,
-				counts: { added: 0, removed: 0, reordered: 0, renamed: 0, 'type-changed': 0 },
-				rows: []
-			}
-		});
-		await expect.element(screen.getByText('No schema changes')).toBeVisible();
 	});
 });

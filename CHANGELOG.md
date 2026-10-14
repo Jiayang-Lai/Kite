@@ -2,6 +2,24 @@
 
 All notable changes to Kite are recorded here. Kite follows [semantic versioning](https://semver.org/); while the major version is 0, minor releases may include breaking changes. Notes for releases before 0.1.0 are on the [GitHub releases page](https://github.com/Jiayang-Lai/Kite/releases).
 
+## [Unreleased]
+
+### Added
+
+- Columns added in the table editor can have a description.
+
+### Fixed
+
+- In **Databases & tables**, expanding or folding a table no longer draws the next table over a table that is still expanded.
+
+### Changed
+
+- **Rename column** is now **Edit column**, which can also change or clear the column's description. Changing only the description is a safe change confirmed by typing `RUN`; renaming still needs `RENAME`.
+
+### Removed
+
+- The **Reorder columns** action in Admin. It was rarely needed, ran a destructive `.alter table` on Kusto, and deleted column documentation on emulated clusters. Column order doesn't affect queries, since `project` sets the order of results; to change the stored order, recreate the table.
+
 ## [0.1.0]
 
 ### Fixed

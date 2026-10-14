@@ -35,34 +35,6 @@ export type CreateTablePlan = {
 	summary: string;
 };
 
-export type TableSchemaColumnDraft = {
-	/** Index of the original column represented by this row; absent for a new column. */
-	sourceIndex?: number;
-	name: string;
-	type: string;
-};
-
-export type TableSchemaChangeKind = 'added' | 'removed' | 'reordered' | 'renamed' | 'type-changed';
-
-export type TableSchemaDiffColumn = {
-	name: string;
-	type: string;
-	index: number;
-};
-
-export type TableSchemaDiffRow = {
-	sourceIndex?: number;
-	before?: TableSchemaDiffColumn;
-	after?: TableSchemaDiffColumn;
-	changes: readonly TableSchemaChangeKind[];
-};
-
-export type TableSchemaDiff = {
-	rows: readonly TableSchemaDiffRow[];
-	counts: Record<TableSchemaChangeKind, number>;
-	hasChanges: boolean;
-};
-
 export type TableMutationInput = {
 	tableName: string;
 	currentDocstring?: string;
@@ -81,15 +53,23 @@ type TableMutationPlanBase = {
 
 export type UpdateTablePlan = TableMutationPlanBase & {
 	kind: 'update-table';
+	/** Sets the new columns' descriptions after `command` has added them. */
+	columnDocstringsCommand?: string;
 	addedColumns: readonly NewTableColumn[];
 	updatesDocstring: boolean;
 	nextDocstring: string;
 };
 
-export type RenameColumnPlan = TableMutationPlanBase & {
-	kind: 'rename-column';
+export type EditColumnPlan = TableMutationPlanBase & {
+	kind: 'edit-column';
+	/** Sets the description after `command` has renamed the column. */
+	columnDocstringsCommand?: string;
 	columnName: string;
+	/** The column's name afterwards; the same as `columnName` when it isn't renamed. */
 	newColumnName: string;
+	renames: boolean;
+	updatesDocstring: boolean;
+	nextDocstring: string;
 };
 
 export type DropColumnPlan = TableMutationPlanBase & {
@@ -104,20 +84,8 @@ export type ChangeColumnTypePlan = TableMutationPlanBase & {
 	newColumnType: KustoScalarType;
 };
 
-export type ReorderTableColumnsPlan = TableMutationPlanBase & {
-	kind: 'reorder-table-columns';
-	columns: readonly NewTableColumn[];
-	diff: TableSchemaDiff;
-	preservedDocstring: string;
-	preservedFolder: string;
-};
-
 export type TableMutationPlan =
-	| UpdateTablePlan
-	| RenameColumnPlan
-	| DropColumnPlan
-	| ChangeColumnTypePlan
-	| ReorderTableColumnsPlan;
+	UpdateTablePlan | EditColumnPlan | DropColumnPlan | ChangeColumnTypePlan;
 
 export type TableSchemaColumnSnapshot = {
 	name: string;
@@ -196,8 +164,19 @@ function formatColumn(column: NewTableColumn) {
 	return `${quoteKustoEntity(column.name, 'Enter a column name.')}:${column.type}`;
 }
 
-function buildColumnDocstringsCommand(tableName: string, columns: readonly NewTableColumn[]) {
-	if (!columns.some((column) => column.docstring)) return undefined;
+/**
+ * Sets column descriptions. `.alter table` removes the description of every column it doesn't
+ * list, so it suits a new table; `.alter-merge table` keeps the other columns' descriptions.
+ * An empty description clears one: Kustainer stores it as `""` rather than removing the property,
+ * which Kite reads as no description.
+ * https://learn.microsoft.com/kusto/management/alter-column-docstrings
+ * https://learn.microsoft.com/kusto/management/alter-merge-table-column
+ */
+function buildColumnDocstringsCommand(
+	tableName: string,
+	columns: readonly Pick<NewTableColumn, 'name' | 'docstring'>[],
+	verb: '.alter' | '.alter-merge' = '.alter'
+) {
 	const quotedTableName = quoteKustoEntity(tableName, 'Enter a table name.');
 	const docstrings = columns
 		.map(
@@ -205,7 +184,7 @@ function buildColumnDocstringsCommand(tableName: string, columns: readonly NewTa
 				`${quoteKustoEntity(column.name, 'Enter a column name.')}:${quoteKustoString(column.docstring ?? '')}`
 		)
 		.join(', ');
-	return `.alter table ${quotedTableName} column-docstrings (${docstrings})`;
+	return `${verb} table ${quotedTableName} column-docstrings (${docstrings})`;
 }
 
 /** Builds one empty table creation command with an explicit initial schema. */
@@ -235,7 +214,9 @@ export function buildCreateTablePlan(input: {
 		folder ? `folder = ${quoteKustoString(folder)}` : ''
 	].filter(Boolean);
 	const withClause = properties.length ? ` with (${properties.join(', ')})` : '';
-	const columnDocstringsCommand = buildColumnDocstringsCommand(tableName, columns);
+	const columnDocstringsCommand = columns.some((column) => column.docstring)
+		? buildColumnDocstringsCommand(tableName, columns)
+		: undefined;
 
 	return {
 		kind: 'create-table',
@@ -416,6 +397,11 @@ export function buildTableMutationPlan(input: TableMutationInput): TableMutation
 		command = `.alter table ${tableName} docstring ${quoteKustoString(nextDocstring)}`;
 	}
 
+	const describedColumns = addedColumns.filter((column) => column.docstring);
+	const columnDocstringsCommand = describedColumns.length
+		? buildColumnDocstringsCommand(input.tableName, describedColumns, '.alter-merge')
+		: undefined;
+
 	const changes = [
 		addedColumns.length
 			? `${addedColumns.length} ${addedColumns.length === 1 ? 'column' : 'columns'} added`
@@ -426,6 +412,7 @@ export function buildTableMutationPlan(input: TableMutationInput): TableMutation
 	return {
 		kind: 'update-table',
 		command,
+		...(columnDocstringsCommand ? { columnDocstringsCommand } : {}),
 		addedColumns,
 		updatesDocstring,
 		nextDocstring,
@@ -445,35 +432,62 @@ function validatedExistingColumn(
 	return existingName;
 }
 
-/** Builds a data-preserving but reference-breaking single-column rename. */
-export function buildRenameColumnPlan(input: {
+/**
+ * Builds a change to one column's name, description, or both. Renaming preserves the stored values
+ * but breaks references to the old name; changing only the description is safe.
+ */
+export function buildEditColumnPlan(input: {
 	tableName: string;
 	columnName: string;
+	currentDocstring?: string;
 	newColumnName: string;
+	nextDocstring: string;
 	existingColumnNames: readonly string[];
-}): RenameColumnPlan {
+}): EditColumnPlan {
 	const tableName = quoteKustoEntity(input.tableName, 'Select a target table.');
 	const columnName = validatedExistingColumn(input.existingColumnNames, input.columnName);
 	const newColumnName = input.newColumnName.trim();
-	if (!newColumnName) throw new Error('Enter a new column name.');
-	if (newColumnName.toLowerCase() === columnName.toLowerCase()) {
-		throw new Error('Enter a different column name.');
+	if (!newColumnName) throw new Error('Enter a column name.');
+	const renames = newColumnName !== columnName;
+	if (renames && newColumnName.toLowerCase() === columnName.toLowerCase()) {
+		throw new Error('Column names are case-insensitive. Enter a different name.');
 	}
 	if (
+		renames &&
 		input.existingColumnNames.some(
 			(name) => name !== columnName && name.trim().toLowerCase() === newColumnName.toLowerCase()
 		)
 	) {
 		throw new Error(`Column “${newColumnName}” already exists in this table.`);
 	}
+	const nextDocstring = normalizeDocstring(input.nextDocstring);
+	const updatesDocstring = nextDocstring !== normalizeDocstring(input.currentDocstring);
+	if (!renames && !updatesDocstring) {
+		throw new Error('Change the name or description before reviewing.');
+	}
+
+	const renameCommand = `.rename column ${tableName}.${quoteKustoEntity(columnName, 'Select a target column.')} to ${quoteKustoEntity(newColumnName, 'Enter a column name.')}`;
+	const docstringCommand = buildColumnDocstringsCommand(
+		input.tableName,
+		[{ name: newColumnName, docstring: nextDocstring }],
+		'.alter-merge'
+	);
+	const changes = [
+		renames ? `${columnName} renamed to ${newColumnName}` : '',
+		updatesDocstring ? `${newColumnName} description updated` : ''
+	].filter(Boolean);
 
 	return {
-		kind: 'rename-column',
-		command: `.rename column ${tableName}.${quoteKustoEntity(columnName, 'Select a target column.')} to ${quoteKustoEntity(newColumnName, 'Enter a new column name.')}`,
+		kind: 'edit-column',
+		command: renames ? renameCommand : docstringCommand,
+		...(renames && updatesDocstring ? { columnDocstringsCommand: docstringCommand } : {}),
 		columnName,
 		newColumnName,
-		risk: 'destructive',
-		summary: `${columnName} renamed to ${newColumnName}`
+		renames,
+		updatesDocstring,
+		nextDocstring,
+		risk: renames ? 'destructive' : 'safe',
+		summary: changes.join(' · ')
 	};
 }
 
@@ -526,136 +540,5 @@ export function buildChangeColumnTypePlan(input: {
 		newColumnType: newColumnType as KustoScalarType,
 		risk: 'irreversible',
 		summary: `${columnName} changed from ${currentColumnType} to ${newColumnType}`
-	};
-}
-
-/** Computes an identity-aware before/after schema diff. */
-export function diffTableSchema(
-	originalColumns: readonly TableSchemaColumnSnapshot[],
-	nextColumns: readonly TableSchemaColumnDraft[]
-): TableSchemaDiff {
-	const draftBySource = new Map<number, { column: TableSchemaColumnDraft; index: number }>();
-	for (const [index, column] of nextColumns.entries()) {
-		if (column.sourceIndex != null && !draftBySource.has(column.sourceIndex)) {
-			draftBySource.set(column.sourceIndex, { column, index });
-		}
-	}
-
-	const retainedSourceIndexes = originalColumns
-		.map((_, index) => index)
-		.filter((index) => draftBySource.has(index));
-	const retainedOrder = nextColumns
-		.filter((column) => column.sourceIndex != null && draftBySource.has(column.sourceIndex))
-		.map((column) => column.sourceIndex as number);
-	const reorderedSources = new Set(
-		retainedOrder.filter((sourceIndex, index) => retainedSourceIndexes[index] !== sourceIndex)
-	);
-
-	const rows: TableSchemaDiffRow[] = originalColumns.map((before, sourceIndex) => {
-		const draft = draftBySource.get(sourceIndex);
-		const beforeColumn = { ...before, index: sourceIndex };
-		if (!draft) {
-			return {
-				sourceIndex,
-				before: beforeColumn,
-				changes: ['removed']
-			};
-		}
-
-		const changes: TableSchemaChangeKind[] = [];
-		if (before.name !== draft.column.name.trim()) changes.push('renamed');
-		if (before.type !== draft.column.type) changes.push('type-changed');
-		if (reorderedSources.has(sourceIndex)) changes.push('reordered');
-		return {
-			sourceIndex,
-			before: beforeColumn,
-			after: {
-				name: draft.column.name.trim(),
-				type: draft.column.type,
-				index: draft.index
-			},
-			changes
-		};
-	});
-
-	for (const [index, column] of nextColumns.entries()) {
-		if (column.sourceIndex == null) {
-			rows.push({
-				after: { name: column.name.trim(), type: column.type, index },
-				changes: ['added']
-			});
-		}
-	}
-
-	const counts: Record<TableSchemaChangeKind, number> = {
-		added: 0,
-		removed: 0,
-		reordered: 0,
-		renamed: 0,
-		'type-changed': 0
-	};
-	for (const row of rows) {
-		for (const change of row.changes) counts[change] += 1;
-	}
-
-	return {
-		rows,
-		counts,
-		hasChanges: Object.values(counts).some((count) => count > 0)
-	};
-}
-
-/**
- * Builds one complete `.alter table` command from a validated permutation.
- * Every verified column is included exactly once with its original name and type.
- */
-export function buildReorderTableColumnsPlan(input: {
-	snapshot: TableSchemaSnapshot;
-	orderedSourceIndexes: readonly number[];
-}): ReorderTableColumnsPlan {
-	const tableName = quoteKustoEntity(input.snapshot.tableName, 'Select a target table.');
-	if (input.orderedSourceIndexes.length !== input.snapshot.columns.length) {
-		throw new Error('The reordered schema must contain every verified column exactly once.');
-	}
-
-	const seenSourceIndexes = new Set<number>();
-	const columns: NewTableColumn[] = input.orderedSourceIndexes.map((sourceIndex) => {
-		if (
-			!Number.isInteger(sourceIndex) ||
-			sourceIndex < 0 ||
-			sourceIndex >= input.snapshot.columns.length ||
-			seenSourceIndexes.has(sourceIndex)
-		) {
-			throw new Error('The reordered schema must contain every verified column exactly once.');
-		}
-		seenSourceIndexes.add(sourceIndex);
-		const column = input.snapshot.columns[sourceIndex];
-		if (!KUSTO_SCALAR_TYPES.includes(column.type as KustoScalarType)) {
-			throw new Error(`“${column.type}” is not a supported Kusto scalar type.`);
-		}
-		return { name: column.name, type: column.type as KustoScalarType };
-	});
-
-	const nextColumns = input.orderedSourceIndexes.map((sourceIndex) => ({
-		sourceIndex,
-		...input.snapshot.columns[sourceIndex]
-	}));
-	const diff = diffTableSchema(input.snapshot.columns, nextColumns);
-	if (!diff.counts.reordered) throw new Error('Change the column order before reviewing.');
-
-	const schema = columns.map(formatColumn).join(', ');
-	const preservedDocstring = input.snapshot.docstring;
-	const preservedFolder = input.snapshot.folder ?? '';
-	const command = `.alter table ${tableName} (${schema}) with (docstring = ${quoteKustoString(preservedDocstring)}, folder = ${quoteKustoString(preservedFolder)})`;
-
-	return {
-		kind: 'reorder-table-columns',
-		command,
-		columns,
-		diff,
-		preservedDocstring,
-		preservedFolder,
-		risk: 'destructive',
-		summary: `${diff.counts.reordered} ${diff.counts.reordered === 1 ? 'column' : 'columns'} reordered`
 	};
 }

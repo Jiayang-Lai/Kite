@@ -3,7 +3,6 @@ import { render } from 'vitest-browser-svelte';
 
 import type { TableSchemaSnapshot } from '$lib/kusto/table-management';
 import AppContextWrapper from '../../../../tests/fixtures/app-context-wrapper.svelte';
-import ColumnOrderDialog from './column-order-dialog.svelte';
 import TableEditorDialog from './table-editor-dialog.svelte';
 
 const table = {
@@ -25,70 +24,7 @@ const snapshot: TableSchemaSnapshot = {
 
 describe('table editing dialogs', () => {
 	beforeEach(() => localStorage.clear());
-
-	it('reorders, reviews, and submits the complete column order', async () => {
-		const onsubmit = vi.fn();
-		const screen = await render(
-			ColumnOrderDialog,
-			{
-				open: true,
-				table,
-				databaseName: 'Samples',
-				clusterName: 'Production',
-				preflightReady: true,
-				snapshot,
-				onsubmit
-			},
-			{ wrapper: AppContextWrapper }
-		);
-		await expect
-			.element(screen.getByRole('heading', { name: 'Reorder Events columns' }))
-			.toBeVisible();
-		await expect.element(screen.getByRole('button', { name: 'Move Message up' })).toBeDisabled();
-		await screen.getByRole('button', { name: 'Move Message down' }).click();
-		await screen.getByRole('button', { name: 'Review order' }).click();
-		await expect
-			.element(screen.getByRole('heading', { name: 'Review column order' }))
-			.toBeVisible();
-		await expect.element(screen.getByText('Coordinate order-dependent ingestion')).toBeVisible();
-		await screen.getByLabelText(/Type REORDER Events/).fill('REORDER Events');
-		await screen.getByRole('button', { name: 'Apply order' }).click();
-		expect(onsubmit).toHaveBeenCalledWith(
-			expect.objectContaining({
-				kind: 'reorder-table-columns',
-				columns: [
-					{ name: 'Count', type: 'long' },
-					{ name: 'Message', type: 'string' }
-				]
-			})
-		);
-	});
-
-	it('renders unavailable and preparing order states', async () => {
-		const oncancel = vi.fn();
-		const screen = await render(
-			ColumnOrderDialog,
-			{
-				open: true,
-				table,
-				databaseName: 'Samples',
-				clusterName: 'Production',
-				isPreparing: true,
-				executionError: 'Metadata failed',
-				oncancel
-			},
-			{ wrapper: AppContextWrapper }
-		);
-		await expect.element(screen.getByText(/order editor will load/)).toBeVisible();
-		await expect.element(screen.getByRole('alert')).toHaveTextContent('Metadata failed');
-		await expect
-			.element(screen.getByRole('button', { name: 'Checking current schema' }))
-			.toBeDisabled();
-		await screen.getByRole('button', { name: 'Cancel' }).click();
-		expect(oncancel).toHaveBeenCalledOnce();
-	});
-
-	it('adds columns and submits a reviewed table update', async () => {
+	it('adds a described column and submits a reviewed table update', async () => {
 		const onsubmit = vi.fn();
 		const screen = await render(
 			TableEditorDialog,
@@ -109,9 +45,13 @@ describe('table editing dialogs', () => {
 		await screen.getByLabelText('Column name').fill('CreatedAt');
 		await screen.getByLabelText('Type').click();
 		await screen.getByRole('option', { name: 'datetime' }).click();
+		await screen.getByLabelText('Column description').fill('When the event was created');
 		await screen.getByRole('button', { name: 'Review changes' }).click();
 		await expect
 			.element(screen.getByRole('heading', { name: 'Review table update' }))
+			.toBeVisible();
+		await expect
+			.element(screen.getByText(/column-docstrings \(CreatedAt:'When the event was created'\)/))
 			.toBeVisible();
 		await screen.getByLabelText('Type RUN to enable the update').fill('RUN');
 		await screen.getByRole('button', { name: 'Update table' }).click();
@@ -119,7 +59,9 @@ describe('table editing dialogs', () => {
 			expect.objectContaining({
 				kind: 'update-table',
 				nextDocstring: 'Updated events',
-				addedColumns: [{ name: 'CreatedAt', type: 'datetime' }]
+				addedColumns: [
+					{ name: 'CreatedAt', type: 'datetime', docstring: 'When the event was created' }
+				]
 			})
 		);
 	});

@@ -53,6 +53,14 @@ type AdapterOptions = {
 	executions?: ExecutionStarters;
 };
 
+/**
+ * A Kusto change that needed two commands, where the first was applied and the second failed.
+ * Kusto has no transaction across them, so the table now differs from the editor's snapshot.
+ */
+export class PartialSchemaMutationError extends Error {
+	override name = 'PartialSchemaMutationError';
+}
+
 export type SchemaMutationOutcome = {
 	mockSchemaRevision?: number;
 };
@@ -227,6 +235,27 @@ const schemaMutationAdapterFactories = {
 				await context.remember(
 					context.executions.startManagementCommand(databaseName, plan.command, cluster.url)
 				).promise;
+				if ('columnDocstringsCommand' in plan && plan.columnDocstringsCommand) {
+					try {
+						await context.remember(
+							context.executions.startManagementCommand(
+								databaseName,
+								plan.columnDocstringsCommand,
+								cluster.url
+							)
+						).promise;
+					} catch (cause) {
+						const applied =
+							plan.kind === 'update-table'
+								? 'The columns were added'
+								: `${plan.columnName} was renamed to ${plan.newColumnName}`;
+						const reason = cause instanceof Error ? cause.message : String(cause);
+						throw new PartialSchemaMutationError(
+							`${applied}, but the column descriptions weren't set. Use Edit column to set them.\n\n${reason}`,
+							{ cause }
+						);
+					}
+				}
 				return {};
 			},
 			async createTable(databaseName, plan) {

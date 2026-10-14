@@ -1,6 +1,5 @@
 <script lang="ts">
 	import ColumnMutationDialog from './column-mutation-dialog.svelte';
-	import ColumnOrderDialog from './column-order-dialog.svelte';
 	import CreateTableDialog from './create-table-dialog.svelte';
 	import DatabaseMutationDialog from './database-mutation-dialog.svelte';
 	import TableDropDialog from './table-drop-dialog.svelte';
@@ -55,19 +54,6 @@
 {#if state.editorTable}
 	<TableEditorDialog
 		bind:open={state.editorOpen}
-		table={state.editorTable}
-		databaseName={state.editorDatabaseName}
-		{clusterName}
-		isPreparing={state.isPreparingEditor}
-		isRunning={state.isMutating}
-		preflightReady={Boolean(state.editorSnapshot)}
-		snapshot={state.editorSnapshot}
-		executionError={state.mutationError}
-		onsubmit={workspace.updateTable}
-		oncancel={workspace.cancel}
-	/>
-	<ColumnOrderDialog
-		bind:open={state.columnOrderOpen}
 		table={state.editorTable}
 		databaseName={state.editorDatabaseName}
 		{clusterName}

@@ -123,7 +123,7 @@ The lifecycle is:
 
 1. Update local `main` and create a short-lived branch.
 2. Develop and test one cohesive change.
-3. Open a pull request targeting `main`.
+3. Open a pull request targeting `main` and fill in the [pull request template](../.github/pull_request_template.md).
 4. Run CI and create a preview deployment.
 5. Review the code and validate the preview.
 6. Squash merge the pull request after all required checks and approvals pass.

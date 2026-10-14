@@ -65,6 +65,7 @@
 	let debouncedFilter = $state('');
 	let expandAllWarningOpen = $state(false);
 	let tableScrollElement = $state<HTMLElement | null>(null);
+	let tableListElement = $state<HTMLDivElement | null>(null);
 	const SEARCH_DEBOUNCE_MS = 300;
 	const EXPAND_ALL_WARNING_THRESHOLD = 50;
 	const expandedTables = $derived(expansionState.schemaTables[database.name] ?? {});
@@ -116,7 +117,7 @@
 
 	$effect(() => {
 		filteredTables;
-		void tick().then(() => get(tableVirtualizer).measure());
+		remeasureTables({ reset: true });
 	});
 
 	$effect(() => {
@@ -162,7 +163,7 @@
 			table: tableName,
 			open: !expandedTables[tableName]
 		});
-		void tick().then(() => get(tableVirtualizer).measure());
+		remeasureTables();
 	}
 
 	function toggleAllTables() {
@@ -175,7 +176,7 @@
 				open
 			});
 		}
-		void tick().then(() => get(tableVirtualizer).measure());
+		remeasureTables();
 	}
 
 	function requestToggleAllTables() {
@@ -193,6 +194,24 @@
 
 	function measureTable(node: HTMLDivElement) {
 		get(tableVirtualizer).measureElement(node);
+	}
+
+	/**
+	 * Re-measures every table card on screen after the DOM updates. `measure()` discards all cached
+	 * heights, and the virtualizer only measures a card again when it mounts or resizes, so a card
+	 * that is still expanded would otherwise fall back to the estimate and the next card would be
+	 * drawn over it. Pass `reset` only when the list itself changed and old heights may be stale.
+	 */
+	function remeasureTables({ reset = false } = {}) {
+		void tick().then(() => {
+			const virtualizer = get(tableVirtualizer);
+			if (reset) virtualizer.measure();
+			for (const node of tableListElement?.querySelectorAll<HTMLDivElement>(
+				':scope > [data-index]'
+			) ?? []) {
+				virtualizer.measureElement(node);
+			}
+		});
 	}
 
 	function showAllObjects() {
@@ -375,7 +394,11 @@
 				</article>
 			{:else}
 				{#if filteredTables.length}
-					<div class="relative" style:height={`${$tableVirtualizer.getTotalSize()}px`}>
+					<div
+						bind:this={tableListElement}
+						class="relative"
+						style:height={`${$tableVirtualizer.getTotalSize()}px`}
+					>
 						{#each $tableVirtualizer.getVirtualItems() as virtualTable (virtualTable.key)}
 							{@const table = filteredTables[virtualTable.index]}
 							{#if table}

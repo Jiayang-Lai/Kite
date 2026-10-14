@@ -7,7 +7,7 @@ import ColumnMutationDialog from './column-mutation-dialog.svelte';
 const table = {
 	name: 'Events',
 	columns: [
-		{ name: 'Message', type: 'string' },
+		{ name: 'Message', type: 'string', docstring: 'Log text' },
 		{ name: 'Count', type: 'long' }
 	]
 };
@@ -23,13 +23,13 @@ const baseProps = {
 describe('ColumnMutationDialog', () => {
 	beforeEach(() => localStorage.clear());
 
-	it('renames a verified column after confirmation', async () => {
+	it('renames a verified column after confirmation and keeps its description', async () => {
 		const onsubmit = vi.fn();
 		const screen = await render(
 			ColumnMutationDialog,
 			{
 				...baseProps,
-				action: 'rename',
+				action: 'edit',
 				snapshot: {
 					databaseName: 'Samples',
 					tableName: 'Events',
@@ -42,16 +42,49 @@ describe('ColumnMutationDialog', () => {
 			},
 			{ wrapper: AppContextWrapper }
 		);
-		await expect.element(screen.getByRole('heading', { name: 'Rename Message' })).toBeVisible();
+		await expect.element(screen.getByRole('heading', { name: 'Edit Message' })).toBeVisible();
 		await expect.element(screen.getByText(/1\s*row/)).toBeVisible();
-		await screen.getByLabelText('New column name').fill('Details');
+		await expect.element(screen.getByLabelText('Column name')).toHaveValue('Message');
+		await expect.element(screen.getByLabelText(/Description/)).toHaveValue('Log text');
+		await screen.getByLabelText('Column name').fill('Details');
+		await expect.element(screen.getByText('Breaking change')).toBeVisible();
+		await expect.element(screen.getByText('Dependent references are not rewritten')).toBeVisible();
 		await screen.getByLabelText(/Type RENAME/).fill('RENAME');
-		await screen.getByRole('button', { name: 'Rename column' }).click();
+		await screen.getByRole('button', { name: 'Save column' }).click();
 		expect(onsubmit).toHaveBeenCalledWith(
 			expect.objectContaining({
-				kind: 'rename-column',
+				kind: 'edit-column',
 				columnName: 'Message',
-				newColumnName: 'Details'
+				newColumnName: 'Details',
+				renames: true,
+				updatesDocstring: false
+			})
+		);
+	});
+
+	it('changes only the description as a safe edit confirmed with RUN', async () => {
+		const onsubmit = vi.fn();
+		const screen = await render(
+			ColumnMutationDialog,
+			{ ...baseProps, action: 'edit', onsubmit },
+			{ wrapper: AppContextWrapper }
+		);
+		await screen.getByLabelText(/Description/).fill('Free-form log text');
+		await expect.element(screen.getByText('Safe')).toBeVisible();
+		await expect
+			.element(screen.getByText('Dependent references are not rewritten'))
+			.not.toBeInTheDocument();
+		await expect
+			.element(screen.getByText(/column-docstrings \(Message:'Free-form log text'\)/))
+			.toBeVisible();
+		await screen.getByLabelText(/Type RUN/).fill('RUN');
+		await screen.getByRole('button', { name: 'Save column' }).click();
+		expect(onsubmit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				kind: 'edit-column',
+				renames: false,
+				updatesDocstring: true,
+				nextDocstring: 'Free-form log text'
 			})
 		);
 	});

@@ -45,9 +45,9 @@
 			>Action for column {column.name}</DropdownMenu.Label
 		>
 		<DropdownMenu.Separator />
-		<DropdownMenu.Item onSelect={() => selectAction('rename')}>
+		<DropdownMenu.Item onSelect={() => selectAction('edit')}>
 			<FilePenLineIcon />
-			Rename column
+			Edit column
 		</DropdownMenu.Item>
 		<DropdownMenu.Item variant="destructive" onSelect={() => selectAction('change-type')}>
 			<BinaryIcon />

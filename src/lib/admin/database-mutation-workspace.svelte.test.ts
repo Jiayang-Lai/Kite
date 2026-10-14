@@ -119,15 +119,11 @@ describe('createDatabaseMutationWorkspace', () => {
 		workspace.openColumnEditor(
 			table as never,
 			{ name: 'Message', type: 'string' } as never,
-			'rename'
+			'edit'
 		);
 		await vi.waitFor(() => expect(workspace.state.isPreparingEditor).toBe(false));
 		expect(workspace.state.columnEditorOpen).toBe(true);
-		expect(workspace.state.columnMutationAction).toBe('rename');
-
-		workspace.openColumnOrderEditor(table as never);
-		await vi.waitFor(() => expect(workspace.state.isPreparingEditor).toBe(false));
-		expect(workspace.state.columnOrderOpen).toBe(true);
+		expect(workspace.state.columnMutationAction).toBe('edit');
 	});
 
 	it('ignores editor requests for entities absent from the active schema', () => {
@@ -138,7 +134,6 @@ describe('createDatabaseMutationWorkspace', () => {
 			{ name: 'Missing', type: 'string' } as never,
 			'drop'
 		);
-		workspace.openColumnOrderEditor({ name: 'Missing', columns: [] } as never);
 		expect(workspace.isDialogOpen).toBe(false);
 		expect(adapterMocks.prepareTable).not.toHaveBeenCalled();
 	});

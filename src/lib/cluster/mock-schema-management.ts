@@ -101,15 +101,20 @@ export function applyMockTableMutation(
 				docstring: plan.updatesDocstring ? plan.nextDocstring : table.docstring
 			};
 			break;
-		case 'rename-column':
+		case 'edit-column':
 			if (!table.columns.some((column) => column.name === plan.columnName)) {
 				throw new Error(`Column “${plan.columnName}” no longer exists.`);
 			}
 			updatedTable = {
 				...table,
-				columns: table.columns.map((column) =>
-					column.name === plan.columnName ? { ...column, name: plan.newColumnName } : column
-				)
+				columns: table.columns.map((column) => {
+					if (column.name !== plan.columnName) return column;
+					const edited = { ...column, name: plan.newColumnName };
+					if (!plan.updatesDocstring) return edited;
+					if (plan.nextDocstring) return { ...edited, docstring: plan.nextDocstring };
+					delete edited.docstring;
+					return edited;
+				})
 			};
 			break;
 		case 'drop-column':
@@ -129,19 +134,6 @@ export function applyMockTableMutation(
 				)
 			};
 			break;
-		case 'reorder-table-columns': {
-			const columnsByName = new Map(table.columns.map((column) => [column.name, column]));
-			updatedTable = {
-				...table,
-				columns: plan.columns.map((column) => ({
-					...columnsByName.get(column.name),
-					name: column.name,
-					type: column.type
-				})),
-				docstring: plan.preservedDocstring
-			};
-			break;
-		}
 	}
 
 	nextSchema[databaseName] = {

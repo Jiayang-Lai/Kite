@@ -12,8 +12,7 @@ import {
 	buildChangeColumnTypePlan,
 	buildCreateTablePlan,
 	buildDropColumnPlan,
-	buildRenameColumnPlan,
-	buildReorderTableColumnsPlan,
+	buildEditColumnPlan,
 	buildTableMutationPlan,
 	snapshotLoadedTable
 } from '$lib/kusto/table-management';
@@ -142,10 +141,11 @@ describe('mock schema management', () => {
 			'Analytics',
 			'Events',
 			snapshot,
-			buildRenameColumnPlan({
+			buildEditColumnPlan({
 				tableName: 'Events',
 				columnName: 'Source',
 				newColumnName: 'Origin',
+				nextDocstring: '',
 				existingColumnNames: table.columns.map((column) => column.name)
 			})
 		);
@@ -171,18 +171,6 @@ describe('mock schema management', () => {
 			'Analytics',
 			'Events',
 			snapshot,
-			buildReorderTableColumnsPlan({
-				snapshot,
-				orderedSourceIndexes: [2, 0, 1]
-			})
-		);
-		table = schema.Analytics.tables[0];
-		snapshot = snapshotLoadedTable('Analytics', table);
-		schema = applyMockTableMutation(
-			schema,
-			'Analytics',
-			'Events',
-			snapshot,
 			buildDropColumnPlan({
 				tableName: 'Events',
 				columnName: 'Origin',
@@ -197,6 +185,35 @@ describe('mock schema management', () => {
 				{ name: 'Value', type: 'real' }
 			]
 		});
+	});
+
+	it('edits a column’s name and description, and clears a description', () => {
+		let schema = createSchema();
+		const edit = (columnName: string, newColumnName: string, nextDocstring: string) => {
+			const table = schema.Analytics.tables[0];
+			schema = applyMockTableMutation(
+				schema,
+				'Analytics',
+				'Events',
+				snapshotLoadedTable('Analytics', table),
+				buildEditColumnPlan({
+					tableName: 'Events',
+					columnName,
+					currentDocstring: table.columns.find((column) => column.name === columnName)?.docstring,
+					newColumnName,
+					nextDocstring,
+					existingColumnNames: table.columns.map((column) => column.name)
+				})
+			);
+		};
+
+		edit('Value', 'Reading', 'Sensor reading');
+		edit('Timestamp', 'Timestamp', '');
+
+		expect(schema.Analytics.tables[0].columns).toEqual([
+			{ name: 'Timestamp', type: 'datetime' },
+			{ name: 'Reading', type: 'long', docstring: 'Sensor reading' }
+		]);
 	});
 
 	it('rejects a stale table snapshot before applying a mutation', () => {
@@ -214,10 +231,11 @@ describe('mock schema management', () => {
 				]
 			}
 		};
-		const plan = buildRenameColumnPlan({
+		const plan = buildEditColumnPlan({
 			tableName: 'Events',
 			columnName: 'Value',
 			newColumnName: 'Reading',
+			nextDocstring: '',
 			existingColumnNames: ['Timestamp', 'Value']
 		});
 

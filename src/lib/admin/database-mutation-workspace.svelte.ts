@@ -9,6 +9,7 @@ import type { KustoDatabase, KustoDatabaseSchema } from '$lib/types/kusto-schema
 import type { ClusterConnectionStore } from '$lib/cluster/cluster-connection-store.svelte';
 import { getConnectionCapabilities } from '$lib/cluster/connection-capabilities';
 import { createDatabaseMutationController } from './database-mutation-controller.svelte';
+import { PartialSchemaMutationError } from './schema-mutation-adapter';
 import { getErrorMessage } from '$lib/query/error-message';
 import { isOperationCancelled } from '$lib/types/query-result';
 import {
@@ -21,7 +22,6 @@ import { tick } from 'svelte';
 export type DatabaseMutationWorkspaceState = {
 	editorOpen: boolean;
 	columnEditorOpen: boolean;
-	columnOrderOpen: boolean;
 	createTableOpen: boolean;
 	databaseDialogOpen: boolean;
 	databaseDialogAction: DatabaseMutationAction;
@@ -64,7 +64,6 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 	const state = $state<DatabaseMutationWorkspaceState>({
 		editorOpen: false,
 		columnEditorOpen: false,
-		columnOrderOpen: false,
 		createTableOpen: false,
 		databaseDialogOpen: false,
 		databaseDialogAction: 'create',
@@ -130,7 +129,7 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 		state.editorDatabaseName = database.name;
 		state.editorClusterId = clusterId;
 		resetEditorTarget();
-		state.createTableOpen = state.columnEditorOpen = state.columnOrderOpen = false;
+		state.createTableOpen = state.columnEditorOpen = false;
 		state.editorOpen = true;
 		void prepareTableEditor(canonical, database.name);
 	}
@@ -146,22 +145,8 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 		state.editorDatabaseName = database.name;
 		state.editorClusterId = clusterId;
 		resetEditorTarget();
-		state.createTableOpen = state.editorOpen = state.columnOrderOpen = false;
+		state.createTableOpen = state.editorOpen = false;
 		state.columnEditorOpen = true;
-		void prepareTableEditor(canonical, database.name);
-	}
-
-	function openColumnOrderEditor(table: KustoTable) {
-		const { database, clusterId } = currentTarget();
-		const canonical = database?.tables.find((item) => item.name === table.name);
-		if (!database || !canonical) return;
-		state.editorTable = canonical;
-		state.editorColumn = undefined;
-		state.editorDatabaseName = database.name;
-		state.editorClusterId = clusterId;
-		resetEditorTarget();
-		state.createTableOpen = state.editorOpen = state.columnEditorOpen = false;
-		state.columnOrderOpen = true;
 		void prepareTableEditor(canonical, database.name);
 	}
 
@@ -172,7 +157,7 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 		state.editorClusterId = clusterId;
 		state.editorTable = state.editorColumn = state.editorSnapshot = undefined;
 		state.mutationError = state.createTableError = state.mutationSuccess = '';
-		state.editorOpen = state.columnEditorOpen = state.columnOrderOpen = false;
+		state.editorOpen = state.columnEditorOpen = false;
 		state.createTableOpen = true;
 		state.editorMockSchemaRevision = cluster?.mockSchemaRevision ?? 0;
 	}
@@ -243,7 +228,6 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 				if (closeAfterRefresh) {
 					state.editorOpen = false;
 					state.columnEditorOpen = false;
-					state.columnOrderOpen = false;
 				}
 			}
 		}
@@ -272,9 +256,19 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 			await current.options.onrefreshschema?.(clusterId);
 			if (!current.controller.isCurrent(requestId)) return;
 			state.mutationSuccess = `${database}.${table}: ${plan.summary}.`;
-			state.editorOpen = state.columnEditorOpen = state.columnOrderOpen = false;
+			state.editorOpen = state.columnEditorOpen = false;
 		} catch (error) {
-			if (current.controller.isCurrent(requestId)) state.mutationError = getErrorMessage(error);
+			if (!current.controller.isCurrent(requestId)) return;
+			state.mutationError = getErrorMessage(error);
+			if (error instanceof PartialSchemaMutationError) {
+				// Part of the change was applied, so the editor's snapshot no longer matches the table.
+				state.editorSnapshot = undefined;
+				try {
+					await current.options.onrefreshschema?.(clusterId);
+				} catch {
+					// The partial-change message already explains the state; a refresh can be retried.
+				}
+			}
 		} finally {
 			if (current.controller.finish(requestId)) state.isMutating = false;
 		}
@@ -379,7 +373,6 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 		prepareTableEditor,
 		openTableEditor,
 		openColumnEditor,
-		openColumnOrderEditor,
 		openCreateTable,
 		openDatabaseDialog,
 		openDropTable,
@@ -402,7 +395,6 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 			return (
 				state.editorOpen ||
 				state.columnEditorOpen ||
-				state.columnOrderOpen ||
 				state.createTableOpen ||
 				state.databaseDialogOpen ||
 				state.tableDropOpen
@@ -411,13 +403,11 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 		closeEditors() {
 			state.editorOpen = false;
 			state.columnEditorOpen = false;
-			state.columnOrderOpen = false;
 			state.createTableOpen = false;
 		},
 		closeAll() {
 			state.editorOpen = false;
 			state.columnEditorOpen = false;
-			state.columnOrderOpen = false;
 			state.createTableOpen = false;
 			state.databaseDialogOpen = false;
 			state.tableDropOpen = false;

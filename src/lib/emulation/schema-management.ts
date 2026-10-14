@@ -54,9 +54,20 @@ function tableCommentStatement(database: string, table: string, comment: string)
 	}`;
 }
 
+/** Sets a column comment, or clears it when `comment` is empty. */
+function setColumnCommentStatement(
+	database: string,
+	table: string,
+	column: string,
+	comment?: string
+) {
+	return `COMMENT ON COLUMN ${qualifyDuckDbTable(database, table)}.${quoteDuckDbIdentifier(column)} IS ${
+		comment ? quoteDuckDbString(comment) : 'NULL'
+	}`;
+}
+
 function columnCommentStatement(database: string, table: string, column: string, comment?: string) {
-	if (!comment) return '';
-	return `COMMENT ON COLUMN ${qualifyDuckDbTable(database, table)}.${quoteDuckDbIdentifier(column)} IS ${quoteDuckDbString(comment)}`;
+	return comment ? setColumnCommentStatement(database, table, column, comment) : '';
 }
 
 async function assertCurrentSnapshot(clusterId: string, expectedSnapshot: TableSchemaSnapshot) {
@@ -152,17 +163,31 @@ export async function mutateEmulatedTable(
 						KUSTO_TO_DUCKDB_TYPE[column.type]
 					}`
 				);
+				const comment = columnCommentStatement(
+					databaseName,
+					tableName,
+					column.name,
+					column.docstring
+				);
+				if (comment) statements.push(comment);
 			}
 			if (plan.updatesDocstring) {
 				statements.push(tableCommentStatement(databaseName, tableName, plan.nextDocstring));
 			}
 			break;
-		case 'rename-column':
-			statements.push(
-				`ALTER TABLE ${table} RENAME COLUMN ${quoteDuckDbIdentifier(
-					plan.columnName
-				)} TO ${quoteDuckDbIdentifier(plan.newColumnName)}`
-			);
+		case 'edit-column':
+			if (plan.renames) {
+				statements.push(
+					`ALTER TABLE ${table} RENAME COLUMN ${quoteDuckDbIdentifier(
+						plan.columnName
+					)} TO ${quoteDuckDbIdentifier(plan.newColumnName)}`
+				);
+			}
+			if (plan.updatesDocstring) {
+				statements.push(
+					setColumnCommentStatement(databaseName, tableName, plan.newColumnName, plan.nextDocstring)
+				);
+			}
 			break;
 		case 'drop-column':
 			statements.push(`ALTER TABLE ${table} DROP COLUMN ${quoteDuckDbIdentifier(plan.columnName)}`);
@@ -174,20 +199,6 @@ export async function mutateEmulatedTable(
 				)} SET DATA TYPE ${KUSTO_TO_DUCKDB_TYPE[plan.newColumnType]}`
 			);
 			break;
-		case 'reorder-table-columns': {
-			const temporaryName = `__kite_reorder_${crypto.randomUUID().replaceAll('-', '')}`;
-			const temporaryTable = qualifyDuckDbTable(databaseName, temporaryName);
-			const selectedColumns = plan.columns
-				.map((column) => quoteDuckDbIdentifier(column.name))
-				.join(', ');
-			statements.push(
-				`CREATE TABLE ${temporaryTable} AS SELECT ${selectedColumns} FROM ${table}`,
-				`DROP TABLE ${table}`,
-				`ALTER TABLE ${temporaryTable} RENAME TO ${quoteDuckDbIdentifier(tableName)}`,
-				tableCommentStatement(databaseName, tableName, plan.preservedDocstring)
-			);
-			break;
-		}
 	}
 
 	await runTransaction(clusterId, statements);

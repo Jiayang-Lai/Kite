@@ -19,8 +19,8 @@ describe('ColumnActionsMenu', () => {
 		});
 
 		await screen.getByRole('button', { name: 'More actions for Events.Message' }).click();
-		await screen.getByRole('menuitem', { name: 'Rename column' }).click();
+		await screen.getByRole('menuitem', { name: 'Edit column' }).click();
 
-		await vi.waitFor(() => expect(onaction).toHaveBeenCalledWith('rename'));
+		await vi.waitFor(() => expect(onaction).toHaveBeenCalledWith('edit'));
 	});
 });

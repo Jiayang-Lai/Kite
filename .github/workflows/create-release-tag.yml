@@ -25,7 +25,9 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  actions: read
   contents: read
+  deployments: read
 
 jobs:
   create:
@@ -58,6 +60,28 @@ jobs:
             --type "$RELEASE_TYPE" \
             --commit "$RELEASE_COMMIT" \
             --github-output "$GITHUB_OUTPUT"
+
+      # Release tags cannot be deleted, so refuse a tag the Release workflow would reject rather
+      # than use up its version. Release runs the same checks again after the tag is created. This
+      # runs before the next step checks out the release commit, so the checks come from main.
+      - name: Check the commit is ready to release
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          RELEASE_TYPE: ${{ inputs.type == 'stable' && 'stable' || 'rc' }}
+          RELEASE_SHA: ${{ steps.plan.outputs.sha }}
+          RC_TAG: ${{ steps.plan.outputs.rc_tag }}
+        with:
+          script: |
+            const { checkReleaseReadiness } = await import(
+              `${process.env.GITHUB_WORKSPACE}/scripts/lib/release-readiness.mjs`
+            );
+            await checkReleaseReadiness({
+              github,
+              ...context.repo,
+              type: process.env.RELEASE_TYPE,
+              commitSha: process.env.RELEASE_SHA,
+              rcTag: process.env.RC_TAG
+            });
 
       - name: Validate the tag against the tagged commit
         env:

@@ -123,7 +123,7 @@ The lifecycle is:
 
 1. Update local `main` and create a short-lived branch.
 2. Develop and test one cohesive change.
-3. Open a pull request targeting `main`.
+3. Open a pull request targeting `main` and fill in the [pull request template](../.github/pull_request_template.md).
 4. Run CI and create a preview deployment.
 5. Review the code and validate the preview.
 6. Squash merge the pull request after all required checks and approvals pass.
@@ -170,7 +170,11 @@ Release tags are created only by the manually run **Create release tag** workflo
 2. Choose the release type:
    - **release-candidate** tags the latest `main` commit, or the commit entered in **commit**, as the next `vX.Y.Z-rc.N`.
    - **stable** tags the commit of the latest release candidate for that version as `vX.Y.Z`. It ignores **commit** and fails if no release candidate exists.
-3. The workflow refuses a version that is already released, a commit outside `main`, and a second release candidate on an already-tagged commit. It then creates the tag, which starts the Release workflow.
+3. The workflow refuses a version that is already released, a commit outside `main`, and a second release candidate on an already-tagged commit.
+4. Release tags cannot be deleted, so before creating one the workflow runs the Release workflow's readiness checks (`scripts/lib/release-readiness.mjs`). It refuses a tag that Release would reject, rather than use up the version:
+   - A **release-candidate** commit needs a successful Main UAT run with an unexpired artifact.
+   - A **stable** release needs a successful release-candidate deployment of the candidate, and the artifact that candidate retained, which expires after 90 days.
+5. It then creates the tag, which starts the Release workflow.
 
 The `Protect release tags` ruleset lets only the workflow's GitHub App create, update, or delete `v*` tags, and the App key is available only to runs from `main`. Setup and the administrator break-glass setting are described in [GitHub repository infrastructure](../infra/github/README.md).
 

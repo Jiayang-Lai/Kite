@@ -218,15 +218,39 @@ jobs:
           done
           curl --fail --silent --show-error --retry 3 --retry-delay 1 --retry-all-errors http://127.0.0.1:3000/kql-wasm/_framework/dotnet.js --output /dev/null
 
+      # nginx drops inherited add_header directives in a location that declares its own, so check
+      # a path served by each location block in docker/nginx.conf except /healthz. See LESSONS.md.
+      - name: Check security headers on every nginx location
+        run: |
+          immutable_asset="$(curl --fail --silent --show-error http://127.0.0.1:3000/ | grep -o '/_app/immutable/[^"]*\.js' | head -n 1)"
+          # DuckDB's WASM is under /_app/immutable/, which the ^~ location serves; the \.wasm$
+          # location serves only the translator's files.
+          wasm_asset="$(podman exec kite-container-ci find /usr/share/nginx/html/kql-wasm -type f -name '*.wasm' -print -quit)"
+          wasm_asset="${wasm_asset#/usr/share/nginx/html}"
+          test -n "$immutable_asset" && test -n "$wasm_asset" || {
+            echo "Could not find an immutable asset or translator WASM file to check" >&2
+            exit 1
+          }
+          failed=0
+          for path in / /explorer/query /index.html "$immutable_asset" "$wasm_asset" /kql-wasm/_framework/dotnet.js; do
+            headers="$(curl --fail --silent --show-error --head "http://127.0.0.1:3000$path")"
+            for header in 'X-Content-Type-Options: nosniff' 'Referrer-Policy: strict-origin-when-cross-origin' 'X-Frame-Options: SAMEORIGIN' 'Content-Security-Policy-Report-Only:'; do
+              if ! grep --quiet --ignore-case --fixed-strings "$header" <<< "$headers"; then
+                echo "::error::$path is missing '$header'"
+                failed=1
+              fi
+            done
+          done
+          exit "$failed"
+
       - name: Run the DuckDB and KQL browser scenario
         env:
           KITE_E2E_FORBID_REQUEST_HOST: cdn.jsdelivr.net
           KITE_E2E_REQUIRE_LOCAL_DUCKDB_ASSETS: 'true'
           PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
           PLAYWRIGHT_EXTERNAL_SERVER: 'true'
-        run: >-
-          npx playwright test tests/app.e2e.ts
-          --grep "serves every application route after a direct browser reload|translates KQL to DuckDB SQL and executes it in the browser"
+        # Selected by tag, not title, so renaming a test cannot silently drop it. See LESSONS.md.
+        run: npx playwright test tests/app.e2e.ts --grep @container
 
       - name: Stop the container
         if: always()

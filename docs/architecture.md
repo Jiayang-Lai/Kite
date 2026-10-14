@@ -35,15 +35,17 @@ The root route policy in `src/routes/+layout.ts` prerenders every current route.
 | Area | Responsibility |
 | --- | --- |
 | `src/routes` | Thin SvelteKit page entry points and route layouts. `(app)` contains the Explorer and Admin workspaces; `auth/callback` provides the Entra popup return page. |
-| `src/lib/components` | Page-level workspaces and reusable UI. `ui` contains shadcn-svelte-style primitives; `query`, `admin`, `explorer`, and `cluster` contain feature components. |
+| `src/lib/components` | Page-level workspaces and reusable UI. `ui` contains shadcn-svelte-style primitives; `query`, `admin`, `explorer`, and `cluster` contain feature components; `app` and `shared` contain the shell and dialogs used by both workspaces. |
+| `src/lib/app` | Shell state that outlives a workspace, such as the sidebar preference, and the in-app confirmation prompt. |
 | `src/lib/cluster` | Connection definitions, capability policy, browser-persisted connection store, app session, and runtime dispatch. |
 | `src/lib/query` | Query tabs, execution/cancellation lifecycle, saved and recent query stores, and result normalization. |
 | `src/lib/kusto` | Kusto SDK client, schema and command helpers, ingestion planning, Monaco integration, and Kusto documentation support. |
 | `src/lib/emulation` and `src/lib/duckdb` | The browser emulation implementation: DuckDB-WASM lifecycle, persistence, KQL-to-SQL execution, schema mutation, and ingestion. |
 | `src/lib/log-analytics` and `src/lib/azure-auth` | Log Analytics API calls, Entra PKCE authentication, and persisted authentication-profile metadata. |
 | `src/lib/admin` | Review/confirmation state, database-mutation workspace and request controller, and the connection-specific schema-mutation adapter. |
+| `src/lib/kql` | The KQL-to-SQL translator client and the message protocol it shares with its worker. |
 | `src/lib/workers` | Dedicated module workers for Kusto Monaco language services and KQL translation. |
-| `src/lib/types`, `src/lib/data`, and `src/lib/generated` | Cross-backend result/schema contracts, built-in sample data, and deterministic generated TypeScript. |
+| `src/lib/types`, `src/lib/data`, `src/lib/generated`, and `src/lib/hooks` | Cross-backend result/schema contracts, built-in sample data, deterministic generated TypeScript, and shared Svelte hooks. |
 | `scripts` | Generated-data, documentation-index, WASM, packaging, smoke-test, and release utilities. |
 | `infra` and `.github/workflows` | Terraform roots for GitHub, Cloudflare, and Azure plus validation, preview, UAT, and release automation. |
 
@@ -58,6 +60,7 @@ State is separated by lifetime and storage mechanism:
 | Saved queries and the three most recent distinct queries | `localStorage` | `SavedQueryStore` and `RecentQueryStore` |
 | Azure authentication profiles and account bindings | Profile metadata in `localStorage`; MSAL token cache in `sessionStorage` | `AzureAuthenticationProfileStore` and `AzureMsalClientManager` |
 | Last confirmed connection | One-year same-site cookie | `active-cluster-preference.ts` |
+| Sidebar open or collapsed | Cookie written by the sidebar provider | `app-shell-state.svelte.ts` |
 | Pending cleanup after an emulated connection is removed | Small recovery journal in `localStorage` | `removed-cluster-cleanup.ts` |
 | Emulated data | DuckDB memory or origin-private OPFS | DuckDB session keyed by connection ID |
 
@@ -91,13 +94,15 @@ Removing an emulated connection is a recoverable two-phase operation: Kite first
 
 ## Query workspace flow
 
-`query-workspace.svelte` composes the query experience. It delegates focused responsibilities to controllers:
+`query-workspace.svelte` composes the query experience. It delegates focused responsibilities to controllers, each created by a factory function:
 
-1. `ConnectionLifecycleController` owns connection transition state: the connection chosen in the selector, loading and error status, and failed-connection retries. It restores the last confirmed connection once stores hydrate, loads a selected connection’s schema, cancels superseded requests, suppresses stale responses, and commits the result to `ClusterSession`, which is the single owner of the active connection, its schema, and the Explorer selection. Explorer and Admin bind directly to the session, call the controller for every connection action, and dispose it when their workspace unmounts.
-2. `QueryTabController` owns tab creation, selection, close confirmation, dirty-state detection, and two-tab comparisons.
-3. `QueryExecutionController` records a recent query, starts a `ConnectionRuntime` execution, writes results or formatted diagnostics back to the owning tab, and supports cancellation. It owns a separate cancellable operation for each running tab, so queries may complete independently when the user switches tabs or starts another query.
-4. `SavedQueryWorkspaceController` coordinates save/update dialogs, dirty saved-query state, loading saved queries into tabs, and navigation from non-editor views.
-5. `CancellableOperation` tracks one execution and protects its caller from late completions after replacement or teardown. A connection reset invalidates every tab operation, so advisory cancellation cannot write stale results after the user switches connections.
+1. `createConnectionLifecycleController` owns connection transition state: the connection chosen in the selector, loading and error status, and failed-connection retries. It restores the last confirmed connection once stores hydrate, loads a selected connection’s schema, cancels superseded requests, suppresses stale responses, and commits the result to `ClusterSession`, which is the single owner of the active connection, its schema, and the Explorer selection. Explorer and Admin bind directly to the session, call the controller for every connection action, and dispose it when their workspace unmounts.
+2. `createQueryTabController` owns tab creation, selection, close confirmation, dirty-state detection, and two-tab comparisons.
+3. `createQueryExecutionController` records a recent query, starts a `ConnectionRuntime` execution, writes results or formatted diagnostics back to the owning tab, and supports cancellation. It owns a separate cancellable operation for each running tab, so queries may complete independently when the user switches tabs or starts another query.
+4. `createSavedQueryWorkspaceController` coordinates save/update dialogs, dirty saved-query state, loading saved queries into tabs, and navigation from non-editor views.
+5. `createCancellableOperation` tracks one execution and protects its caller from late completions after replacement or teardown. A connection reset invalidates every tab operation, so advisory cancellation cannot write stale results after the user switches connections.
+
+Controllers ask for confirmation through `createConfirmationPrompt` in `src/lib/app/confirmation-prompt.svelte.ts` rather than `window.confirm`. Its `ask` returns a promise that resolves `false` on cancel, and a newer request cancels an older one. The query and admin workspaces each create one, pass `ask` to their controllers, and render it with `components/shared/confirmation-prompt-dialog.svelte`. Switching connections with open queries and closing a running or unsaved tab both use it.
 
 Every runtime produces the shared `QueryExecution`/`QueryResult` types in `src/lib/types/query-result.ts`. Result values are normalized before crossing the UI boundary: dates become ISO strings and `bigint` values become strings. This keeps rendering and browser persistence independent of SDK-specific objects.
 
@@ -121,13 +126,15 @@ The translator worker terminates after an idle period and is also disposed when 
 
 Admin components build a typed plan before performing a mutation. The plan contains the target, command, summary, and—where applicable—schema diff. `createReviewablePlan` governs draft → review → confirmation transitions, while `createAsyncDialogAction` supplies pending/error handling for simple confirmation dialogs.
 
-Administration is split into three layers:
+Database and table changes are split into three layers:
 
 1. `database-management.svelte` renders database browsing, filtering, selection, schema exports, and action-menu wiring. It does not execute mutations.
 2. `database-mutation-workspace.svelte.ts` owns all mutation dialog state, target selection, preflight, execution, schema refresh, post-operation verification, success/error state, and teardown. `database-mutation-workspace.svelte` is the focused view that binds the workspace to the database/table/column dialogs.
 3. `database-mutation-controller.svelte.ts` owns mutation request identity, stale-request suppression, active cancellation, busy notifications, and adapter construction.
 
-`createSchemaMutationAdapter` selects the mutation mechanism for the active connection. For remote table updates and drops, it first issues read-only preflight commands, parses the current table snapshot, and compares it with the snapshot loaded by the editor. A detected conflict blocks the mutation and triggers a schema refresh. Mock mutations use a revision-aware store update, and emulated mutations re-check the DuckDB snapshot before applying DDL.
+`createSchemaMutationAdapter` returns a `SchemaMutationPort` with the mutation mechanism for the active connection. For remote table updates and drops, it first issues read-only preflight commands, parses the current table snapshot, and compares it with the snapshot loaded by the editor. A detected conflict blocks the mutation and triggers a schema refresh. Mock mutations use a revision-aware store update, and emulated mutations re-check the DuckDB snapshot before applying DDL.
+
+The management-command view, `management-command-workspace.svelte`, runs Kusto dot commands for connections whose capabilities allow them. A command that isn't read-only must be confirmed by typing `RUN`, can be cancelled while it runs, and refreshes the schema afterwards when the user leaves that option on.
 
 Create-table flows refresh the schema after execution and confirm that the target table appears before reporting success. The adapter exposes separate stages for the base table command and optional column-documentation command so callers can distinguish partial completion when needed.
 
@@ -150,6 +157,8 @@ Vite selects one of two build targets through `KITE_BUILD_TARGET`:
 
 Both targets serve the KQL-to-SQL .NET WASM framework and generated Kusto documentation from Kite's static assets. `wrangler.toml` describes the Cloudflare Pages direct-upload output and enables Node.js compatibility for the generated adapter worker. The container image is a multi-stage build: the .NET/Node stage generates the translator and static site, and the runtime stage contains only nginx and the built assets.
 
+The Cloudflare, GitHub, and optional Azure resources are managed in separate Terraform roots. CI builds artifacts once per revision, deploys pull-request previews with trusted workflow code, deploys `main` to UAT, and promotes retained artifacts to release-candidate and production environments. See [CI/CD strategy](ci-cd.md) for the trust and promotion model.
+
 ### Security headers and Content Security Policy
 
 Both targets send `X-Content-Type-Options`, `Referrer-Policy`, and `X-Frame-Options`: Cloudflare from the root `_headers` file, and nginx from `docker/security-headers.conf`, which every `location` includes because nginx drops inherited `add_header` directives in a location that declares its own.
@@ -157,8 +166,6 @@ Both targets send `X-Content-Type-Options`, `Referrer-Policy`, and `X-Frame-Opti
 The Content Security Policy is defined in `scripts/lib/content-security-policy.mjs` and currently ships as `Content-Security-Policy-Report-Only`. SvelteKit's per-page startup scripts change with every build, so the `postbuild` step (`scripts/generate-csp-headers.mjs`) hashes the inline scripts in the prerendered HTML and writes the header into the Cloudflare `_headers` output or an nginx snippet copied by the Dockerfile. `connect-src` is deliberately open because cluster, Log Analytics, and remote-ingestion endpoints are user-selected.
 
 `vite preview` serves the same generated policy and collects `report-uri` reports, and the end-to-end fixture in `tests/fixtures/content-security-policy.ts` fails any test that triggers a page or web-worker violation. A test that knowingly triggers one must declare it with a `csp-known-violation` annotation explaining the source, and every such annotation must be resolved before the policy is enforced. None exist today: Avro table templates are validated by `src/lib/kusto/avro-schema.ts` rather than avsc, whose generated code required `'unsafe-eval'`.
-
-The Cloudflare, GitHub, and optional Azure resources are managed in separate Terraform roots. CI builds artifacts once per revision, deploys pull-request previews with trusted workflow code, deploys `main` to UAT, and promotes retained artifacts to release-candidate and production environments. See [CI/CD strategy](ci-cd.md) for the trust and promotion model.
 
 ## Generated assets and verification
 
@@ -171,7 +178,7 @@ Production builds include deterministic generated TypeScript, downloaded Kusto d
 - `npm run test:coverage` runs the same suite with V8 coverage enforcement.
 - `npm run test:e2e:run` runs Playwright against a production build.
 
-Vitest has separate browser/Chromium and Node projects. Tests are colocated with their modules and favor pure planners, schema parsers, runtime dispatch, storage policy, mutation-workspace state, per-tab query execution, and controller lifecycle behavior. Component tests render Svelte workspaces with browser context, while end-to-end coverage in `tests/app.e2e.ts` exercises user-facing workflows. Global statement, branch, function, and line coverage must each remain at or above 60%; non-component library code has higher thresholds in `vite.config.ts`.
+Vitest has three projects: `client` runs `*.svelte.test.ts` files, which cover components and rune-based stores and controllers, in Chromium; `server` runs the other `src` tests in Node; and `scripts` runs build and release script tests in plain Node without the app's Vite config. Tests are colocated with their modules and favor pure planners, schema parsers, runtime dispatch, storage policy, mutation-workspace state, per-tab query execution, and controller lifecycle behavior. Component tests render Svelte workspaces with browser context, while end-to-end coverage in `tests/app.e2e.ts` exercises user-facing workflows. Global statement, branch, function, and line coverage must each remain at or above 60%; non-component library code has higher thresholds in `vite.config.ts`.
 
 ## Adding a feature
 
@@ -184,4 +191,4 @@ When extending Kite, keep the layers separate:
 5. Represent cross-connection results using the shared types and normalize values at an SDK/API boundary.
 6. Make destructive actions reviewable and cancellable, and preflight remote schema changes that can race with other clients.
 7. Treat local storage, API responses, worker messages, imported files, and generated/downloaded inputs as untrusted data and validate them at their boundary.
-8. Add focused unit or browser-component coverage, keep every global coverage metric above 60%, and run `npm run check` before submitting changes.
+8. Add focused unit or browser-component coverage, and meet the [code standards](code-standards.md) and their acceptance criteria before submitting changes.

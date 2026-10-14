@@ -48,20 +48,20 @@ The bridge currently targets .NET 10. A production pipeline must build or downlo
 
 ## Capabilities
 
-| Capability                          | Emulated cluster behavior                            |
-| ----------------------------------- | ---------------------------------------------------- |
-| KQL queries                         | Translated to DuckDB SQL and executed in the browser |
-| Database and table discovery        | Read from the live DuckDB catalog                    |
-| Create/drop database                | Supported as memory databases or persistent schemas  |
-| Rename database                     | Not supported                                        |
-| Create/drop table                   | Supported                                            |
-| Add, rename, remove, reorder column | Supported through structured Admin dialogs           |
-| Change column type                  | Supported through DuckDB DDL                         |
-| Table description                   | Stored as a DuckDB table comment                     |
-| Kusto management commands           | Not supported                                        |
-| Stored Kusto functions/policies     | Not supported                                        |
-| Data ingestion                      | Inline, local file, and remote file append           |
-| Persistence across full reloads     | Default for custom connections through browser OPFS  |
+| Capability                      | Emulated cluster behavior                            |
+| ------------------------------- | ---------------------------------------------------- |
+| KQL queries                     | Translated to DuckDB SQL and executed in the browser |
+| Database and table discovery    | Read from the live DuckDB catalog                    |
+| Create/drop database            | Supported as memory databases or persistent schemas  |
+| Rename database                 | Not supported                                        |
+| Create/drop table               | Supported                                            |
+| Add, rename, remove column      | Supported through structured Admin dialogs           |
+| Change column type              | Supported through DuckDB DDL                         |
+| Table description               | Stored as a DuckDB table comment                     |
+| Kusto management commands       | Not supported                                        |
+| Stored Kusto functions/policies | Not supported                                        |
+| Data ingestion                  | Inline, local file, and remote file append           |
+| Persistence across full reloads | Default for custom connections through browser OPFS  |
 
 The logical default `memory` database cannot be removed. Ephemeral connections create additional databases with `ATTACH ':memory:'`. Persistent connections isolate logical databases as schemas inside one OPFS DuckDB file and keep their names in a private manifest.
 

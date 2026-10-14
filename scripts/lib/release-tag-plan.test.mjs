@@ -54,7 +54,8 @@ describe('planReleaseTag', () => {
 		expect(planReleaseTag({ type: 'stable', candidateSha: 'main', versionAt, tags })).toEqual({
 			tag: 'v0.2.0',
 			sha: 'rc2',
-			version: '0.2.0'
+			version: '0.2.0',
+			rcTag: 'v0.2.0-rc.2'
 		});
 	});
 
@@ -72,7 +73,8 @@ describe('planReleaseTag', () => {
 		expect(planReleaseTag({ type: 'stable', versionAt, tags })).toEqual({
 			tag: 'v0.1.0',
 			sha: 'old',
-			version: '0.1.0'
+			version: '0.1.0',
+			rcTag: 'v0.1.0-rc.1'
 		});
 	});
 

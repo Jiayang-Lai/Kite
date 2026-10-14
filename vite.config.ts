@@ -170,6 +170,16 @@ export default defineConfig({
 		projects: [
 			{
 				extends: './vite.config.ts',
+				// Browser tests run real DuckDB-WASM. Serve it from the package rather than the
+				// Cloudflare build's CDN, so tests never reach the network.
+				resolve: {
+					alias: [
+						{
+							find: '#kite-duckdb-bundles',
+							replacement: resolve('src/lib/duckdb/duckdb-bundles.local.ts')
+						}
+					]
+				},
 				test: {
 					name: 'client',
 					browser: {

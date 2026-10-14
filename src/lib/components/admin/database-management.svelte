@@ -126,7 +126,6 @@
 
 	const openTableEditor = mutationWorkspace.openTableEditor;
 	const openColumnEditor = mutationWorkspace.openColumnEditor;
-	const openColumnOrderEditor = mutationWorkspace.openColumnOrderEditor;
 	const openCreateTableDialog = mutationWorkspace.openCreateTable;
 	const openDatabaseDialog = mutationWorkspace.openDatabaseDialog;
 	const openDropTableDialog = mutationWorkspace.openDropTable;
@@ -215,16 +214,6 @@
 			>
 				<PencilIcon />
 				Edit table
-			</Button>
-			<Button
-				size="xs"
-				variant="outline"
-				disabled={isBusy}
-				onclick={() => openColumnOrderEditor(table)}
-				title={`Change the column order for ${table.name}`}
-			>
-				<TablePropertiesIcon />
-				Reorder columns
 			</Button>
 			<Button
 				size="xs"

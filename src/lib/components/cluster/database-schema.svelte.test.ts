@@ -96,4 +96,22 @@ describe('DatabaseSchema', () => {
 			.element(screen.getByText('No tables or columns match “nothing-matches”.'))
 			.toBeVisible();
 	});
+
+	it('asks to expand a table when its card is clicked', async () => {
+		const onexpansionchange = vi.fn();
+		const screen = await render(DatabaseSchema, {
+			database,
+			expansionState: expansionState(),
+			onexpansionchange
+		});
+
+		await screen.getByRole('button', { name: /Events/ }).click();
+
+		expect(onexpansionchange).toHaveBeenCalledWith({
+			type: 'schema-table',
+			database: 'Analytics',
+			table: 'Events',
+			open: true
+		});
+	});
 });

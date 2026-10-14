@@ -15,6 +15,7 @@
 	import { createReviewablePlan } from '$lib/admin/reviewable-plan.svelte';
 	import {
 		buildTableMutationPlan,
+		formatPlanCommands,
 		KUSTO_SCALAR_TYPES,
 		type KustoScalarType,
 		type TableMutationPlan,
@@ -26,6 +27,7 @@
 		id: number;
 		name: string;
 		type: KustoScalarType;
+		docstring: string;
 	};
 
 	type TableEditorDialogProps = {
@@ -90,7 +92,7 @@
 		if (isBusy) return;
 		newColumns = [
 			...newColumns,
-			{ id: nextColumnId++, name: '', type: 'string' as KustoScalarType }
+			{ id: nextColumnId++, name: '', type: 'string' as KustoScalarType, docstring: '' }
 		];
 		reviewPlan.reset();
 	}
@@ -190,8 +192,9 @@
 						<div>
 							<h3 class="mb-2 text-sm font-medium">Management command</h3>
 							<pre
-								class="max-h-48 overflow-auto rounded-lg border bg-muted p-3 font-mono text-xs whitespace-pre-wrap">{reviewPlan
-									.prepared.plan.command}</pre>
+								class="max-h-48 overflow-auto rounded-lg border bg-muted p-3 font-mono text-xs whitespace-pre-wrap">{formatPlanCommands(
+									reviewPlan.prepared.plan
+								)}</pre>
 						</div>
 
 						<div class="rounded-lg border border-warning/40 bg-warning/10 p-3">
@@ -344,6 +347,22 @@
 										>
 											<Trash2Icon />
 										</Button>
+										<div class="sm:col-span-3">
+											<label
+												class="text-xs text-muted-foreground"
+												for={`new-column-description-${column.id}`}
+											>
+												Column description <span class="font-normal">(optional)</span>
+											</label>
+											<Textarea
+												id={`new-column-description-${column.id}`}
+												class="mt-1 min-h-16"
+												bind:value={column.docstring}
+												disabled={isBusy}
+												maxlength={1000}
+												placeholder="Describe this column"
+											/>
+										</div>
 									</div>
 								{:else}
 									<div

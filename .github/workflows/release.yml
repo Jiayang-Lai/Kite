@@ -86,99 +86,34 @@ jobs:
       artifact_run_id: ${{ steps.artifact.outputs.run_id }}
 
     steps:
+      # Create release tag runs the same checks from main before it creates the tag.
+      - name: Check out the release checks
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/lib
+
       - name: Find the successful UAT artifact
         id: artifact
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           COMMIT_SHA: ${{ needs.classify.outputs.commit_sha }}
-          MAIN_ARTIFACT_NAME: kite-pages-${{ needs.classify.outputs.commit_sha }}
-          RC_ARTIFACT_NAME: kite-rc-${{ needs.classify.outputs.rc_tag }}
           RC_TAG: ${{ needs.classify.outputs.rc_tag }}
           RELEASE_TYPE: ${{ needs.classify.outputs.type }}
         with:
           script: |
-            const { owner, repo } = context.repo;
-            const isCandidate = process.env.RELEASE_TYPE === 'rc';
-            const artifactName = isCandidate
-              ? process.env.MAIN_ARTIFACT_NAME
-              : process.env.RC_ARTIFACT_NAME;
-            const artifacts = await github.paginate(
-              github.rest.actions.listArtifactsForRepo,
-              { owner, repo, name: artifactName, per_page: 100 }
+            const { checkReleaseReadiness } = await import(
+              `${process.env.GITHUB_WORKSPACE}/scripts/lib/release-readiness.mjs`
             );
-
-            const candidates = artifacts
-              .filter((artifact) => !artifact.expired && artifact.workflow_run)
-              .sort((left, right) => new Date(right.created_at) - new Date(left.created_at));
-
-            for (const artifact of candidates) {
-              const { data: run } = await github.rest.actions.getWorkflowRun({
-                owner,
-                repo,
-                run_id: artifact.workflow_run.id
-              });
-
-              const expectedSource =
-                isCandidate
-                  ? run.path === '.github/workflows/main-uat.yml' && run.head_branch === 'main'
-                  : run.path === '.github/workflows/release.yml' &&
-                    run.head_branch === process.env.RC_TAG;
-
-              if (
-                expectedSource &&
-                run.event === 'push' &&
-                run.head_sha === process.env.COMMIT_SHA &&
-                run.conclusion === 'success'
-              ) {
-                core.setOutput('id', String(artifact.id));
-                core.setOutput('run_id', String(run.id));
-                return;
-              }
-            }
-
-            core.setFailed(
-              `No successful ${isCandidate ? 'Main UAT' : 'release-candidate'} artifact named ${artifactName} exists for ${process.env.COMMIT_SHA}.`
-            );
-
-      - name: Verify final RC deployment
-        if: needs.classify.outputs.type == 'stable'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          RC_TAG: ${{ needs.classify.outputs.rc_tag }}
-        with:
-          script: |
-            const { owner, repo } = context.repo;
-            const deployments = await github.paginate(
-              github.rest.repos.listDeployments,
-              {
-                owner,
-                repo,
-                environment: 'release-candidate',
-                ref: process.env.RC_TAG,
-                per_page: 100
-              }
-            );
-
-            for (const deployment of deployments) {
-              const statuses = await github.paginate(
-                github.rest.repos.listDeploymentStatuses,
-                {
-                  owner,
-                  repo,
-                  deployment_id: deployment.id,
-                  per_page: 100
-                }
-              );
-
-              if (statuses.some((status) => status.state === 'success')) {
-                core.info(`Verified successful release-candidate deployment for ${process.env.RC_TAG}.`);
-                return;
-              }
-            }
-
-            core.setFailed(
-              `No successful release-candidate deployment exists for ${process.env.RC_TAG}.`
-            );
+            const { artifactId, runId } = await checkReleaseReadiness({
+              github,
+              ...context.repo,
+              type: process.env.RELEASE_TYPE,
+              commitSha: process.env.COMMIT_SHA,
+              rcTag: process.env.RC_TAG
+            });
+            core.setOutput('id', String(artifactId));
+            core.setOutput('run_id', String(runId));
 
   publish-container:
     name: Publish container image

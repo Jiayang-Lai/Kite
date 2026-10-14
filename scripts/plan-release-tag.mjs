@@ -50,7 +50,7 @@ if (!isOnMain(plan.sha)) throw new Error(`${plan.sha} is not a commit on main.`)
 if (options.githubOutput) {
 	await appendFile(
 		options.githubOutput,
-		`tag=${plan.tag}\nsha=${plan.sha}\nversion=${plan.version}\n`
+		`tag=${plan.tag}\nsha=${plan.sha}\nversion=${plan.version}\nrc_tag=${plan.rcTag ?? ''}\n`
 	);
 }
 console.log(JSON.stringify(plan));

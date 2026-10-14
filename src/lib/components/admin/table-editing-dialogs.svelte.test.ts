@@ -16,7 +16,7 @@ const table = {
 const snapshot: TableSchemaSnapshot = {
 	databaseName: 'Samples',
 	tableName: 'Events',
-	columns: table.columns,
+	columns: table.columns.map((column) => ({ ...column, docstring: '' })),
 	docstring: table.docstring,
 	tableId: 'table-1',
 	totalRowCount: 12

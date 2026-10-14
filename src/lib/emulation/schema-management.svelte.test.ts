@@ -278,6 +278,17 @@ describe.each(['memory', 'opfs'] as const)('emulated schema changes in %s storag
 			expect(cleared.columns[1].docstring).toBe('Event count');
 		});
 
+		it('refuses to overwrite a description another client changed after the editor opened', async () => {
+			const { table, qualified } = await seededTable();
+			const opened = snapshotLoadedTable('memory', await loadTable(table));
+			await executeDuckDbSql(`COMMENT ON COLUMN ${qualified}."State" IS 'Set elsewhere'`, cluster);
+
+			await expect(
+				mutateEmulatedTable(cluster, 'memory', table, opened, editPlan('State', 'Mine'))
+			).rejects.toThrow('The description of column State changed.');
+			expect((await loadTable(table)).columns[0].docstring).toBe('Set elsewhere');
+		});
+
 		it('changes a column type and converts its values', async () => {
 			const { table, qualified } = await seededTable();
 

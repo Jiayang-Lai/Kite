@@ -105,7 +105,7 @@ Kite has no action for changing column order. Order doesn't affect queries, beca
 
 Remote table updates run through the Kusto management endpoint and rely on Kusto to enforce Table Admin permissions. Emulated updates use transactions where DuckDB supports them; mock updates use an optimistic browser-local schema revision. The selected cluster cannot be changed while an update is running. After a successful operation, Kite reloads the backend schema instead of applying an optimistic UI-only update, keeping the Admin browser, Explorer, Monaco completion, and ingestion table selection synchronized.
 
-Opening any structured table or column editor captures a schema snapshot. Remote connections enrich that snapshot with the Kusto table ID, CSL/JSON schema, metadata, and row count. Immediately before an update, Kite repeats the relevant preflight and compares it with the original snapshot. A recreated table or concurrent schema/metadata change blocks execution, refreshes the shared schema, and requires the user to reopen the editor. On remote Kusto, the comparison narrows the concurrency window but is not a server-side transaction.
+Opening any structured table or column editor captures a schema snapshot. Remote connections enrich that snapshot with the Kusto table ID, CSL/JSON schema, metadata, and row count. Immediately before an update, Kite repeats the relevant preflight and compares it with the original snapshot. A recreated table or a concurrent change to the schema, metadata, or a column description blocks execution, refreshes the shared schema, and requires the user to reopen the editor. On remote Kusto, the comparison narrows the concurrency window but is not a server-side transaction.
 
 ## Management commands
 

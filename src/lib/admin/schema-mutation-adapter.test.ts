@@ -19,7 +19,7 @@ import type { QueryResult } from '$lib/types/query-result';
 const snapshot = {
 	databaseName: 'Analytics',
 	tableName: 'Events',
-	columns: [{ name: 'Id', type: 'long' }],
+	columns: [{ name: 'Id', type: 'long', docstring: '' }],
 	docstring: ''
 } as const;
 
@@ -169,8 +169,8 @@ describe('schema mutation adapter', () => {
 		await adapter.dropTable('Analytics', 'Events', {
 			...snapshot,
 			columns: [
-				{ name: 'Id', type: 'long' },
-				{ name: 'Message', type: 'string' }
+				{ name: 'Id', type: 'long', docstring: '' },
+				{ name: 'Message', type: 'string', docstring: '' }
 			],
 			docstring: 'Event records'
 		});

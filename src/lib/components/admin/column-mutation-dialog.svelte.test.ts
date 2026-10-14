@@ -33,7 +33,10 @@ describe('ColumnMutationDialog', () => {
 				snapshot: {
 					databaseName: 'Samples',
 					tableName: 'Events',
-					columns: table.columns,
+					columns: table.columns.map((column) => ({
+						...column,
+						docstring: column.docstring ?? ''
+					})),
 					docstring: '',
 					tableId: 'table-1',
 					totalRowCount: 1

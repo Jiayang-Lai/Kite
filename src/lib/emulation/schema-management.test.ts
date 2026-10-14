@@ -34,7 +34,7 @@ import {
 const snapshot: TableSchemaSnapshot = {
 	databaseName: 'Analytics',
 	tableName: 'Events',
-	columns: [{ name: 'State', type: 'string' }],
+	columns: [{ name: 'State', type: 'string', docstring: '' }],
 	docstring: 'Event rows'
 };
 

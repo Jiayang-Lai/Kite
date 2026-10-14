@@ -90,6 +90,8 @@ export type TableMutationPlan =
 export type TableSchemaColumnSnapshot = {
 	name: string;
 	type: string;
+	/** The column's description, or `''` when it has none. */
+	docstring: string;
 };
 
 export type TableSchemaSnapshot = {
@@ -108,6 +110,7 @@ export type TableSnapshotConflictKind =
 	| 'table-recreated'
 	| 'column-count'
 	| 'column'
+	| 'column-docstring'
 	| 'docstring'
 	| 'folder'
 	| 'csl-schema';
@@ -124,6 +127,7 @@ type ShowTableSchema = {
 		Name?: string;
 		Type?: string;
 		CslType?: string;
+		DocString?: string;
 	}>;
 };
 
@@ -277,7 +281,11 @@ export function snapshotLoadedTable(databaseName: string, table: KustoTable): Ta
 	return {
 		databaseName,
 		tableName: table.name,
-		columns: table.columns.map((column) => ({ name: column.name, type: column.type })),
+		columns: table.columns.map((column) => ({
+			name: column.name,
+			type: column.type,
+			docstring: normalizeDocstring(column.docstring)
+		})),
 		docstring: table.docstring ?? ''
 	};
 }
@@ -314,7 +322,7 @@ export function parseTablePreflightResults(results: readonly QueryResult[]): Tab
 		const name = column.Name?.trim();
 		const type = column.CslType?.trim() || column.Type?.trim();
 		if (!name || !type) throw new Error('Kusto returned an invalid table column schema.');
-		return { name, type };
+		return { name, type, docstring: normalizeDocstring(column.DocString) };
 	});
 
 	const rowCountValue = recordValue(detailsRecord, 'TotalRowCount');
@@ -361,6 +369,12 @@ export function compareTableSnapshots(original: TableSchemaSnapshot, current: Ta
 				conflicts.push({
 					kind: 'column',
 					message: `Column ${index + 1} changed from ${before.name}:${before.type} to ${after.name}:${after.type}.`
+				});
+			} else if (before.docstring !== after.docstring) {
+				// Editing a column writes its description, so a newer one would be overwritten.
+				conflicts.push({
+					kind: 'column-docstring',
+					message: `The description of column ${before.name} changed.`
 				});
 			}
 		}

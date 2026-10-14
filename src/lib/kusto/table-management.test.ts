@@ -32,8 +32,8 @@ const currentPreflight: TableSchemaSnapshot = {
 	databaseName: 'NetDefaultDB',
 	tableName: 'Metrics',
 	columns: [
-		{ name: 'Timestamp', type: 'datetime' },
-		{ name: 'Value', type: 'real' }
+		{ name: 'Timestamp', type: 'datetime', docstring: '' },
+		{ name: 'Value', type: 'real', docstring: '' }
 	],
 	docstring: 'Telemetry.',
 	folder: 'Operations',
@@ -458,13 +458,62 @@ describe('table mutation preflight', () => {
 		expect(compareTableSnapshots(loaded, currentPreflight)).toEqual([]);
 	});
 
+	it('reads column descriptions from a real Kustainer schema, treating empty and missing alike', () => {
+		// `.show table KiteDocstringTest schema as json` from Kustainer after A's description was
+		// cleared: A has "", B has a description, and C never had one.
+		const schema =
+			'{"Name":"KiteDocstringTest","DocString":"Table description","OrderedColumns":[{"Name":"A","Type":"System.String","CslType":"string","DocString":""},{"Name":"B","Type":"System.String","CslType":"string","DocString":"Column B"},{"Name":"C","Type":"System.String","CslType":"string"}]}';
+		const snapshot = parseTablePreflightResults([
+			result(
+				['TableName', 'Schema', 'DatabaseName'],
+				['KiteDocstringTest', schema, 'NetDefaultDB']
+			),
+			result(['Schema'], ['A:string,B:string,C:string']),
+			result(['TableId', 'TotalRowCount'], ['table-1', 0])
+		]);
+
+		expect(snapshot.columns).toEqual([
+			{ name: 'A', type: 'string', docstring: '' },
+			{ name: 'B', type: 'string', docstring: 'Column B' },
+			{ name: 'C', type: 'string', docstring: '' }
+		]);
+		expect(
+			compareTableSnapshots(
+				snapshotLoadedTable('NetDefaultDB', {
+					name: 'KiteDocstringTest',
+					docstring: 'Table description',
+					columns: [
+						{ name: 'A', type: 'string', docstring: '' },
+						{ name: 'B', type: 'string', docstring: 'Column B' },
+						{ name: 'C', type: 'string' }
+					]
+				}),
+				snapshot
+			)
+		).toEqual([]);
+	});
+
+	it('reports a column description changed by another client', () => {
+		const changed: TableSchemaSnapshot = {
+			...currentPreflight,
+			columns: [
+				{ name: 'Timestamp', type: 'datetime', docstring: '' },
+				{ name: 'Value', type: 'real', docstring: 'Set elsewhere' }
+			]
+		};
+
+		expect(compareTableSnapshots(currentPreflight, changed)).toEqual([
+			{ kind: 'column-docstring', message: 'The description of column Value changed.' }
+		]);
+	});
+
 	it('detects table recreation and concurrent schema or metadata changes', () => {
 		const changed: TableSchemaSnapshot = {
 			...currentPreflight,
 			tableId: 'table-id-2',
 			columns: [
-				{ name: 'Timestamp', type: 'datetime' },
-				{ name: 'Reading', type: 'long' }
+				{ name: 'Timestamp', type: 'datetime', docstring: '' },
+				{ name: 'Reading', type: 'long', docstring: '' }
 			],
 			docstring: 'Changed elsewhere.',
 			folder: 'New folder',

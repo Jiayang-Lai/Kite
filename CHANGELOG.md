@@ -2,25 +2,22 @@
 
 All notable changes to Kite are recorded here. Kite follows [semantic versioning](https://semver.org/); while the major version is 0, minor releases may include breaking changes. Notes for releases before 0.1.0 are on the [GitHub releases page](https://github.com/Jiayang-Lai/Kite/releases).
 
-## [Unreleased]
+## [0.1.0]
 
 ### Added
 
 - Columns added in the table editor can have a description.
 
-### Fixed
-
-- In **Databases & tables**, expanding or folding a table no longer draws the next table over a table that is still expanded.
-
 ### Changed
 
 - **Rename column** is now **Edit column**, which can also change or clear the column's description. Changing only the description is a safe change confirmed by typing `RUN`; renaming still needs `RENAME`.
+- Switching connections with open queries and closing a running or unsaved query tab now ask for confirmation in an in-app dialog instead of a browser prompt.
+- The Admin workspace now reloads a Log Analytics schema that is more than five minutes old, as Explorer already did.
+- Avro table templates are validated by Kite itself rather than the `avsc` library. Valid templates behave as before. An object whose `type` is a one-element array, such as `{ "type": ["int"] }`, is now rejected because it is not valid Avro; write the union directly instead, for example `"type": ["int"]` on the field.
 
 ### Removed
 
 - The **Reorder columns** action in Admin. It was rarely needed, ran a destructive `.alter table` on Kusto, and deleted column documentation on emulated clusters. Column order doesn't affect queries, since `project` sets the order of results; to change the stored order, recreate the table.
-
-## [0.1.0]
 
 ### Fixed
 
@@ -28,13 +25,8 @@ All notable changes to Kite are recorded here. Kite follows [semantic versioning
 - Cancelling an ingestion into a browser-emulated cluster is reported as cancelled, with the append rolled back, instead of as a failure.
 - Cancelling the schema check that runs before an emulated table edit no longer shows a verification error.
 - A collapsed sidebar stays collapsed after a reload.
+- In **Databases & tables**, expanding or folding a table no longer draws the next table over a table that is still expanded.
 - The container image and the hosted site now send `X-Frame-Options`, `Referrer-Policy`, and `X-Content-Type-Options` on every page. The container previously sent them only from its health check.
-
-### Changed
-
-- Switching connections with open queries and closing a running or unsaved query tab now ask for confirmation in an in-app dialog instead of a browser prompt.
-- The Admin workspace now reloads a Log Analytics schema that is more than five minutes old, as Explorer already did.
-- Avro table templates are validated by Kite itself rather than the `avsc` library. Valid templates behave as before. An object whose `type` is a one-element array, such as `{ "type": ["int"] }`, is now rejected because it is not valid Avro; write the union directly instead, for example `"type": ["int"]` on the field.
 
 ### Security
 

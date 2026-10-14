@@ -13,7 +13,8 @@ const STABLE_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
  * @param {string} [input.candidateSha] Commit proposed for a release candidate.
  * @param {(sha: string) => string} input.versionAt Returns package.json's version at a commit.
  * @param {{ name: string, sha: string }[]} input.tags Existing tags and the commits they resolve to.
- * @returns {{ tag: string, sha: string, version: string }}
+ * @returns {{ tag: string, sha: string, version: string, rcTag?: string }} `rcTag` is the release
+ *   candidate a stable release promotes.
  */
 export function planReleaseTag({ type, candidateSha, versionAt, tags }) {
 	const tagNames = new Set(tags.map((tag) => tag.name));
@@ -47,7 +48,7 @@ export function planReleaseTag({ type, candidateSha, versionAt, tags }) {
 				`${latest.name} has package.json version ${candidateVersion}, not ${version}.`
 			);
 		}
-		return { tag: `v${version}`, sha: latest.sha, version };
+		return { tag: `v${version}`, sha: latest.sha, version, rcTag: latest.name };
 	}
 
 	throw new Error(`Unknown release type ${JSON.stringify(type)}.`);

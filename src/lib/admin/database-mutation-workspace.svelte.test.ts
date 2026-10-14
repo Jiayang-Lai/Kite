@@ -24,6 +24,7 @@ vi.mock('./database-mutation-controller.svelte', () => ({
 }));
 
 import { createDatabaseMutationWorkspace } from './database-mutation-workspace.svelte';
+import { PartialSchemaMutationError } from './schema-mutation-adapter';
 
 const table = {
 	name: 'Events',
@@ -191,6 +192,55 @@ describe('createDatabaseMutationWorkspace', () => {
 		await workspace.updateTable({ summary: 'Rename' } as never);
 		expect(workspace.state.mutationError).toBe('Command failed');
 		expect(workspace.state.isMutating).toBe(false);
+	});
+
+	it('refreshes the schema and drops the stale snapshot when only part of a change applied', async () => {
+		const { workspace, refresh } = setup();
+		workspace.openTableEditor(table as never);
+		await vi.waitFor(() => expect(workspace.state.editorSnapshot).toBeDefined());
+		refresh.mockClear();
+		adapterMocks.mutateTable.mockRejectedValueOnce(
+			new PartialSchemaMutationError('Id was renamed to EventId, but…')
+		);
+
+		await workspace.updateTable({ summary: 'Edit' } as never);
+
+		expect(workspace.state.mutationError).toBe('Id was renamed to EventId, but…');
+		expect(workspace.state.editorSnapshot).toBeUndefined();
+		expect(workspace.state.editorOpen).toBe(true);
+		expect(refresh).toHaveBeenCalledOnce();
+		expect(workspace.state.isMutating).toBe(false);
+	});
+
+	it('keeps the partial-change message when the follow-up refresh fails', async () => {
+		const { workspace, refresh } = setup();
+		workspace.openTableEditor(table as never);
+		await vi.waitFor(() => expect(workspace.state.editorSnapshot).toBeDefined());
+		adapterMocks.mutateTable.mockRejectedValueOnce(new PartialSchemaMutationError('Half done'));
+		refresh.mockRejectedValueOnce(new Error('Refresh failed'));
+
+		await expect(workspace.updateTable({ summary: 'Edit' } as never)).resolves.toBeUndefined();
+
+		expect(workspace.state.mutationError).toBe('Half done');
+	});
+
+	it('ignores a failure from an update that a newer request replaced', async () => {
+		const { workspace } = setup();
+		workspace.openTableEditor(table as never);
+		await vi.waitFor(() => expect(workspace.state.editorSnapshot).toBeDefined());
+		let fail!: (error: Error) => void;
+		adapterMocks.mutateTable.mockReturnValueOnce(
+			new Promise((_resolve, reject) => {
+				fail = reject;
+			})
+		);
+
+		const update = workspace.updateTable({ summary: 'Edit' } as never);
+		workspace.openTableEditor(table as never);
+		fail(new Error('Late failure'));
+		await update;
+
+		expect(workspace.state.mutationError).toBe('');
 	});
 
 	it('creates a table only after refreshed schema contains it', async () => {

@@ -89,6 +89,26 @@ describe('ColumnMutationDialog', () => {
 		);
 	});
 
+	it('describes a column that had no description, and shows progress while saving', async () => {
+		const onsubmit = vi.fn();
+		const screen = await render(
+			ColumnMutationDialog,
+			{ ...baseProps, action: 'edit', column: table.columns[1], onsubmit },
+			{ wrapper: AppContextWrapper }
+		);
+		await expect.element(screen.getByLabelText(/Description/)).toHaveValue('');
+		await expect.element(screen.getByRole('button', { name: 'Save column' })).toBeDisabled();
+		await screen.getByLabelText(/Description/).fill('Number of events');
+		await screen.getByLabelText(/Type RUN/).fill('RUN');
+		await screen.getByRole('button', { name: 'Save column' }).click();
+		expect(onsubmit).toHaveBeenCalledWith(
+			expect.objectContaining({ kind: 'edit-column', nextDocstring: 'Number of events' })
+		);
+
+		await screen.rerender({ isRunning: true });
+		await expect.element(screen.getByRole('button', { name: 'Saving column' })).toBeDisabled();
+	});
+
 	it('changes type and exposes the irreversible warning', async () => {
 		const onsubmit = vi.fn();
 		const screen = await render(

@@ -75,6 +75,7 @@ npm run test:e2e:install
 | `npm run lint:ci`                 | Check formatting for the whole repository, as CI does |
 | `npm run test:unit:run`           | Run unit tests once                                   |
 | `npm run test:coverage`           | Run unit tests and write text and LCOV coverage       |
+| `npm run coverage:patch`          | List changed lines that the last coverage run missed  |
 | `npm run test:e2e:install`        | Install Playwright Chromium and system dependencies   |
 | `npm run test:e2e`                | Build the app and run end-to-end tests                |
 | `npm run test:e2e:run`            | Run end-to-end tests against an existing build        |

@@ -522,4 +522,15 @@ describe('remote changes that need a second command', () => {
 			remoteAdapter(startManagementCommand).mutateTable('Analytics', 'Events', snapshot, plan)
 		).rejects.toThrow("The columns were added, but the column descriptions weren't set");
 	});
+
+	it('reports a failure that is not an Error by its text', async () => {
+		const startManagementCommand = vi
+			.fn()
+			.mockReturnValueOnce({ cancel: vi.fn(), promise: Promise.resolve() })
+			.mockReturnValueOnce({ cancel: vi.fn(), promise: Promise.reject('connection reset') });
+
+		await expect(
+			remoteAdapter(startManagementCommand).mutateTable('Analytics', 'Events', snapshot, editPlan)
+		).rejects.toThrow('connection reset');
+	});
 });

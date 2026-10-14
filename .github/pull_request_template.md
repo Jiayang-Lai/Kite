@@ -41,3 +41,4 @@ Tick what applies and explain below. Delete this section if nothing applies.
 - [ ] `CHANGELOG.md` describes user-facing changes, or there are none
 - [ ] Documentation under `docs/` or in a README is updated, or nothing changed that it describes
 - [ ] Generated files are current (`npm run check:generated`)
+- [ ] Every changed line is covered (`npm run coverage:patch` after `npm run test:coverage`)

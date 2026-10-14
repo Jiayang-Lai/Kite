@@ -10,6 +10,7 @@ import {
 	buildTableMutationPlan,
 	buildTablePreflightCommands,
 	compareTableSnapshots,
+	formatPlanCommands,
 	parseTablePreflightResults,
 	snapshotLoadedTable,
 	type TableSchemaSnapshot
@@ -228,6 +229,27 @@ describe('table management commands', () => {
 		});
 
 		expect(plan).not.toHaveProperty('columnDocstringsCommand');
+	});
+
+	it('previews a plan’s commands in the order they run', () => {
+		const descriptionOnly = buildTableMutationPlan({
+			tableName: 'Metrics',
+			currentDocstring: 'Old',
+			nextDocstring: 'New',
+			existingColumnNames: ['Timestamp'],
+			newColumns: []
+		});
+		const withDescriptions = buildTableMutationPlan({
+			tableName: 'Metrics',
+			nextDocstring: '',
+			existingColumnNames: ['Timestamp'],
+			newColumns: [{ name: 'Region', type: 'string', docstring: 'Where' }]
+		});
+
+		expect(formatPlanCommands(descriptionOnly)).toBe(".alter table Metrics docstring 'New'");
+		expect(formatPlanCommands(withDescriptions)).toBe(
+			".alter-merge table Metrics (Region:string)\n.alter-merge table Metrics column-docstrings (Region:'Where')"
+		);
 	});
 
 	describe('editing a column', () => {

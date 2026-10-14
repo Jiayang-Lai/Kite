@@ -16,6 +16,7 @@
 	import { createReviewablePlan } from '$lib/admin/reviewable-plan.svelte';
 	import {
 		buildCreateTablePlan,
+		formatPlanCommands,
 		KUSTO_SCALAR_TYPES,
 		type CreateTablePlan,
 		type KustoScalarType
@@ -206,10 +207,9 @@
 					<div>
 						<h3 class="mb-2 text-sm font-medium">Management command</h3>
 						<pre
-							class="max-h-48 overflow-auto rounded-lg border bg-muted p-3 font-mono text-xs whitespace-pre-wrap">{reviewPlan
-								.prepared.plan.columnDocstringsCommand
-								? `${reviewPlan.prepared.plan.command}\n${reviewPlan.prepared.plan.columnDocstringsCommand}`
-								: reviewPlan.prepared.plan.command}</pre>
+							class="max-h-48 overflow-auto rounded-lg border bg-muted p-3 font-mono text-xs whitespace-pre-wrap">{formatPlanCommands(
+								reviewPlan.prepared.plan
+							)}</pre>
 					</div>
 
 					<div class="rounded-lg border border-primary/30 bg-primary/5 p-3">

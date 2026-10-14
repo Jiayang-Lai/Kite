@@ -32,6 +32,7 @@
 		"test:unit": "vitest",
 		"test:unit:run": "vitest --run",
 		"test:coverage": "vitest --run --coverage",
+		"coverage:patch": "node scripts/check-patch-coverage.mjs",
 		"test": "npm run test:unit -- --run && npm run test:e2e",
 		"test:e2e": "npm run build && npm run test:e2e:run",
 		"test:e2e:run": "playwright test",

@@ -187,6 +187,13 @@ function buildColumnDocstringsCommand(
 	return `${verb} table ${quotedTableName} column-docstrings (${docstrings})`;
 }
 
+/** The management commands a plan runs, in order, one per line, as dialogs preview them. */
+export function formatPlanCommands(plan: CreateTablePlan | TableMutationPlan) {
+	return 'columnDocstringsCommand' in plan && plan.columnDocstringsCommand
+		? `${plan.command}\n${plan.columnDocstringsCommand}`
+		: plan.command;
+}
+
 /** Builds one empty table creation command with an explicit initial schema. */
 export function buildCreateTablePlan(input: {
 	tableName: string;

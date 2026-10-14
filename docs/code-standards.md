@@ -26,6 +26,7 @@ These rules come from Kite's architecture and from lessons seen on three or more
 | Tests use real inputs. | Fixtures look like real Kusto and Log Analytics responses, real files and real stored records, including missing fields and empty values. Kusto names include `'` and `\`. |
 | Tests check behaviour, not implementation. | Assertions are about what the user or caller needs, so refactors don't break them. |
 | Coverage stays above its thresholds. | 60% globally for statements, branches, functions and lines, and the higher thresholds for library code in `vite.config.ts`. |
+| Every changed line is covered, including each of its branches. | `npm run coverage:patch` prints nothing uncovered. The global thresholds hide gaps in new code, and behaviour covered only by end-to-end tests doesn't count toward coverage. Codecov marked the patch report ❌ on #68, #72, #73, #86 and #87 for exactly this. |
 | End-to-end tests run under the Content Security Policy. | A violation fails the test. A `csp-known-violation` annotation explains its source and is agreed with the maintainer. |
 
 ## Acceptance criteria
@@ -33,6 +34,6 @@ These rules come from Kite's architecture and from lessons seen on three or more
 A change is merged only when it shows each of the following. The pull request says which were run and what they printed. A check that wasn't run is listed as not run, never left out.
 
 1. **A test that fails without the change.** Put the old code back and run the new test. It must fail with an assertion that names the behaviour, not a compile error or a skip. Then restore the change and check the test passes.
-2. **The checks.** `npm run check`, `npm run lint`, `npm run test:unit:run` and `npm run check:generated`. Run `npm run test:ci` when the change touches the build, routes, or anything an end-to-end test covers.
+2. **The checks.** `npm run check`, `npm run lint`, `npm run test:coverage`, `npm run coverage:patch` and `npm run check:generated`. Run `npm run test:ci` when the change touches the build, routes, or anything an end-to-end test covers.
 3. **Real use.** Try the change in `npm run dev` or the pull request's preview deployment, with each connection kind it affects. Say which kinds and build targets were tried and which weren't.
 4. **The pull request template.** Its testing, risk and checklist sections are filled in.

@@ -69,4 +69,6 @@ The first lessons were written on 2026-10-14, from the fixes released in 0.1.0 (
 
 ## Moved to the code standards
 
-None yet.
+These were seen on three or more days. The rule and its evidence are in [docs/code-standards.md](docs/code-standards.md); a review still checks each one.
+
+- **Every changed line is covered, including each of its branches** (2026-09-04, 09-05, 09-11, 10-13, 10-14). Codecov marked the patch report ❌ on #68, #72, #73, #86 and #87 while every status check passed, because 60% global coverage hides gaps in new code. On #87 the 14 lines were a partial-failure path tested only in the adapter, an unreachable `if (!plan)` copied into two dialogs, and a toggle covered only by an end-to-end test. `npm run coverage:patch` now lists such lines before pushing.

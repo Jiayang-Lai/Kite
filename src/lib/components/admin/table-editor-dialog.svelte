@@ -15,6 +15,7 @@
 	import { createReviewablePlan } from '$lib/admin/reviewable-plan.svelte';
 	import {
 		buildTableMutationPlan,
+		formatPlanCommands,
 		KUSTO_SCALAR_TYPES,
 		type KustoScalarType,
 		type TableMutationPlan,
@@ -110,14 +111,6 @@
 		reviewPlan.returnToEditor(!isBusy);
 	}
 
-	const commandPreview = $derived.by(() => {
-		const plan = reviewPlan.prepared.plan;
-		if (!plan) return '';
-		return 'columnDocstringsCommand' in plan && plan.columnDocstringsCommand
-			? `${plan.command}\n${plan.columnDocstringsCommand}`
-			: plan.command;
-	});
-
 	function submitChanges() {
 		const plan = reviewPlan.prepared.plan;
 		if (!plan || !reviewPlan.canSubmit('RUN', preflightReady && !isBusy)) return;
@@ -199,7 +192,9 @@
 						<div>
 							<h3 class="mb-2 text-sm font-medium">Management command</h3>
 							<pre
-								class="max-h-48 overflow-auto rounded-lg border bg-muted p-3 font-mono text-xs whitespace-pre-wrap">{commandPreview}</pre>
+								class="max-h-48 overflow-auto rounded-lg border bg-muted p-3 font-mono text-xs whitespace-pre-wrap">{formatPlanCommands(
+									reviewPlan.prepared.plan
+								)}</pre>
 						</div>
 
 						<div class="rounded-lg border border-warning/40 bg-warning/10 p-3">

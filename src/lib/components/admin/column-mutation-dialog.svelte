@@ -18,6 +18,7 @@
 		buildChangeColumnTypePlan,
 		buildDropColumnPlan,
 		buildEditColumnPlan,
+		formatPlanCommands,
 		KUSTO_SCALAR_TYPES,
 		type KustoScalarType,
 		type TableMutationPlan,
@@ -108,13 +109,6 @@
 				? `CHANGE TYPE ${table.name}.${column.name}`
 				: `${table.name}.${column.name}`
 	);
-	const commandPreview = $derived.by(() => {
-		const plan = reviewPlan.prepared.plan;
-		if (!plan) return '';
-		return 'columnDocstringsCommand' in plan && plan.columnDocstringsCommand
-			? `${plan.command}\n${plan.columnDocstringsCommand}`
-			: plan.command;
-	});
 
 	$effect(() => {
 		const target = open
@@ -304,7 +298,9 @@
 					<div>
 						<h3 class="mb-2 text-sm font-medium">Management command</h3>
 						<pre
-							class="max-h-36 overflow-auto rounded-lg border bg-muted p-3 font-mono text-xs whitespace-pre-wrap">{commandPreview}</pre>
+							class="max-h-36 overflow-auto rounded-lg border bg-muted p-3 font-mono text-xs whitespace-pre-wrap">{formatPlanCommands(
+								reviewPlan.prepared.plan
+							)}</pre>
 					</div>
 				{/if}
 

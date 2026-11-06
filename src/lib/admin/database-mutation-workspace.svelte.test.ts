@@ -386,6 +386,7 @@ describe('createDatabaseMutationWorkspace', () => {
 		await expect(workspace.mutateDatabase({ name: 'New' } as never)).rejects.toThrow(
 			'cluster no longer exists'
 		);
+		expect(workspace.isBusy).toBe(false);
 	});
 
 	it('closes every dialog and clears editor targets after a connection change', () => {

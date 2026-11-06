@@ -346,10 +346,11 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 
 	async function mutateDatabase(request: DatabaseMutationRequest) {
 		const current = requiredOptions();
-		const requestId = begin('mutate-database');
 		const clusterId = current.options.getClusterId();
 		const cluster = current.options.store.clusters.find((item) => item.id === clusterId);
+		// Check before starting the request: a request that never starts must not leave Admin busy.
 		if (!cluster) throw new Error('This cluster no longer exists.');
+		const requestId = begin('mutate-database');
 		const target = state.databaseDialogTarget;
 		const action = state.databaseDialogAction;
 		const name = request.name?.trim() ?? '';

@@ -376,7 +376,7 @@
 		</Dialog.Header>
 		<div class="p-5">
 			<Select.Root type="single" bind:value={linkProfileId}>
-				<Select.Trigger class="w-full"
+				<Select.Trigger class="w-full" aria-label="Authentication profile"
 					><Select.Value placeholder="Choose an authentication profile" /></Select.Trigger
 				>
 				<Select.Content>

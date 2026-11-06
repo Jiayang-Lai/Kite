@@ -34,7 +34,12 @@
 				"esbenp.prettier-vscode",
 				"ms-playwright.playwright",
 				"mhutchie.git-graph"
-			]
+			],
+			"settings": {
+				"git.enabled": true,
+				"git.decorations.enabled": true,
+				"explorer.excludeGitIgnore": false
+			}
 		}
 	}
 }

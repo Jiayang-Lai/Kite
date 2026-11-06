@@ -313,7 +313,7 @@ test('links an unconfigured Log Analytics connection to an Azure authentication 
 	await page.getByRole('menuitem', { name: 'Unlinked Log Analytics' }).click();
 	const dialog = page.getByRole('dialog', { name: 'Link authentication profile' });
 	await expect(dialog).toBeVisible();
-	await dialog.getByRole('button', { name: 'Choose an authentication profile' }).click();
+	await dialog.getByRole('combobox', { name: 'Authentication profile' }).click();
 	await page.getByRole('option', { name: 'E2E Entra profile' }).click();
 	await dialog.getByRole('button', { name: 'Link and continue' }).click();
 

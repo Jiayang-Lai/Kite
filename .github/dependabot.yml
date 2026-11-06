@@ -5,7 +5,24 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # @kusto/monaco-kusto 15.x requires monaco-editor ^0.55, so a newer monaco-editor can't
+      # install, and it would fail the whole minor-and-patch group. Remove this once
+      # @kusto/monaco-kusto accepts a newer monaco-editor.
+      - dependency-name: monaco-editor
+        versions: ['>=0.56.0']
+    # A dependency joins the first group that matches it.
     groups:
+      # These pin each other's exact version or major, so they must update together, majors included.
+      vitest:
+        patterns:
+          - vitest
+          - '@vitest/*'
+          - vitest-browser-svelte
+      sveltekit:
+        patterns:
+          - '@sveltejs/kit'
+          - '@sveltejs/adapter-*'
       npm-minor-and-patch:
         patterns:
           - '*'

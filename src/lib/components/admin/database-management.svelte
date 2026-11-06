@@ -101,11 +101,7 @@
 		}
 	});
 
-	$effect(() => {
-		const isOpen = isMutationDialogOpen;
-		if (mutationState.wasDialogOpen && !isOpen && isBusy) mutationWorkspace.cancel();
-		mutationState.wasDialogOpen = isOpen;
-	});
+	$effect(() => mutationWorkspace.cancelWhenDialogsClose());
 
 	$effect(() => {
 		if (

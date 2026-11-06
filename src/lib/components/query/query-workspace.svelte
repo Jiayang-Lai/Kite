@@ -12,33 +12,32 @@
 		ExplorerSelection
 	} from '$lib/components/query/database-explorer/cluster-explorer-types';
 	import SaveQueryDialog from '$lib/components/query/save-query-dialog.svelte';
-	import type {
-		LanguageServiceStatus,
-		QueryWorkspaceExecutionState
-	} from '$lib/components/query/query-workspace-types';
+	import type { LanguageServiceStatus } from '$lib/components/query/query-workspace-types';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import { createConfirmationPrompt } from '$lib/app/confirmation-prompt.svelte';
 	import ConfirmationPromptDialog from '$lib/components/shared/confirmation-prompt-dialog.svelte';
-	import { getClusterSession } from '$lib/cluster/cluster-session.svelte';
-	import type { QueryTab } from '$lib/cluster/cluster-session.svelte';
+	import {
+		getClusterSession,
+		type ExplorerExpansionChange,
+		type QueryTab
+	} from '$lib/cluster/cluster-session.svelte';
 	import { createConnectionRuntime } from '$lib/cluster/cluster-runtime';
 	import { getConnectionCapabilities } from '$lib/cluster/connection-capabilities';
-	import {
-		getClusterConnectionStore,
-		type NewClusterConnection
-	} from '$lib/cluster/cluster-connection-store.svelte';
+	import { getClusterConnectionStore } from '$lib/cluster/cluster-connection-store.svelte';
 	import { usesBuiltInMockCatalog } from '$lib/cluster/mock-cluster-schema';
 	import { MOCK_RECENT_QUERIES, MOCK_SAVED_QUERIES } from '$lib/data/mock-queries';
 	import { disposeKqlTranslator } from '$lib/kql/wasm-translator';
 	import { getRecentQueryStore } from '$lib/query/recent-query-store.svelte';
-	import { createSavedQueryWorkspaceController } from '$lib/query/saved-query-workspace-controller';
+	import {
+		createSavedQueryWorkspaceController,
+		type SavedQueryWorkspaceState
+	} from '$lib/query/saved-query-workspace-controller';
 	import { createConnectionLifecycleController } from '$lib/query/connection-lifecycle-controller.svelte';
 	import { createQueryExecutionController } from '$lib/query/query-execution-controller.svelte';
 	import { createQueryTabController } from '$lib/query/query-tab-controller.svelte';
 	import { getSavedQueryStore } from '$lib/query/saved-query-store.svelte';
 
 	type QueryWorkspaceView = 'overview' | 'editor' | 'saved-queries';
-	type ComparisonSide = 'left' | 'right';
 
 	type QueryWorkspaceProps = {
 		view?: QueryWorkspaceView;
@@ -63,56 +62,34 @@
 	const savedQueryStore = getSavedQueryStore();
 
 	let explorerFilter = $state('');
-	const executionState = $state<QueryWorkspaceExecutionState>({
-		queryText: '',
-		result: undefined,
-		error: '',
-		errorRequestId: undefined,
-		errorRaw: undefined,
-		isRunning: false,
-		resultsCollapsed: false
-	});
 	let languageServiceStatus = $state<LanguageServiceStatus>('idle');
-	const savedQueryState = $state({
+	const savedQueryState = $state<SavedQueryWorkspaceState>({
 		dialogOpen: false,
 		name: '',
-		nameError: '',
-		pendingTabId: undefined as string | undefined
+		nameError: ''
 	});
 	let editorWorkspace = $state<{
 		getDiagnostics: () => import('./monaco-editor.svelte').EditorDiagnostic[];
 	}>();
-	const tabComparisonState = $state({
-		comparisonOriginalTabId: undefined as string | undefined,
-		comparisonModifiedTabId: undefined as string | undefined,
-		focusedComparisonSide: 'right' as ComparisonSide
+
+	const queryTabsController = createQueryTabController({
+		session: clusterSession,
+		savedQueries: savedQueryStore,
+		onTabClosing: (tabId) => queryExecution.cancelTab(tabId),
+		confirm: confirmationPrompt.ask
 	});
+	const tabComparisonState = queryTabsController.state;
 
 	const queryTabs = $derived(clusterSession.queryTabs);
 	const activeQueryTabId = $derived(clusterSession.activeQueryTabId);
 	const activeQueryTab = $derived(clusterSession.getQueryTab(activeQueryTabId));
-	const comparisonModifiedTab = $derived(
-		tabComparisonState.comparisonModifiedTabId
-			? queryTabs.find((tab) => tab.id === tabComparisonState.comparisonModifiedTabId)
-			: activeQueryTab
-	);
-	const compareCandidates = $derived(
-		comparisonModifiedTab
-			? queryTabs.filter(
-					(tab) =>
-						tab.id !== comparisonModifiedTab.id &&
-						tab.database.trim().toLowerCase() ===
-							comparisonModifiedTab.database.trim().toLowerCase()
-				)
-			: []
-	);
-	const comparisonOriginalTab = $derived(
-		tabComparisonState.comparisonOriginalTabId
-			? compareCandidates.find((tab) => tab.id === tabComparisonState.comparisonOriginalTabId)
-			: undefined
-	);
+	const {
+		original: comparisonOriginalTab,
+		modified: comparisonModifiedTab,
+		candidates: compareCandidates
+	} = $derived(queryTabsController.comparison);
 	const saveTargetTab = $derived(
-		savedQueryState.pendingTabId
+		savedQueryState.dialogOpen && savedQueryState.pendingTabId
 			? queryTabs.find((tab) => tab.id === savedQueryState.pendingTabId)
 			: comparisonOriginalTab && comparisonModifiedTab
 				? tabComparisonState.focusedComparisonSide === 'left'
@@ -125,13 +102,8 @@
 			? savedQueryStore.queries.find((query) => query.id === saveTargetTab.savedQueryId)
 			: undefined
 	);
-	const isSaveTargetSavedQueryDirty = $derived(
-		Boolean(
-			saveTargetTab &&
-			saveTargetSavedQuery &&
-			(saveTargetTab.database !== saveTargetSavedQuery.database ||
-				saveTargetTab.query.trim() !== saveTargetSavedQuery.query)
-		)
+	const isSaveTargetDirty = $derived(
+		Boolean(saveTargetTab && queryTabsController.isDirty(saveTargetTab))
 	);
 	const activeCluster = $derived(
 		clusters.find((cluster) => cluster.id === clusterSession.activeClusterId)
@@ -144,13 +116,11 @@
 	);
 	const isMockCluster = $derived(activeCluster?.kind === 'mock');
 	const isEmulatedCluster = $derived(activeCluster?.kind === 'emulated');
-	const isLogAnalyticsCluster = $derived(activeCluster?.kind === 'log-analytics');
 	const hasBuiltInMockSamples = $derived(usesBuiltInMockCatalog(activeCluster));
-	let explorerExpansion = $state(
+	const explorerExpansion = $derived(
 		clusterSession.getExplorerExpansion(clusterSession.activeClusterId)
 	);
 	const queryExecution = createQueryExecutionController({
-		state: executionState,
 		recentQueries: recentQueryStore,
 		getActiveTab: () => activeQueryTab,
 		getActiveClusterId: () => clusterSession.activeClusterId,
@@ -169,11 +139,13 @@
 			const tab = activeQueryTab ?? clusterSession.createQueryTab(database);
 			clusterSession.updateQueryTab(tab.id, {
 				database,
-				query: pendingQuery ?? tab.query
+				query: pendingQuery ?? tab.query,
+				result: undefined,
+				error: undefined,
+				errorRequestId: undefined,
+				errorRaw: undefined
 			});
-			loadQueryTab(clusterSession.getQueryTab(tab.id) ?? tab);
-			executionState.result = undefined;
-			executionState.error = '';
+			loadQueryTab(tab);
 		}
 	});
 	// ClusterSession owns the confirmed connection, its schema, and the Explorer selection; the
@@ -195,36 +167,15 @@
 	const isSelectedLogAnalyticsCluster = $derived(
 		clusters.find((cluster) => cluster.id === selectedClusterId)?.kind === 'log-analytics'
 	);
-	const queryTabsController = createQueryTabController({
-		state: tabComparisonState,
-		session: clusterSession,
-		savedQueries: savedQueryStore,
-		getSelectedDatabase: () => clusterSession.selectedDatabase,
-		setSelectedDatabase: (database) => (clusterSession.selectedDatabase = database),
-		clearSchemaSelection: () => {
-			clusterSession.selectedTable = undefined;
-			clusterSession.selectedFunction = undefined;
-		},
-		onTabLoaded: (tab) => loadQueryTab(tab),
-		onTabClosing: (tabId) => queryExecution.cancelTab(tabId),
-		confirm: confirmationPrompt.ask
-	});
 	const savedQueryController = createSavedQueryWorkspaceController({
 		state: savedQueryState,
 		session: clusterSession,
 		savedQueries: savedQueryStore,
-		getActiveClusterId: () => activeClusterId,
-		getActiveTabId: () => activeQueryTabId,
-		getTabs: () => queryTabs,
 		loadTab: (tab) => loadQueryTab(tab),
 		createTab: (database, query, savedQuery) =>
 			queryTabsController.create(database, query, savedQuery),
-		setExecutionQuery: (query) => (executionState.queryText = query),
 		navigateToEditor: () => void goto('/explorer/query')
 	});
-	const canSaveTargetQuery = $derived(
-		Boolean(saveTargetTab?.query.trim() && saveTargetTab.database)
-	);
 	const selectedClusterName = $derived(
 		clusters.find((cluster) => cluster.id === selectedClusterId)?.name ?? 'selected cluster'
 	);
@@ -261,16 +212,6 @@
 	]);
 
 	$effect(() => {
-		if (view !== 'editor' || !activeQueryTab) return;
-		// QueryWorkspace is recreated when navigating from the saved-query list to the
-		// editor. The tabs live in the app-wide session, while executionState belongs
-		// to this workspace instance, so hydrate it from the selected shared tab.
-		// Without this, a cached schema skips onSchemaReady and Monaco receives an
-		// empty value even though the tab itself contains the saved query.
-		queryExecution.loadTab(activeQueryTab);
-	});
-
-	$effect(() => {
 		const tab = activeQueryTab;
 		if (tab && tab.database !== clusterSession.selectedDatabase) {
 			clusterSession.updateQueryTab(tab.id, { database: clusterSession.selectedDatabase });
@@ -289,37 +230,19 @@
 	});
 
 	$effect(() => {
-		if (!savedQueryState.dialogOpen) savedQueryState.pendingTabId = undefined;
-	});
-
-	$effect(() => {
-		explorerExpansion = clusterSession.getExplorerExpansion(activeClusterId);
-	});
-
-	$effect(() => {
 		if (!isEmulatedCluster) disposeKqlTranslator();
 	});
 
 	function loadQueryTab(tab: QueryTab) {
-		clusterSession.activeQueryTabId = tab.id;
-		if (tab.database && databaseSchema?.[tab.database]) {
-			clusterSession.selectedDatabase = tab.database;
-		}
-		clusterSession.selectedTable = undefined;
-		clusterSession.selectedFunction = undefined;
-		queryExecution.loadTab(tab);
+		queryTabsController.load(tab);
 	}
 
 	function updateComparisonModifiedQuery(value: string) {
-		if (!comparisonModifiedTab) return;
 		queryTabsController.updateComparisonQuery('right', value);
-		if (comparisonModifiedTab.id === activeQueryTabId) executionState.queryText = value;
 	}
 
 	function updateComparisonOriginalQuery(value: string) {
-		if (!comparisonOriginalTab) return;
 		queryTabsController.updateComparisonQuery('left', value);
-		if (comparisonOriginalTab.id === activeQueryTabId) executionState.queryText = value;
 	}
 
 	async function runComparisonQuery(side = tabComparisonState.focusedComparisonSide) {
@@ -365,9 +288,7 @@
 		if (query.id) recentQueryStore.remove(query.id);
 	}
 
-	function updateExplorerExpansion(
-		change: import('$lib/cluster/cluster-session.svelte').ExplorerExpansionChange
-	) {
+	function updateExplorerExpansion(change: ExplorerExpansionChange) {
 		clusterSession.setExplorerExpansion(activeClusterId, change);
 	}
 
@@ -512,14 +433,14 @@
 					bind:selectedFunction={clusterSession.selectedFunction}
 					{explorerExpansion}
 					{activeClusterUrl}
-					activeTab={activeQueryTab}
+					activeTab={activeQueryTab!}
 					originalTab={comparisonOriginalTab}
 					modifiedTab={comparisonModifiedTab}
 					{compareCandidates}
 					{queryTabs}
 					comparisonOriginalTabId={tabComparisonState.comparisonOriginalTabId}
 					focusedComparisonSide={tabComparisonState.focusedComparisonSide}
-					{executionState}
+					resultsCollapsed={queryExecution.state.resultsCollapsed}
 					{connectionStatus}
 					{connectionError}
 					{isClusterSwitching}
@@ -533,10 +454,9 @@
 					{connectionStatistics}
 					{languageServiceStatus}
 					{failedClusterId}
-					canSave={canSaveTargetQuery &&
-						!Boolean(saveTargetSavedQuery && !isSaveTargetSavedQueryDirty)}
+					canSave={Boolean(saveTargetTab?.database) && isSaveTargetDirty}
 					saveTitle={saveTargetSavedQuery
-						? isSaveTargetSavedQueryDirty
+						? isSaveTargetDirty
 							? `Update ${saveTargetSavedQuery.name}`
 							: 'No saved-query changes'
 						: 'Save query locally'}
@@ -562,7 +482,8 @@
 					oncomparisonoriginalchange={(tabId) =>
 						(tabComparisonState.comparisonOriginalTabId = tabId)}
 					oncomparisonsidechange={(side) => (tabComparisonState.focusedComparisonSide = side)}
-					onresultscollapsedchange={(collapsed) => (executionState.resultsCollapsed = collapsed)}
+					onresultscollapsedchange={(collapsed) =>
+						(queryExecution.state.resultsCollapsed = collapsed)}
 				/>
 			{/await}
 		{/if}

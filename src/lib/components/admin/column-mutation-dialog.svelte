@@ -114,16 +114,13 @@
 		const target = open
 			? `${databaseName}\u0000${table.name}\u0000${column.name}\u0000${action}`
 			: '';
-		if (!target || target === initializedTarget) return;
+		if (target === initializedTarget) return;
 		initializedTarget = target;
+		if (!target) return;
 		newColumnName = column.name;
 		newColumnDocstring = column.docstring ?? '';
 		newColumnType = '';
 		reviewPlan.reset();
-	});
-
-	$effect(() => {
-		if (!open) initializedTarget = '';
 	});
 
 	function submitMutation() {

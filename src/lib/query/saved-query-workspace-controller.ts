@@ -18,16 +18,12 @@ type SavedQueryWorkspaceControllerOptions = {
 	state: SavedQueryWorkspaceState;
 	session: ClusterSession;
 	savedQueries: SavedQueryStore;
-	getActiveClusterId: () => string;
-	getActiveTabId: () => string;
-	getTabs: () => QueryTab[];
 	loadTab: (tab: QueryTab) => void;
 	createTab: (
 		database: string,
 		query: string,
 		savedQuery?: Pick<QueryTab, 'savedQueryId' | 'savedQueryName'>
 	) => void;
-	setExecutionQuery: (query: string) => void;
 	navigateToEditor: () => void;
 };
 
@@ -37,14 +33,14 @@ export function createSavedQueryWorkspaceController(options: SavedQueryWorkspace
 		return query.id
 			? options.savedQueries.queries.find(
 					(candidate) =>
-						candidate.id === query.id && candidate.clusterId === options.getActiveClusterId()
+						candidate.id === query.id && candidate.clusterId === options.session.activeClusterId
 				)
 			: undefined;
 	}
 
 	function findOpenTab(savedQueryId?: string) {
 		return savedQueryId
-			? options.getTabs().find((tab) => tab.savedQueryId === savedQueryId)
+			? options.session.queryTabs.find((tab) => tab.savedQueryId === savedQueryId)
 			: undefined;
 	}
 
@@ -103,7 +99,7 @@ export function createSavedQueryWorkspaceController(options: SavedQueryWorkspace
 		}
 
 		const updatedQuery = options.savedQueries.update(savedQuery.id, {
-			clusterId: options.getActiveClusterId(),
+			clusterId: options.session.activeClusterId,
 			database: tab.database,
 			name: savedQuery.name,
 			query
@@ -114,7 +110,6 @@ export function createSavedQueryWorkspaceController(options: SavedQueryWorkspace
 			query: updatedQuery.query,
 			database: updatedQuery.database
 		});
-		if (tab.id === options.getActiveTabId()) options.setExecutionQuery(updatedQuery.query);
 	}
 
 	function saveNew(tab: QueryTab | undefined) {
@@ -128,7 +123,7 @@ export function createSavedQueryWorkspaceController(options: SavedQueryWorkspace
 		}
 
 		const savedQuery = options.savedQueries.save({
-			clusterId: options.getActiveClusterId(),
+			clusterId: options.session.activeClusterId,
 			database: tab.database,
 			name,
 			query
@@ -143,7 +138,6 @@ export function createSavedQueryWorkspaceController(options: SavedQueryWorkspace
 			savedQueryName: savedQuery.name,
 			query: savedQuery.query
 		});
-		if (tab.id === options.getActiveTabId()) options.setExecutionQuery(savedQuery.query);
 		options.state.dialogOpen = false;
 		options.state.pendingTabId = undefined;
 	}

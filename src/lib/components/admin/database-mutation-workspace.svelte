@@ -44,7 +44,7 @@
 		{clusterName}
 		existingTableNames={databases?.[state.editorDatabaseName]?.tables.map((table) => table.name) ??
 			[]}
-		isRunning={state.isCreatingTable}
+		isRunning={state.running === 'create-table'}
 		executionError={state.createTableError}
 		onsubmit={workspace.createTable}
 		oncancel={workspace.cancel}
@@ -57,8 +57,8 @@
 		table={state.editorTable}
 		databaseName={state.editorDatabaseName}
 		{clusterName}
-		isPreparing={state.isPreparingEditor}
-		isRunning={state.isMutating}
+		isPreparing={state.running === 'prepare-editor'}
+		isRunning={state.running === 'update-table'}
 		preflightReady={Boolean(state.editorSnapshot)}
 		snapshot={state.editorSnapshot}
 		executionError={state.mutationError}
@@ -75,8 +75,8 @@
 		column={state.editorColumn}
 		databaseName={state.editorDatabaseName}
 		{clusterName}
-		isPreparing={state.isPreparingEditor}
-		isRunning={state.isMutating}
+		isPreparing={state.running === 'prepare-editor'}
+		isRunning={state.running === 'update-table'}
 		preflightReady={Boolean(state.editorSnapshot)}
 		snapshot={state.editorSnapshot}
 		executionError={state.mutationError}

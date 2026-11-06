@@ -1,3 +1,10 @@
+<script module lang="ts">
+	import type { QueryTab } from '$lib/cluster/cluster-session.svelte';
+
+	/** Fields the next render gives its active tab, after the running `Events | count` query. */
+	export const initialTab: Partial<Omit<QueryTab, 'id'>> = {};
+</script>
+
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
@@ -31,7 +38,8 @@
 	clusterSession.updateQueryTab(clusterSession.activeQueryTabId, {
 		database: 'Samples',
 		query: 'Events | count',
-		isRunning: true
+		isRunning: true,
+		...initialTab
 	});
 
 	setAppShellState(createAppShellState(() => true));

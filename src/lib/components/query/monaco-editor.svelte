@@ -98,19 +98,16 @@
 	}: MonacoEditorProps = $props();
 
 	let container = $state<HTMLDivElement | null>(null);
+	// Effects react to these three; the handles below are used only imperatively.
 	let editor = $state<MonacoEditor | null>(null);
-	let originalEditor = $state<MonacoEditor | null>(null);
-	let diffEditor = $state<MonacoDiffEditor | null>(null);
 	let model = $state<MonacoModel | null>(null);
-	let originalModel = $state<MonacoModel | null>(null);
 	let monaco = $state<MonacoApi | null>(null);
-	let kusto = $state<KustoApi | null>(null);
-	let changeDisposable = $state<MonacoDisposable | null>(null);
-	let originalChangeDisposable = $state<MonacoDisposable | null>(null);
-	let documentationHoverDisposable = $state<MonacoDisposable | null>(null);
-	let findWidgetFocusGuardDisposable = $state<MonacoDisposable | null>(null);
-	let intelliSenseActivationDisposable = $state<MonacoDisposable | null>(null);
-	let originalIntelliSenseActivationDisposable = $state<MonacoDisposable | null>(null);
+	let originalEditor: MonacoEditor | null = null;
+	let diffEditor: MonacoDiffEditor | null = null;
+	let originalModel: MonacoModel | null = null;
+	let kusto: KustoApi | null = null;
+	/** Listeners and providers registered while mounting, released together on unmount. */
+	const disposables: MonacoDisposable[] = [];
 	let initializationError = $state<string | null>(null);
 	let isLoading = $state(true);
 	let syncingFromEditor = false;
@@ -165,20 +162,20 @@
 	}
 
 	function bindModel(nextModel: MonacoModel) {
-		changeDisposable?.dispose();
-		changeDisposable = nextModel.onDidChangeContent(() => {
+		const change = nextModel.onDidChangeContent(() => {
 			syncingFromEditor = true;
 			value = nextModel.getValue();
 			onvaluechange?.(value);
 			syncingFromEditor = false;
 		});
+		disposables.push(change);
 	}
 
 	function bindOriginalModel(nextModel: MonacoModel) {
-		originalChangeDisposable?.dispose();
-		originalChangeDisposable = nextModel.onDidChangeContent(() => {
+		const change = nextModel.onDidChangeContent(() => {
 			onoriginalvaluechange?.(nextModel.getValue());
 		});
+		disposables.push(change);
 	}
 
 	/**
@@ -258,7 +255,7 @@
 			monaco = runtime.monaco;
 			kusto = runtime.kusto;
 			releaseKustoWorker = retainKustoWorker(runtime.kusto);
-			documentationHoverDisposable = registerDocumentationHoverProvider(runtime.monaco);
+			disposables.push(registerDocumentationHoverProvider(runtime.monaco));
 
 			const activeDatabase = getKustoDatabase(databaseSchema, database);
 			const modelUri = createModelUri(runtime.monaco, activeDatabase.name, 'editor');
@@ -299,10 +296,11 @@
 				diffEditor.setModel({ original: nextOriginalModel, modified: editorModel });
 				editor = diffEditor.getModifiedEditor();
 				originalEditor = diffEditor.getOriginalEditor();
-				originalIntelliSenseActivationDisposable = originalEditor.onDidFocusEditorText(() => {
+				const originalFocus = originalEditor.onDidFocusEditorText(() => {
 					onactivesidechange?.('left');
 					activateIntelliSense();
 				});
+				disposables.push(originalFocus);
 				if (!readOnly) bindOriginalModel(nextOriginalModel);
 			} else {
 				editor = runtime.monaco.editor.create(container, {
@@ -326,11 +324,11 @@
 					targetEditor.updateOptions({ wordWrap: wordWrap === 'off' ? 'on' : 'off' });
 				}
 			});
-			findWidgetFocusGuardDisposable = registerFindWidgetFocusGuard(container, editor);
-			intelliSenseActivationDisposable = editor.onDidFocusEditorText(() => {
+			const focus = editor.onDidFocusEditorText(() => {
 				onactivesidechange?.('right');
 				activateIntelliSense();
 			});
+			disposables.push(registerFindWidgetFocusGuard(container, editor), focus);
 
 			if (!readOnly) bindModel(editorModel);
 			isLoading = false;
@@ -346,12 +344,7 @@
 		return () => {
 			disposed = true;
 			schemaRequestId += 1;
-			changeDisposable?.dispose();
-			originalChangeDisposable?.dispose();
-			documentationHoverDisposable?.dispose();
-			findWidgetFocusGuardDisposable?.dispose();
-			intelliSenseActivationDisposable?.dispose();
-			originalIntelliSenseActivationDisposable?.dispose();
+			for (const disposable of disposables.splice(0)) disposable.dispose();
 			if (container?.contains(document.activeElement)) editor?.focus();
 			if (diffEditor) diffEditor.dispose();
 			else editor?.dispose();

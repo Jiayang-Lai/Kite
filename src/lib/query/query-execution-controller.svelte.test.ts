@@ -49,10 +49,8 @@ describe('createQueryExecutionController', () => {
 			updateTab
 		});
 
-		controller.loadTab(tabs[0]);
 		const firstRun = controller.run();
 		activeTab = tabs[1];
-		controller.loadTab(tabs[1]);
 		const secondRun = controller.run();
 		resolveFirst(result('first'));
 		resolveSecond(result('second'));
@@ -102,7 +100,6 @@ describe('createQueryExecutionController', () => {
 			],
 			updateTab
 		});
-		controller.loadTab(tab);
 
 		await controller.run();
 
@@ -116,11 +113,6 @@ describe('createQueryExecutionController', () => {
 		expect(tab.error).toContain('HTTP 400: Invalid query');
 		expect(tab.error).toContain('Line 1, column 13 [KS001]: Expected an operator');
 		expect(tab).toMatchObject({
-			isRunning: false,
-			errorRequestId: 'request-id',
-			errorRaw: rawError
-		});
-		expect(controller.state).toMatchObject({
 			isRunning: false,
 			errorRequestId: 'request-id',
 			errorRaw: rawError
@@ -150,7 +142,6 @@ describe('createQueryExecutionController', () => {
 			getDiagnostics: () => [],
 			updateTab
 		});
-		controller.loadTab(tab);
 
 		const run = controller.run();
 		controller.cancel();
@@ -161,7 +152,6 @@ describe('createQueryExecutionController', () => {
 
 		expect(tab.isRunning).toBe(false);
 		expect(tab.result).toBeUndefined();
-		expect(controller.state.isRunning).toBe(false);
 	});
 
 	it.each([
@@ -201,7 +191,6 @@ describe('createQueryExecutionController', () => {
 			getDiagnostics: () => [],
 			updateTab: vi.fn()
 		});
-		controller.loadTab(tab);
 
 		await controller.run();
 

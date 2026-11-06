@@ -11,13 +11,8 @@ export type QueryTabComparisonState = {
 };
 
 type QueryTabControllerOptions = {
-	state?: QueryTabComparisonState;
 	session: ClusterSession;
 	savedQueries: SavedQueryStore;
-	getSelectedDatabase: () => string;
-	setSelectedDatabase: (database: string) => void;
-	clearSchemaSelection: () => void;
-	onTabLoaded: (tab: QueryTab) => void;
 	onTabClosing: (tabId: string) => void;
 	/** Asks before closing a running or unsaved tab. */
 	confirm: ConfirmAction;
@@ -35,16 +30,16 @@ function titleFor(tab: QueryTab) {
 /** Owns query-tab selection, unsaved state, and two-tab comparison rules. */
 export function createQueryTabController(options: QueryTabControllerOptions) {
 	const { session } = options;
-	let state = $state<QueryTabComparisonState>({ focusedComparisonSide: 'right' });
-	if (options.state) state = options.state;
+	const state = $state<QueryTabComparisonState>({ focusedComparisonSide: 'right' });
 
+	/** Makes `tab` active and selects its database in the Explorer. */
 	function load(tab: QueryTab) {
 		session.activeQueryTabId = tab.id;
 		if (tab.database && session.databaseSchema?.[tab.database]) {
-			options.setSelectedDatabase(tab.database);
+			session.selectedDatabase = tab.database;
 		}
-		options.clearSchemaSelection();
-		options.onTabLoaded(tab);
+		session.selectedTable = undefined;
+		session.selectedFunction = undefined;
 	}
 
 	function activeTab() {
@@ -101,11 +96,12 @@ export function createQueryTabController(options: QueryTabControllerOptions) {
 	}
 
 	function create(
-		database = options.getSelectedDatabase(),
+		database = session.selectedDatabase,
 		query = '',
 		savedQuery?: Pick<QueryTab, 'savedQueryId' | 'savedQueryName'>
 	) {
-		const keepActive = Boolean(comparedTabs().original && comparedTabs().modified);
+		const { original, modified } = comparedTabs();
+		const keepActive = Boolean(original && modified);
 		const activeId = session.activeQueryTabId;
 		const tab = session.createQueryTab(database, query, savedQuery);
 		if (keepActive) {
@@ -160,11 +156,6 @@ export function createQueryTabController(options: QueryTabControllerOptions) {
 		if (next) load(next);
 	}
 
-	function updateActiveQuery(value: string) {
-		const tab = activeTab();
-		if (tab) session.updateQueryTab(tab.id, { query: value });
-	}
-
 	function updateComparisonQuery(side: ComparisonSide, value: string) {
 		const { original, modified } = comparedTabs();
 		const tab = side === 'left' ? original : modified;
@@ -173,18 +164,7 @@ export function createQueryTabController(options: QueryTabControllerOptions) {
 	}
 
 	return {
-		get tabs() {
-			return session.queryTabs;
-		},
-		get activeTabId() {
-			return session.activeQueryTabId;
-		},
-		get activeTab() {
-			return activeTab();
-		},
-		get state() {
-			return state;
-		},
+		state,
 		get comparison() {
 			return comparedTabs();
 		},
@@ -197,7 +177,6 @@ export function createQueryTabController(options: QueryTabControllerOptions) {
 		startComparison,
 		stopComparison,
 		compareWith,
-		updateActiveQuery,
 		updateComparisonQuery
 	};
 }

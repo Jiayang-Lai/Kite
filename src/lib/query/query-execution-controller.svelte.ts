@@ -2,20 +2,9 @@ import { createCancellableOperation } from '$lib/query/cancellable-operation.sve
 import type { QueryTab } from '$lib/cluster/cluster-session.svelte';
 import type { ConnectionRuntime } from '$lib/cluster/cluster-runtime';
 import type { RecentQueryStore } from '$lib/query/recent-query-store.svelte';
-import { QueryRequestError, type QueryResult } from '$lib/types/query-result';
-
-export type QueryExecutionState = {
-	queryText: string;
-	result?: QueryResult;
-	error: string;
-	errorRequestId?: string;
-	errorRaw?: unknown;
-	isRunning: boolean;
-	resultsCollapsed: boolean;
-};
+import { QueryRequestError } from '$lib/types/query-result';
 
 type QueryExecutionControllerOptions = {
-	state?: QueryExecutionState;
 	recentQueries: RecentQueryStore;
 	getActiveTab: () => QueryTab | undefined;
 	getActiveClusterId: () => string;
@@ -56,15 +45,13 @@ function errorMessage(error: unknown) {
 	return error instanceof Error ? error.message : String(error);
 }
 
-/** Owns query result state, cancellation, and stale-response suppression for one workspace. */
+/**
+ * Runs and cancels each tab's query, writing its result or error back to that tab. The tabs hold
+ * the query, result and running state; this controller adds only whether the results pane is
+ * collapsed.
+ */
 export function createQueryExecutionController(options: QueryExecutionControllerOptions) {
-	let state = $state<QueryExecutionState>({
-		queryText: '',
-		error: '',
-		isRunning: false,
-		resultsCollapsed: false
-	});
-	if (options.state) state = options.state;
+	const state = $state({ resultsCollapsed: false });
 	const operations = new Map<string, ReturnType<typeof createCancellableOperation>>();
 
 	function operationFor(tabId: string) {
@@ -76,33 +63,19 @@ export function createQueryExecutionController(options: QueryExecutionController
 		return operation;
 	}
 
-	function loadTab(tab: QueryTab) {
-		state.queryText = tab.query;
-		state.result = tab.result;
-		state.error = tab.error ?? '';
-		state.errorRequestId = tab.errorRequestId;
-		state.errorRaw = tab.errorRaw;
-		state.isRunning = tab.isRunning;
-	}
-
 	function updateQuery(value: string) {
-		state.queryText = value;
 		const tab = options.getActiveTab();
 		if (tab) options.updateTab(tab.id, { query: value });
 	}
 
 	async function run() {
 		const tab = options.getActiveTab();
-		const query = state.queryText.trim();
+		const query = tab?.query.trim();
 		const database = options.getSelectedDatabase();
 		const runtime = options.getRuntime();
 		if (!tab || !query || !database || tab.isRunning || !runtime || !options.canExecute()) return;
 
-		state.error = '';
-		state.errorRequestId = undefined;
-		state.errorRaw = undefined;
 		state.resultsCollapsed = false;
-		state.isRunning = true;
 		const operation = operationFor(tab.id);
 		options.updateTab(tab.id, {
 			isRunning: true,
@@ -125,10 +98,7 @@ export function createQueryExecutionController(options: QueryExecutionController
 				return execution.promise;
 			},
 			{
-				onSuccess: (result) => {
-					options.updateTab(tab.id, { result });
-					if (options.getActiveTab()?.id === tab.id) state.result = result;
-				},
+				onSuccess: (result) => options.updateTab(tab.id, { result }),
 				onError: (error) => {
 					const message = formatFailure(errorMessage(error), options.getDiagnostics());
 					const update: Partial<Omit<QueryTab, 'id'>> = { result: undefined, error: message };
@@ -137,26 +107,16 @@ export function createQueryExecutionController(options: QueryExecutionController
 						update.errorRaw = error.response;
 					}
 					options.updateTab(tab.id, update);
-					if (options.getActiveTab()?.id === tab.id) {
-						state.result = undefined;
-						state.error = message;
-						state.errorRequestId = update.errorRequestId;
-						state.errorRaw = update.errorRaw;
-					}
 				}
 			}
 		);
 
 		options.updateTab(tab.id, { isRunning: false });
-		if (options.getActiveTab()?.id === tab.id) state.isRunning = false;
 		if (operations.get(tab.id) === operation) operations.delete(tab.id);
 	}
 
 	return {
-		get state() {
-			return state;
-		},
-		loadTab,
+		state,
 		updateQuery,
 		run,
 		cancel() {
@@ -172,7 +132,6 @@ export function createQueryExecutionController(options: QueryExecutionController
 				options.updateTab(tabId, { isRunning: false });
 			}
 			operations.clear();
-			state.isRunning = false;
 		},
 		dispose() {
 			for (const operation of operations.values()) operation.dispose();

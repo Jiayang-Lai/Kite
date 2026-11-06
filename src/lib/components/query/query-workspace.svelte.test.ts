@@ -15,13 +15,16 @@ vi.mock('$lib/cluster/cluster-runtime', async (importOriginal) => {
 	};
 });
 
-import QueryWorkspaceRunningWrapper from '../../../../tests/fixtures/query-workspace-running-wrapper.svelte';
+import QueryWorkspaceRunningWrapper, {
+	initialTab
+} from '../../../../tests/fixtures/query-workspace-running-wrapper.svelte';
 import QueryWorkspaceWrapper from '../../../../tests/fixtures/query-workspace-wrapper.svelte';
 import QueryWorkspace from './query-workspace.svelte';
 
 describe('QueryWorkspace', () => {
 	afterEach(() => {
 		runtimeMocks.failingClusterName = undefined;
+		for (const key of Object.keys(initialTab)) delete initialTab[key as keyof typeof initialTab];
 	});
 
 	it('renders its lazily loaded overview and saved-query views', async () => {
@@ -134,6 +137,24 @@ describe('QueryWorkspace', () => {
 		const cancelButton = screen.getByRole('button', { name: 'Cancel' });
 		await expect.element(cancelButton).toBeVisible();
 		(cancelButton.element() as HTMLButtonElement).click();
+	});
+
+	it("shows the active tab's failure, including its request ID and raw error", async () => {
+		Object.assign(initialTab, {
+			isRunning: false,
+			error: "HTTP 400: Table 'O\\'Brien' not found",
+			errorRequestId: 'request-1',
+			errorRaw: { error: { code: 'BadArgument' } }
+		});
+		const screen = await render(
+			QueryWorkspace,
+			{ view: 'editor' },
+			{ wrapper: QueryWorkspaceRunningWrapper }
+		);
+
+		await expect.element(screen.getByText("HTTP 400: Table 'O\\'Brien' not found")).toBeVisible();
+		await expect.element(screen.getByText('request-1')).toBeVisible();
+		await expect.element(screen.getByText('Raw error JSON')).toBeVisible();
 	});
 
 	it('loads a saved query from the editor sidebar into a tab', async () => {

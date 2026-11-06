@@ -7,9 +7,6 @@ import { createQueryTabController } from './query-tab-controller.svelte';
 
 function createController(savedQueries: SavedQuery[] = []) {
 	const session = createClusterSession('cluster');
-	const setSelectedDatabase = vi.fn((database: string) => (session.selectedDatabase = database));
-	const clearSchemaSelection = vi.fn();
-	const onTabLoaded = vi.fn();
 	const onTabClosing = vi.fn();
 	const confirm = vi.fn<ConfirmAction>().mockResolvedValue(true);
 	session.databaseSchema = {
@@ -19,19 +16,12 @@ function createController(savedQueries: SavedQuery[] = []) {
 	const controller = createQueryTabController({
 		session,
 		savedQueries: { queries: savedQueries } as never,
-		getSelectedDatabase: () => session.selectedDatabase,
-		setSelectedDatabase,
-		clearSchemaSelection,
-		onTabLoaded,
 		onTabClosing,
 		confirm
 	});
 	return {
 		controller,
 		session,
-		setSelectedDatabase,
-		clearSchemaSelection,
-		onTabLoaded,
 		onTabClosing,
 		confirm
 	};
@@ -106,7 +96,7 @@ describe('query tab controller', () => {
 			createdAt: '2026-01-01T00:00:00.000Z',
 			updatedAt: '2026-01-01T00:00:00.000Z'
 		};
-		const { controller, session, onTabLoaded } = createController([savedQuery]);
+		const { controller, session } = createController([savedQuery]);
 		const closedTab = session.queryTabs[0];
 		session.updateQueryTab(closedTab.id, {
 			database: savedQuery.database,
@@ -121,7 +111,6 @@ describe('query tab controller', () => {
 		expect(replacement).toMatchObject({ database: '', query: '', isRunning: false });
 		expect(replacement.id).not.toBe(closedTab.id);
 		expect(session.activeQueryTabId).toBe(replacement.id);
-		expect(onTabLoaded).toHaveBeenLastCalledWith(replacement);
 	});
 
 	it('ends comparison when either compared tab closes', async () => {
@@ -139,17 +128,17 @@ describe('query tab controller', () => {
 	});
 
 	it('keeps the compared tab active when creating another tab', () => {
-		const { controller, session, onTabLoaded } = createController();
+		const { controller, session } = createController();
 		const first = session.queryTabs[0];
 		session.updateQueryTab(first.id, { database: 'Alpha' });
 		const second = session.createQueryTab('Alpha');
 		controller.startComparison();
-		onTabLoaded.mockClear();
+		session.selectedTable = 'StormEvents';
 
 		const created = controller.create('Alpha', 'print Value = 3');
 
 		expect(session.activeQueryTabId).toBe(second.id);
 		expect(session.queryTabs.map((tab) => tab.id)).toContain(created.id);
-		expect(onTabLoaded).not.toHaveBeenCalled();
+		expect(session.selectedTable).toBe('StormEvents');
 	});
 });

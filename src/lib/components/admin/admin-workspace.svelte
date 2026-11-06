@@ -13,11 +13,11 @@
 	} from '$lib/components/query/database-explorer/cluster-explorer-types';
 	import { createConfirmationPrompt } from '$lib/app/confirmation-prompt.svelte';
 	import ConfirmationPromptDialog from '$lib/components/shared/confirmation-prompt-dialog.svelte';
-	import { getClusterSession } from '$lib/cluster/cluster-session.svelte';
 	import {
-		getClusterConnectionStore,
-		type NewClusterConnection
-	} from '$lib/cluster/cluster-connection-store.svelte';
+		getClusterSession,
+		type ExplorerExpansionChange
+	} from '$lib/cluster/cluster-session.svelte';
+	import { getClusterConnectionStore } from '$lib/cluster/cluster-connection-store.svelte';
 	import { createConnectionLifecycleController } from '$lib/query/connection-lifecycle-controller.svelte';
 	import { getConnectionCapabilities } from '$lib/cluster/connection-capabilities';
 	import { usesBuiltInMockCatalog } from '$lib/cluster/mock-cluster-schema';
@@ -88,7 +88,7 @@
 	const failedClusterName = $derived(
 		clusters.find((cluster) => cluster.id === failedClusterId)?.name ?? 'selected cluster'
 	);
-	let explorerExpansion = $state(
+	const explorerExpansion = $derived(
 		clusterSession.getExplorerExpansion(clusterSession.activeClusterId)
 	);
 	const storedRecentQueries = $derived<ExplorerQuery[]>(
@@ -150,19 +150,13 @@
 		if (query.id) recentQueryStore.remove(query.id);
 	}
 
-	function updateExplorerExpansion(
-		change: import('$lib/cluster/cluster-session.svelte').ExplorerExpansionChange
-	) {
+	function updateExplorerExpansion(change: ExplorerExpansionChange) {
 		clusterSession.setExplorerExpansion(clusterSession.activeClusterId, change);
 	}
 
 	function switchCluster(clusterId: string) {
 		connectionLifecycle.switchCluster(clusterId);
 	}
-
-	$effect(() => {
-		explorerExpansion = clusterSession.getExplorerExpansion(clusterSession.activeClusterId);
-	});
 
 	$effect(() => {
 		if (clusterConnectionStore.hydrated) connectionLifecycle.initialize();

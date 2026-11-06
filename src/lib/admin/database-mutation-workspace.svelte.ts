@@ -19,6 +19,10 @@ import {
 } from '$lib/kusto/table-management';
 import { tick } from 'svelte';
 
+/** The request in flight; starting one supersedes any other, so at most one runs. */
+export type DatabaseMutationRequestKind =
+	'prepare-editor' | 'update-table' | 'create-table' | 'mutate-database' | 'drop-table';
+
 export type DatabaseMutationWorkspaceState = {
 	editorOpen: boolean;
 	columnEditorOpen: boolean;
@@ -41,12 +45,7 @@ export type DatabaseMutationWorkspaceState = {
 	mutationError: string;
 	mutationSuccess: string;
 	createTableError: string;
-	isPreparingEditor: boolean;
-	isMutating: boolean;
-	isCreatingTable: boolean;
-	isDatabaseMutating: boolean;
-	isDroppingTable: boolean;
-	wasDialogOpen: boolean;
+	running?: DatabaseMutationRequestKind;
 };
 
 type WorkspaceOptions = {
@@ -77,13 +76,7 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 		editorMockSchemaRevision: 0,
 		mutationError: '',
 		mutationSuccess: '',
-		createTableError: '',
-		isPreparingEditor: false,
-		isMutating: false,
-		isCreatingTable: false,
-		isDatabaseMutating: false,
-		isDroppingTable: false,
-		wasDialogOpen: false
+		createTableError: ''
 	});
 	const controller = options
 		? createDatabaseMutationController({
@@ -111,6 +104,32 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 		const clusterId = current.options.getClusterId();
 		const cluster = current.options.store.clusters.find((item) => item.id === clusterId);
 		return { current, clusterId, cluster, database: current.options.getActiveDatabase() };
+	}
+
+	/** Starts a request of `kind`, superseding any other. */
+	function begin(kind: DatabaseMutationRequestKind) {
+		const requestId = requiredOptions().controller.begin();
+		state.running = kind;
+		return requestId;
+	}
+
+	/** Clears `running` if `requestId` is still the current request, and reports whether it was. */
+	function finish(requestId: number) {
+		if (!requiredOptions().controller.finish(requestId)) return false;
+		state.running = undefined;
+		return true;
+	}
+
+	let wasDialogOpen = false;
+
+	function isDialogOpen() {
+		return (
+			state.editorOpen ||
+			state.columnEditorOpen ||
+			state.createTableOpen ||
+			state.databaseDialogOpen ||
+			state.tableDropOpen
+		);
 	}
 
 	function resetEditorTarget() {
@@ -200,9 +219,8 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 
 	async function prepareTableEditor(table: KustoTable, databaseName: string) {
 		const current = requiredOptions();
-		const requestId = current.controller.begin();
+		const requestId = begin('prepare-editor');
 		const clusterId = current.options.getClusterId();
-		state.isPreparingEditor = true;
 		let closeAfterRefresh = false;
 		try {
 			const verification = await adapter().prepareTable(
@@ -223,12 +241,9 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 			if (!isOperationCancelled(error))
 				state.mutationError = `Kite could not verify the current table schema. The update is disabled until verification succeeds.\n\n${getErrorMessage(error)}`;
 		} finally {
-			if (current.controller.finish(requestId)) {
-				state.isPreparingEditor = false;
-				if (closeAfterRefresh) {
-					state.editorOpen = false;
-					state.columnEditorOpen = false;
-				}
+			if (finish(requestId) && closeAfterRefresh) {
+				state.editorOpen = false;
+				state.columnEditorOpen = false;
 			}
 		}
 	}
@@ -236,11 +251,10 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 	async function updateTable(plan: TableMutationPlan) {
 		if (!state.editorTable || !state.editorDatabaseName || !state.editorSnapshot) return;
 		const current = requiredOptions();
-		const requestId = current.controller.begin();
+		const requestId = begin('update-table');
 		const clusterId = current.options.getClusterId();
 		const database = state.editorDatabaseName;
 		const table = state.editorTable.name;
-		state.isMutating = true;
 		state.mutationError = '';
 		try {
 			const outcome = await adapter().mutateTable(database, table, state.editorSnapshot, plan);
@@ -270,17 +284,16 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 				}
 			}
 		} finally {
-			if (current.controller.finish(requestId)) state.isMutating = false;
+			finish(requestId);
 		}
 	}
 
 	async function createTable(plan: CreateTablePlan) {
 		if (!state.editorDatabaseName) return;
 		const current = requiredOptions();
-		const requestId = current.controller.begin();
+		const requestId = begin('create-table');
 		const clusterId = current.options.getClusterId();
 		const database = state.editorDatabaseName;
-		state.isCreatingTable = true;
 		state.createTableError = '';
 		try {
 			const outcome = await adapter().createTable(database, plan);
@@ -302,16 +315,15 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 		} catch (error) {
 			if (current.controller.isCurrent(requestId)) state.createTableError = getErrorMessage(error);
 		} finally {
-			if (current.controller.finish(requestId)) state.isCreatingTable = false;
+			finish(requestId);
 		}
 	}
 
 	async function removeTable() {
-		if (!state.tableDropSnapshot || state.isDroppingTable) return;
+		if (!state.tableDropSnapshot || state.running === 'drop-table') return;
 		const current = requiredOptions();
-		const requestId = current.controller.begin();
+		const requestId = begin('drop-table');
 		const clusterId = current.options.getClusterId();
-		state.isDroppingTable = true;
 		try {
 			const outcome = await adapter().dropTable(
 				state.tableDropDatabaseName,
@@ -328,20 +340,20 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 		} catch (error) {
 			throw new Error(getErrorMessage(error));
 		} finally {
-			if (current.controller.finish(requestId)) state.isDroppingTable = false;
+			finish(requestId);
 		}
 	}
 
 	async function mutateDatabase(request: DatabaseMutationRequest) {
 		const current = requiredOptions();
-		const requestId = current.controller.begin();
 		const clusterId = current.options.getClusterId();
 		const cluster = current.options.store.clusters.find((item) => item.id === clusterId);
+		// Check before starting the request: a request that never starts must not leave Admin busy.
 		if (!cluster) throw new Error('This cluster no longer exists.');
+		const requestId = begin('mutate-database');
 		const target = state.databaseDialogTarget;
 		const action = state.databaseDialogAction;
 		const name = request.name?.trim() ?? '';
-		state.isDatabaseMutating = true;
 		try {
 			const outcome = await adapter().mutateDatabase(action, target, name);
 			if (outcome.mockSchemaRevision != null)
@@ -364,7 +376,7 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 		} catch (error) {
 			throw new Error(getErrorMessage(error));
 		} finally {
-			if (current.controller.finish(requestId)) state.isDatabaseMutating = false;
+			finish(requestId);
 		}
 	}
 
@@ -381,24 +393,21 @@ export function createDatabaseMutationWorkspace(options?: WorkspaceOptions) {
 		removeTable,
 		mutateDatabase,
 		cancel: () => controller?.cancel(),
+		/**
+		 * Cancels the running request once every mutation dialog has closed, as when the user presses
+		 * Escape while it runs. Call it from an effect so it sees each change to the open dialogs.
+		 */
+		cancelWhenDialogsClose() {
+			const isOpen = isDialogOpen();
+			if (wasDialogOpen && !isOpen && state.running) controller?.cancel();
+			wasDialogOpen = isOpen;
+		},
 		dispose: () => controller?.dispose(),
 		get isBusy() {
-			return (
-				state.isPreparingEditor ||
-				state.isMutating ||
-				state.isCreatingTable ||
-				state.isDatabaseMutating ||
-				state.isDroppingTable
-			);
+			return state.running !== undefined;
 		},
 		get isDialogOpen() {
-			return (
-				state.editorOpen ||
-				state.columnEditorOpen ||
-				state.createTableOpen ||
-				state.databaseDialogOpen ||
-				state.tableDropOpen
-			);
+			return isDialogOpen();
 		},
 		closeEditors() {
 			state.editorOpen = false;

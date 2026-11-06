@@ -28,7 +28,6 @@ function setup(queries: SavedQuery[] = [savedQuery]) {
 	const createTab = vi.fn((database, query, saved) => {
 		session.createQueryTab(database, query, saved);
 	});
-	const setExecutionQuery = vi.fn();
 	const navigateToEditor = vi.fn();
 	const store = {
 		queries,
@@ -41,12 +40,8 @@ function setup(queries: SavedQuery[] = [savedQuery]) {
 		state,
 		session,
 		savedQueries: store,
-		getActiveClusterId: () => session.activeClusterId,
-		getActiveTabId: () => session.activeQueryTabId,
-		getTabs: () => session.queryTabs,
 		loadTab,
 		createTab,
-		setExecutionQuery,
 		navigateToEditor
 	});
 	return {
@@ -56,7 +51,6 @@ function setup(queries: SavedQuery[] = [savedQuery]) {
 		store,
 		loadTab,
 		createTab,
-		setExecutionQuery,
 		navigateToEditor
 	};
 }
@@ -136,7 +130,6 @@ describe('saved query workspace controller', () => {
 			savedQueryName: 'Event count',
 			query: 'Events | count'
 		});
-		expect(context.setExecutionQuery).toHaveBeenCalledWith('Events | count');
 		expect(context.state.dialogOpen).toBe(false);
 	});
 

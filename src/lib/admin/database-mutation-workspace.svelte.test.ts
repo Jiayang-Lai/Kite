@@ -95,7 +95,7 @@ describe('createDatabaseMutationWorkspace', () => {
 	it('owns dialog visibility, busy state, cancellation, and disposal', () => {
 		const { workspace } = setup();
 		workspace.state.editorOpen = true;
-		workspace.state.isPreparingEditor = true;
+		workspace.state.running = 'prepare-editor';
 		expect(workspace.isDialogOpen).toBe(true);
 		expect(workspace.isBusy).toBe(true);
 
@@ -105,14 +105,34 @@ describe('createDatabaseMutationWorkspace', () => {
 		expect(controllerMocks.dispose).toHaveBeenCalledOnce();
 		workspace.closeEditors();
 		expect(workspace.isDialogOpen).toBe(false);
-		workspace.state.isPreparingEditor = false;
+		workspace.state.running = undefined;
 		expect(workspace.isBusy).toBe(false);
+	});
+
+	it('cancels the running request only when its dialog closes', () => {
+		const { workspace } = setup();
+		workspace.cancelWhenDialogsClose();
+		workspace.state.editorOpen = true;
+		workspace.state.running = 'update-table';
+		workspace.cancelWhenDialogsClose();
+		expect(controllerMocks.cancel).not.toHaveBeenCalled();
+
+		workspace.state.editorOpen = false;
+		workspace.cancelWhenDialogsClose();
+		expect(controllerMocks.cancel).toHaveBeenCalledOnce();
+
+		workspace.state.createTableOpen = true;
+		workspace.cancelWhenDialogsClose();
+		workspace.state.running = undefined;
+		workspace.state.createTableOpen = false;
+		workspace.cancelWhenDialogsClose();
+		expect(controllerMocks.cancel).toHaveBeenCalledOnce();
 	});
 
 	it('opens table and column editors against canonical schema objects', async () => {
 		const { workspace } = setup();
 		workspace.openTableEditor({ ...table } as never);
-		await vi.waitFor(() => expect(workspace.state.isPreparingEditor).toBe(false));
+		await vi.waitFor(() => expect(workspace.state.running).toBeUndefined());
 		expect(workspace.state.editorOpen).toBe(true);
 		expect(workspace.state.editorTable).toEqual(table);
 		expect(workspace.state.editorSnapshot).toEqual(snapshot);
@@ -122,7 +142,7 @@ describe('createDatabaseMutationWorkspace', () => {
 			{ name: 'Message', type: 'string' } as never,
 			'edit'
 		);
-		await vi.waitFor(() => expect(workspace.state.isPreparingEditor).toBe(false));
+		await vi.waitFor(() => expect(workspace.state.running).toBeUndefined());
 		expect(workspace.state.columnEditorOpen).toBe(true);
 		expect(workspace.state.columnMutationAction).toBe('edit');
 	});
@@ -143,7 +163,7 @@ describe('createDatabaseMutationWorkspace', () => {
 		adapterMocks.prepareTable.mockResolvedValueOnce({ kind: 'conflict', conflicts: [] });
 		const { workspace, refresh } = setup();
 		workspace.openTableEditor(table as never);
-		await vi.waitFor(() => expect(workspace.state.isPreparingEditor).toBe(false));
+		await vi.waitFor(() => expect(workspace.state.running).toBeUndefined());
 		expect(refresh).toHaveBeenCalledWith('mock');
 		expect(workspace.state.editorOpen).toBe(false);
 		expect(workspace.state.mutationSuccess).toContain('table changed');
@@ -153,7 +173,7 @@ describe('createDatabaseMutationWorkspace', () => {
 		adapterMocks.prepareTable.mockRejectedValueOnce(new Error('Permission denied'));
 		const { workspace } = setup();
 		workspace.openTableEditor(table as never);
-		await vi.waitFor(() => expect(workspace.state.isPreparingEditor).toBe(false));
+		await vi.waitFor(() => expect(workspace.state.running).toBeUndefined());
 		expect(workspace.state.editorSnapshot).toBeUndefined();
 		expect(workspace.state.mutationError).toContain('Permission denied');
 	});
@@ -184,6 +204,49 @@ describe('createDatabaseMutationWorkspace', () => {
 		expect(refresh).toHaveBeenCalledWith('mock');
 	});
 
+	it('is not left busy when a newer request supersedes an earlier one', async () => {
+		const { workspace, setSchema } = setup();
+		let finishPreparing!: (value: unknown) => void;
+		adapterMocks.prepareTable.mockReturnValueOnce(
+			new Promise((resolve) => (finishPreparing = resolve))
+		);
+		workspace.openTableEditor(table as never);
+		expect(workspace.state.running).toBe('prepare-editor');
+
+		workspace.openCreateTable();
+		setSchema({
+			Analytics: {
+				name: 'Analytics',
+				prettyName: 'Friendly analytics',
+				tables: [table, { name: 'Created', columns: [] } as never],
+				functions: []
+			},
+			Archive: { name: 'Archive', tables: [], functions: [] }
+		});
+		await workspace.createTable({ tableName: 'Created', summary: 'Create' } as never);
+		finishPreparing({ kind: 'ready', snapshot });
+		await vi.waitFor(() => expect(adapterMocks.prepareTable).toHaveBeenCalledOnce());
+		await Promise.resolve();
+
+		expect(workspace.state.createTableError).toBe('');
+		expect(workspace.isBusy).toBe(false);
+	});
+
+	it('ignores a second drop of the same table while the first is running', async () => {
+		const { workspace } = setup();
+		let finishDrop!: (value: unknown) => void;
+		adapterMocks.dropTable.mockReturnValueOnce(new Promise((resolve) => (finishDrop = resolve)));
+		workspace.openDropTable(table as never);
+
+		const first = workspace.removeTable();
+		await workspace.removeTable();
+		finishDrop({ mockSchemaRevision: 4 });
+		await first;
+
+		expect(adapterMocks.dropTable).toHaveBeenCalledOnce();
+		expect(workspace.state.running).toBeUndefined();
+	});
+
 	it('reports table mutation command failures', async () => {
 		const { workspace } = setup();
 		workspace.openTableEditor(table as never);
@@ -191,7 +254,7 @@ describe('createDatabaseMutationWorkspace', () => {
 		adapterMocks.mutateTable.mockRejectedValueOnce(new Error('Command failed'));
 		await workspace.updateTable({ summary: 'Rename' } as never);
 		expect(workspace.state.mutationError).toBe('Command failed');
-		expect(workspace.state.isMutating).toBe(false);
+		expect(workspace.state.running).toBeUndefined();
 	});
 
 	it('refreshes the schema and drops the stale snapshot when only part of a change applied', async () => {
@@ -209,7 +272,7 @@ describe('createDatabaseMutationWorkspace', () => {
 		expect(workspace.state.editorSnapshot).toBeUndefined();
 		expect(workspace.state.editorOpen).toBe(true);
 		expect(refresh).toHaveBeenCalledOnce();
-		expect(workspace.state.isMutating).toBe(false);
+		expect(workspace.state.running).toBeUndefined();
 	});
 
 	it('keeps the partial-change message when the follow-up refresh fails', async () => {
@@ -272,7 +335,7 @@ describe('createDatabaseMutationWorkspace', () => {
 		await workspace.createTable({ tableName: 'Missing', summary: 'Table created' } as never);
 		expect(workspace.state.createTableOpen).toBe(true);
 		expect(workspace.state.createTableError).toContain('was not found');
-		expect(workspace.state.isCreatingTable).toBe(false);
+		expect(workspace.state.running).toBeUndefined();
 	});
 
 	it('drops tables and surfaces stale-schema conflicts', async () => {
@@ -288,7 +351,7 @@ describe('createDatabaseMutationWorkspace', () => {
 			conflicts: [{ message: 'Table changed.' }]
 		});
 		await expect(workspace.removeTable()).rejects.toThrow('Table changed.');
-		expect(workspace.state.isDroppingTable).toBe(false);
+		expect(workspace.state.running).toBeUndefined();
 	});
 
 	it('executes create, rename, and drop database mutations', async () => {
@@ -323,6 +386,7 @@ describe('createDatabaseMutationWorkspace', () => {
 		await expect(workspace.mutateDatabase({ name: 'New' } as never)).rejects.toThrow(
 			'cluster no longer exists'
 		);
+		expect(workspace.isBusy).toBe(false);
 	});
 
 	it('closes every dialog and clears editor targets after a connection change', () => {

@@ -76,4 +76,18 @@ describe('CreateTableDialog', () => {
 		await screen.getByRole('button', { name: 'Stop waiting' }).click();
 		expect(oncancel).toHaveBeenCalledOnce();
 	});
+
+	it('starts a new draft when closed and reopened for the same database', async () => {
+		const screen = await render(
+			CreateTableDialog,
+			{ open: true, databaseName: 'Samples', clusterName: 'Mock cluster', existingTableNames: [] },
+			{ wrapper: AppContextWrapper }
+		);
+		await screen.getByLabelText('Table name').fill("O'Brien\\Events");
+
+		await screen.rerender({ open: false });
+		await screen.rerender({ open: true });
+
+		await expect.element(screen.getByLabelText('Table name')).toHaveValue('');
+	});
 });

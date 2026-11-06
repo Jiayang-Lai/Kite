@@ -125,7 +125,6 @@ export function createConnectionLifecycleController(options: ConnectionLifecycle
 				? session.selectedFunction
 				: undefined;
 			const pendingQuery = restore ? session.pendingQuery : undefined;
-			session.getExplorerExpansion(cluster.id);
 			// The schema records the active cluster it belongs to, so commit the cluster first.
 			session.activeClusterId = cluster.id;
 			persistActiveClusterId(cluster.id);

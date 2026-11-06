@@ -15,8 +15,7 @@
 	import QueryTabBar from '$lib/components/query/query-tab-bar.svelte';
 	import type {
 		ConnectionStatistics,
-		LanguageServiceStatus,
-		QueryWorkspaceExecutionState
+		LanguageServiceStatus
 	} from '$lib/components/query/query-workspace-types';
 	import * as Resizable from '$lib/components/ui/resizable';
 	import { Spinner } from '$lib/components/ui/spinner';
@@ -30,14 +29,15 @@
 		selectedFunction?: string;
 		explorerExpansion: ExplorerExpansionState;
 		activeClusterUrl?: string;
-		activeTab?: QueryTab;
+		/** The session always has an active tab. */
+		activeTab: QueryTab;
 		originalTab?: QueryTab;
 		modifiedTab?: QueryTab;
 		compareCandidates: QueryTab[];
 		queryTabs: QueryTab[];
 		comparisonOriginalTabId?: string;
 		focusedComparisonSide: 'left' | 'right';
-		executionState: QueryWorkspaceExecutionState;
+		resultsCollapsed: boolean;
 		connectionStatus: 'loading' | 'ready' | 'error';
 		connectionError: string;
 		isClusterSwitching: boolean;
@@ -91,7 +91,7 @@
 		queryTabs,
 		comparisonOriginalTabId,
 		focusedComparisonSide,
-		executionState,
+		resultsCollapsed,
 		connectionStatus,
 		connectionError,
 		isClusterSwitching,
@@ -143,7 +143,7 @@
 				? focusedComparisonSide === 'left'
 					? originalTab.query.trim()
 					: modifiedTab.query.trim()
-				: executionState.queryText.trim()) && isQueryable
+				: activeTab.query.trim()) && isQueryable
 		)
 	);
 
@@ -186,7 +186,7 @@
 								schemaCollapsed={databaseSchemaCollapsed}
 								{canSave}
 								{saveTitle}
-								isRunning={executionState.isRunning}
+								isRunning={activeTab.isRunning}
 								{canRun}
 								runTitle={isMockCluster
 									? 'Query execution is unavailable for the mock cluster'
@@ -207,7 +207,7 @@
 							<QueryEditorSurface
 								bind:this={editorSurface}
 								activeTabId={activeTab?.id ?? ''}
-								queryText={executionState.queryText}
+								queryText={activeTab.query}
 								{selectedDatabase}
 								{databaseSchema}
 								clusterUrl={activeClusterUrl}
@@ -265,12 +265,12 @@
 					>
 						<QueryResults
 							class="h-full min-h-0 rounded-none border-0"
-							result={executionState.result}
-							error={executionState.error}
-							errorRequestId={executionState.errorRequestId}
-							errorRaw={executionState.errorRaw}
-							isRunning={executionState.isRunning}
-							collapsed={executionState.resultsCollapsed}
+							result={activeTab.result}
+							error={activeTab.error ?? ''}
+							errorRequestId={activeTab.errorRequestId}
+							errorRaw={activeTab.errorRaw}
+							isRunning={activeTab.isRunning}
+							collapsed={resultsCollapsed}
 							oncollapsedchange={setResultsCollapsed}
 						/>
 					</Resizable.Pane>

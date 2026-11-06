@@ -50,14 +50,29 @@ export type ClusterSession = {
 	updateQueryTab: (id: string, update: Partial<Omit<QueryTab, 'id'>>) => void;
 	closeQueryTab: (id: string) => void;
 	resetQueryTabs: (database?: string) => void;
+	/** The connection's Explorer expansion; reading it never changes state, so it can be derived. */
 	getExplorerExpansion: (clusterId: string) => ExplorerExpansionState;
 	setExplorerExpansion: (clusterId: string, change: ExplorerExpansionChange) => void;
 };
 
+function emptyExplorerExpansion(): ExplorerExpansionState {
+	return {
+		databases: {},
+		groups: {},
+		schemaTables: {},
+		sections: { 'saved-queries': false, 'recent-queries': false }
+	};
+}
+
 /** Creates the app-wide, confirmed cluster selection shared by feature pages. */
 export function createClusterSession(initialClusterId: string): ClusterSession {
 	let nextQueryTabId = 0;
-	const createQueryTabId = () => `query-tab-${++nextQueryTabId}`;
+	const emptyQueryTab = (database = ''): QueryTab => ({
+		id: `query-tab-${++nextQueryTabId}`,
+		database,
+		query: '',
+		isRunning: false
+	});
 	let activeClusterId = $state(initialClusterId);
 	let databaseSchema = $state.raw<KustoDatabaseSchema>();
 	let schemaClusterId = $state<string>();
@@ -66,39 +81,20 @@ export function createClusterSession(initialClusterId: string): ClusterSession {
 	let selectedTable = $state<string>();
 	let selectedFunction = $state<string>();
 	let pendingQuery = $state<string>();
-	const initialQueryTab: QueryTab = {
-		id: createQueryTabId(),
-		database: '',
-		query: '',
-		isRunning: false
-	};
+	const initialQueryTab = emptyQueryTab();
 	let queryTabs = $state<QueryTab[]>([initialQueryTab]);
 	let activeQueryTabId = $state(initialQueryTab.id);
-	let explorerExpansionByCluster = $state<Record<string, ExplorerExpansionState>>({
-		[initialClusterId]: {
-			databases: {},
-			groups: {},
-			schemaTables: {},
-			sections: { 'saved-queries': false, 'recent-queries': false }
-		}
-	});
+	const explorerExpansionByCluster = $state<Record<string, ExplorerExpansionState>>({});
+	const collapsedExplorer = emptyExplorerExpansion();
 
 	function getExplorerExpansion(clusterId: string) {
-		const existing = explorerExpansionByCluster[clusterId];
-		if (existing) return existing;
-
-		const expansion: ExplorerExpansionState = {
-			databases: {},
-			groups: {},
-			schemaTables: {},
-			sections: { 'saved-queries': false, 'recent-queries': false }
-		};
-		explorerExpansionByCluster[clusterId] = expansion;
-		return expansion;
+		return explorerExpansionByCluster[clusterId] ?? collapsedExplorer;
 	}
 
 	function setExplorerExpansion(clusterId: string, change: ExplorerExpansionChange) {
-		const expansion = getExplorerExpansion(clusterId);
+		// Read the entry back after storing it: writes must go through the state proxy.
+		explorerExpansionByCluster[clusterId] ??= emptyExplorerExpansion();
+		const expansion = explorerExpansionByCluster[clusterId];
 		if (change.type === 'database') {
 			expansion.databases[change.database] = change.open;
 		} else if (change.type === 'group') {
@@ -124,13 +120,7 @@ export function createClusterSession(initialClusterId: string): ClusterSession {
 		query = '',
 		savedQuery: Pick<QueryTab, 'savedQueryId' | 'savedQueryName'> = {}
 	) {
-		const tab: QueryTab = {
-			id: createQueryTabId(),
-			database,
-			query,
-			isRunning: false,
-			...savedQuery
-		};
+		const tab: QueryTab = { ...emptyQueryTab(database), query, ...savedQuery };
 		queryTabs = [...queryTabs, tab];
 		activeQueryTabId = tab.id;
 		return tab;
@@ -146,14 +136,7 @@ export function createClusterSession(initialClusterId: string): ClusterSession {
 			// Replace, rather than clear, the final tab. The editor is keyed by tab ID and
 			// deliberately does not sync external values while the user types; retaining the
 			// ID would leave its old visible content in place after the tab has been cleared.
-			const tab: QueryTab = {
-				id: createQueryTabId(),
-				database: '',
-				query: '',
-				isRunning: false
-			};
-			queryTabs = [tab];
-			activeQueryTabId = tab.id;
+			resetQueryTabs();
 			return;
 		}
 
@@ -166,7 +149,7 @@ export function createClusterSession(initialClusterId: string): ClusterSession {
 	}
 
 	function resetQueryTabs(database = '') {
-		const tab: QueryTab = { id: createQueryTabId(), database, query: '', isRunning: false };
+		const tab = emptyQueryTab(database);
 		queryTabs = [tab];
 		activeQueryTabId = tab.id;
 	}

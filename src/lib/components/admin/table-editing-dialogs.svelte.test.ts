@@ -97,4 +97,28 @@ describe('table editing dialogs', () => {
 		await screen.getByRole('button', { name: 'Stop waiting' }).click();
 		expect(oncancel).toHaveBeenCalledOnce();
 	});
+
+	it('discards unsaved edits when closed and reopened for the same table', async () => {
+		const screen = await render(
+			TableEditorDialog,
+			{
+				open: true,
+				table,
+				databaseName: 'Samples',
+				clusterName: 'Production',
+				preflightReady: true,
+				snapshot
+			},
+			{ wrapper: AppContextWrapper }
+		);
+		const description = screen.getByLabelText('Description', { exact: true });
+		await description.fill('Edited description');
+
+		await screen.rerender({ open: false });
+		await screen.rerender({ open: true });
+
+		await expect
+			.element(screen.getByLabelText('Description', { exact: true }))
+			.toHaveValue('Existing events');
+	});
 });

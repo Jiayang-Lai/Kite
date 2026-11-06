@@ -160,4 +160,18 @@ describe('ColumnMutationDialog', () => {
 		await screen.getByRole('button', { name: 'Stop waiting' }).click();
 		expect(oncancel).toHaveBeenCalledOnce();
 	});
+
+	it('discards unsaved edits when closed and reopened for the same column', async () => {
+		const screen = await render(
+			ColumnMutationDialog,
+			{ ...baseProps, action: 'edit' },
+			{ wrapper: AppContextWrapper }
+		);
+		await screen.getByLabelText('Column name').fill('Details');
+
+		await screen.rerender({ open: false });
+		await screen.rerender({ open: true });
+
+		await expect.element(screen.getByLabelText('Column name')).toHaveValue('Message');
+	});
 });

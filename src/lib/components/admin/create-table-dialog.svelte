@@ -69,8 +69,9 @@
 
 	$effect(() => {
 		const target = open ? databaseName : '';
-		if (!target || target === initializedDatabase) return;
+		if (target === initializedDatabase) return;
 		initializedDatabase = target;
+		if (!target) return;
 		tableName = '';
 		docstring = '';
 		folder = '';
@@ -78,10 +79,6 @@
 		reviewPlan.reset();
 		templateImportError = '';
 		importedTemplateName = '';
-	});
-
-	$effect(() => {
-		if (!open) initializedDatabase = '';
 	});
 
 	function addColumn() {

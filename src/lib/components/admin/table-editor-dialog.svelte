@@ -76,16 +76,12 @@
 
 	$effect(() => {
 		const target = open ? `${databaseName}\u0000${table.name}` : '';
-		if (!target || target === initializedTarget) return;
-
+		if (target === initializedTarget) return;
 		initializedTarget = target;
+		if (!target) return;
 		docstring = table.docstring ?? '';
 		newColumns = [];
 		reviewPlan.reset();
-	});
-
-	$effect(() => {
-		if (!open) initializedTarget = '';
 	});
 
 	function addColumn() {

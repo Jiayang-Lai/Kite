@@ -185,7 +185,10 @@ export default defineConfig({
 					browser: {
 						enabled: true,
 						provider: playwright(),
-						instances: [{ browser: 'chromium', headless: true }]
+						instances: [{ browser: 'chromium', headless: true }],
+						// Vitest 5 matches locator text exactly by default. Keep Vitest 4's substring
+						// matching, which the component tests are written against.
+						locators: { exact: false }
 					},
 					include: ['src/**/*.svelte.{test,spec}.{js,ts}'],
 					exclude: ['src/lib/server/**']
@@ -203,8 +206,10 @@ export default defineConfig({
 			},
 
 			// Build and release scripts run on plain Node, so their tests do not load the app's Vite
-			// config, whose browser polyfills replace modules such as `fs` and `crypto`.
+			// config, whose browser polyfills replace modules such as `fs` and `crypto`. Since Vitest 5
+			// an inline project inherits the config that declares it unless `extends` is false.
 			{
+				extends: false,
 				test: {
 					name: 'scripts',
 					environment: 'node',

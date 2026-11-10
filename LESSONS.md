@@ -67,6 +67,21 @@ The first lessons were written on 2026-10-14, from the fixes released in 0.1.0 (
 - When removing or renaming a test, search the workflows for its title and for the environment variables it reads.
 - Seen 1× (2026-10-14).
 
+## Dependencies
+
+**Treat a major version of a dependency as a migration, not a bump.**
+
+- A Dependabot pull request for a major version only changes the version. The breaking changes still have to be made in Kite, in the same change, after reading the release's migration guide.
+- #90 to #93 (2026-10-18) each moved one package of vitest or SvelteKit, whose packages only install together, so `npm ci` failed on all four. #98 grouped them. The grouped #99 (vitest 5) and #104 (SvelteKit 3) then installed, but failed on breaking changes: an inline Vitest project now inherits its parent config, locators match exactly, and SvelteKit removed `$lib`.
+- Before merging a major, run `npm run test:ci` and the container build, and search the repository for every API the migration guide names.
+- Seen 2× (2026-11-06, 2026-11-10).
+
+**Declare every package Kite imports or takes types from in `package.json`.**
+
+- `vite.config.ts` and `tests/app.e2e.ts` use Node's types, but `@types/node` was never declared. It reached the root of `node_modules` through vite and vitest 4. Vitest 5 dropped it, and `npm run check` failed with 12 errors.
+- The vitest 5 upgrade adds `@types/node` at the major of the oldest supported Node (`engines.node`).
+- Seen 1× (2026-11-10).
+
 ## Moved to the code standards
 
 These were seen on three or more days. The rule and its evidence are in [docs/code-standards.md](docs/code-standards.md); a review still checks each one.

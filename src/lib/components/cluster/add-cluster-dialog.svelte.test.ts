@@ -69,7 +69,7 @@ describe('AddClusterDialog', () => {
 		await screen.getByRole('option', { name: 'Mock' }).click();
 		await screen.getByLabelText('Schema JSON').fill('{bad json');
 		await screen.getByRole('button', { name: 'Add and connect' }).click();
-		await expect.element(screen.getByRole('alert')).toHaveTextContent('Enter valid JSON');
+		await expect.element(screen.getByRole('alert')).toMatchTextContent('Enter valid JSON');
 		expect(onsubmit).not.toHaveBeenCalled();
 
 		await screen
@@ -113,7 +113,7 @@ describe('AddClusterDialog', () => {
 
 		await expect
 			.element(screen.getByRole('alert'))
-			.toHaveTextContent('No Azure authentication profiles are available');
+			.toMatchTextContent('No Azure authentication profiles are available');
 		await expect.element(screen.getByRole('button', { name: 'Add and connect' })).toBeDisabled();
 	});
 

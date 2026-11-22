@@ -55,7 +55,7 @@
 		"@tailwindcss/typography": "^0.5.19",
 		"@tailwindcss/vite": "^4.3.4",
 		"@types/node": "^22.20.5",
-		"@vitest/browser-playwright": "^5.1.0",
+		"@vitest/browser-playwright": "^5.1.1",
 		"@vitest/coverage-v8": "^5.1.0",
 		"bits-ui": "^2.20.6",
 		"clsx": "^2.1.1",
